@@ -68,3 +68,5 @@ PR #1 首次 GitHub Actions Boot L2 job（run `42039446452`）在 30 分钟上�
 复核环境为同一 Windows x64 + WSL2 Ubuntu 24.04 x86_64 / GCC 13.3.0 / GNU make 4.3。命令：`bash tools/build_kernel_l2.sh`，退出码 0。输出 `.work/boot-l2/boot.img` 2,453,504 字节，SHA-256 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`；resolved `.config` SHA-256 `5074b89c39e6904c84ae3d5edf11c500c88e3bee7a1bf7c482c8238818da0e42`；`Image.gz` SHA-256 `a1f99ae27e457e59ac323479e46f0c1d8898908d98a0bb8a1ff057944d4fc975`。DTB 152 个锁定 ABL overlay symbols 回读通过，Android v2 boot 段打包通过。
 
 构建跨 WSL `/tmp` 与 Windows `/mnt/c` 路径时 GNU make 输出 `Clock skew detected` 警告，产物哈希已生成；GitHub Ubuntu runner 不使用该跨文件系统路径，仍需远端同 HEAD CI 证实。新镜像仍仅为 L2，未做 VM 或真机启动；维护者后续自行 RAM 测试前不宣称启动成功。
+
+PR #1 commit `e5186ecb442a72eecaefb5c2c54311e193ba9508` 的 [GitHub Actions run 4](https://github.com/Ben8368/MiSeed/actions/runs/42046511356) 已 completed/success，六项 checks 全部 success。Hosted Ubuntu 24.04 于 4 分 47 秒完成 Boot L2，最终镜像大小 2,453,504 字节，SHA-256 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`，与本机产物逐字节哈希相同；152 个锁定 ABL overlay symbols 检查通过。此结果闭合首个 PR HEAD 的远端 L2 和独立 hosted 复建；不替代设备 RAM 启动测试。apt 传递包哈希与 runner image digest 仍开放。
