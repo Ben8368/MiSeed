@@ -37,7 +37,7 @@
       "url": "https://packages.ubuntu.com/noble/",
       "host": "WSL2 Ubuntu 24.04 x86_64; GitHub Actions ubuntu-24.04 runner",
       "target": "Linux v6.18.60 arm64 Image.gz, MiSeed CSOT DTB with ABL symbols, static rescue initramfs and Android boot header v2 image",
-      "install": "CI pins GCC 13 cross, binutils, make, bc, bison, flex, libssl-dev, libelf-dev and device-tree-compiler=1.7.0-2build1; transitive package hashes are pending.",
+      "install": "CI pins versioned and generic AArch64 GCC entry points, binutils, make, bc, bison, flex, libssl-dev, libelf-dev, libc6-dev-arm64-cross and device-tree-compiler; transitive package hashes are pending.",
       "verification": "tools/build_kernel_l2.sh verifies the Linux commit, cross GCC 13.3.0 and make 4.3; image is built locally. Resolve and record runner image and transitive package hashes before claiming a fully reproducible environment.",
       "status": "Local WSL2 boot L2 compiled and artifact hashes recorded; hosted runner, independent reproduction, actual RAM boot and full package closure remain unverified."
     },
