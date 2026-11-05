@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "lock_date": "2026-11-05",
+  "lock_status": "revision-pinned; build-closure-incomplete",
+  "scope": "Reviewed upstream identities and selected reference snapshots. This is not a claim that code was imported, patches apply, or a product build succeeded.",
+  "sources": [
+    {
+      "id": "linux-stable",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git",
+      "tag": "v6.18.60",
+      "tag_object": "16829bf498b811706e98e480879e3fe1754d797e",
+      "revision": "f45ed76d6791cf72ff1265ee93511175bbbc2f18",
+      "license": "GPL-2.0-only",
+      "license_evidence": ["COPYING", "LICENSES/preferred/GPL-2.0"],
+      "role": "selected kernel baseline; LTS branch",
+      "included_paths": [],
+      "submodules": [],
+      "patches": [],
+      "verification": "Official stable tag resolved with git ls-remote; tag signature and source archive checksum must be verified when materialized. Generic arm64 defconfig Image built in WSL with Ubuntu GCC 13.3.0; the selected Debian GCC 14.2 and Umi board config remain untested."
+    },
+    {
+      "id": "edk2",
+      "url": "https://github.com/tianocore/edk2.git",
+      "tag": null,
+      "revision": "561c006ac6bb962d8e53b369b6a6a01d2d9ae579",
+      "license": "BSD-2-Clause-Patent",
+      "license_evidence": ["License.txt"],
+      "role": "selected upstream UEFI framework snapshot; board port not selected",
+      "included_paths": [],
+      "submodules": [],
+      "patches": [],
+      "verification": "Exact master commit was checked against the repository remote; package closure and build configuration remain open."
+    },
+    {
+      "id": "colorgarden-umi-reference",
+      "url": "https://github.com/colorgarden/umi-mainline.git",
+      "tag": null,
+      "revision": "5fa2e0048f89b82355d2a9de89c1d74ab9910959",
+      "license": "LicenseRef-Mixed",
+      "license_evidence": ["LICENSE", "LICENSES/", "DTS and driver SPDX headers"],
+      "role": "board support reference only; not yet converted into reviewed patches",
+      "included_paths": ["dts/sm8250-xiaomi-umi*.dts[i]", "patches/panel-xiaomi-umi.c", "docs/DISPLAY.md", "docs/TOUCH.md"],
+      "submodules": [],
+      "patches": [],
+      "verification": "Exact master commit checked against the repository remote. Per-file license and applicability to Linux v6.18.60 are not fully reviewed or tested."
+    },
+    {
+      "id": "mu-silicium-reference",
+      "url": "https://github.com/Project-Silicium/Mu-Silicium.git",
+      "tag": null,
+      "revision": "6b3d90b79e191e08171bfedd3980234a7e49d340",
+      "license": "LicenseRef-Mixed",
+      "license_evidence": ["repository README", "GPLDrivers/", "GPLApplications/", "GPLLibrary/", "Binaries submodule declaration"],
+      "role": "Mu manifest/platform reference only; dependency closure not adopted",
+      "included_paths": ["Platforms/Xiaomi/umiPkg/"],
+      "submodules": ["Binaries (exact gitlink not recorded in this research lock)"],
+      "patches": [],
+      "verification": "Exact main commit checked against remote; recursive submodules and manifest-selected dependency revisions remain to be resolved."
+    },
+    {
+      "id": "mu-basecore-reference",
+      "url": "https://github.com/microsoft/mu_basecore.git",
+      "tag": null,
+      "revision": "6f805f26a4366fe56790130dc2f8f3e1b4c2fe28",
+      "license": "BSD-2-Clause-Patent",
+      "license_evidence": ["License.txt"],
+      "role": "Mu dependency reference only; not selected independently of manifest",
+      "included_paths": [],
+      "submodules": [],
+      "patches": [],
+      "verification": "Commit pinned from reviewed release/202608 snapshot; exact compatibility with Mu-Silicium manifest is not established."
+    },
+    {
+      "id": "mu-tiano-platforms-reference",
+      "url": "https://github.com/microsoft/mu_tiano_platforms.git",
+      "tag": null,
+      "revision": "fd0a4a741a93566508cc75521d161351d77d1f0a",
+      "license": "BSD-2-Clause-Patent",
+      "license_evidence": ["License.txt"],
+      "role": "Mu platform reference only; not selected independently of manifest",
+      "included_paths": [],
+      "submodules": [],
+      "patches": [],
+      "verification": "Exact main commit checked against remote; compatibility with the selected Mu manifest is not established."
+    },
+    {
+      "id": "reaaaq-uefi-umi-reference",
+      "url": "https://github.com/reAAAq/uefi-umi.git",
+      "tag": null,
+      "revision": "727f6c26347055ab70eac2104e6a4edc80c8d556",
+      "license": "BSD-3-Clause",
+      "license_evidence": ["LICENSE", "SPDX headers"],
+      "role": "implementation reference only; not a fork or build input",
+      "included_paths": ["Platforms/Xiaomi/umiPkg/", "Drivers/InheritedFbDxe/", "BootShim/"],
+      "submodules": [],
+      "patches": [],
+      "verification": "Exact main commit checked against remote. Associated XNU validation is not MiSeed Linux validation."
+    },
+    {
+      "id": "misaka-umi-linux-tested-reference",
+      "url": "https://github.com/misaka-link/umi-linux.git",
+      "tag": null,
+      "revision": "cf83073887899f485a5c606f9842c5e691ea796c",
+      "license": "GPL-2.0-only",
+      "license_evidence": ["LICENSE", "per-file SPDX headers; CSOT DTS declares BSD-3-Clause"],
+      "role": "device-tested CSOT boot-chain reference; do not import as a whole or claim MiSeed validation",
+      "included_paths": ["boot-build/", "rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-csot.dts"],
+      "submodules": [],
+      "patches": [],
+      "verification": "Pinned public source inspected, including the CSOT DTS and boot build implementation. Upstream README reports testing on umi/CSOT with ABL boot-header-v2, kernel/initrd/DTB, dtc -@ symbols and stock DTBO. Treat those as upstream-reported device results; MiSeed has not booted this input. Panel driver and touchscreen are reported unsupported."
+    }
+  ],
+  "unlocked_inputs": [
+    "Mu manifest and recursive gitlinks",
+    "Linux Umi patches, patch order, hashes and successful application to v6.18.60",
+    "board configuration and kernel configuration fragments",
+    "Debian ARM64 rootfs package manifest and package hashes",
+    "EDK II package/tool dependency closure",
+    "MiSeed-owned code and actual binary inputs (no product code imported yet)"
+  ]
+}

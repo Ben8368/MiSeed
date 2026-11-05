@@ -1,0 +1,16 @@
+# External source trees, local inputs and build output
+/.work/
+/out/
+/local/
+/.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.img
+*.bin
+*.elf
+*.dtb
+*.dtbo
+*.cpio
+*.log

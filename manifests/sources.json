@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "candidates": [
+    {
+      "id": "linux-stable",
+      "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git",
+      "purpose": "Linux 6.18 LTS v6.18.60 固定基线；闭包仍待验证",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "edk2",
+      "url": "https://github.com/tianocore/edk2",
+      "purpose": "UEFI 通用上游；与 Mu 依赖一并评估",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "colorgarden-umi",
+      "url": "https://github.com/colorgarden/umi-mainline",
+      "purpose": "显示、触控、DTS 与外设移植线索",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "ben8368-umi",
+      "url": "https://github.com/Ben8368/umi-mainline",
+      "purpose": "用户既有 fork 的改动与旧验证线索",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "misaka-umi",
+      "url": "https://github.com/misaka-link/umi-linux",
+      "purpose": "Debian、SM8250、USB gadget 与用户空间集成线索",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "reaaaq-uefi",
+      "url": "https://github.com/reAAAq/uefi-umi",
+      "purpose": "Mu-Silicium、BootShim 与 umi 平台线索",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "reaaaq-unixnu",
+      "url": "https://github.com/reAAAq/UniXNU-umi",
+      "purpose": "启动交接、UFS/SMMU 与诊断参考",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "lonelyfool-sm8250",
+      "url": "https://github.com/LonelyFool/EDK2-SM8250",
+      "purpose": "历史 EDK2/SM8250 实现比较",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "mu-silicium",
+      "url": "https://github.com/Project-Silicium/Mu-Silicium",
+      "purpose": "EDK II/Mu umi 平台与依赖关系参考",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "mu-basecore",
+      "url": "https://github.com/microsoft/mu_basecore",
+      "purpose": "Mu 核心库参考，须服从选定 Mu manifest",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "mu-tiano-platforms",
+      "url": "https://github.com/microsoft/mu_tiano_platforms",
+      "purpose": "Mu 平台接口参考，须服从选定 Mu manifest",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "lock_date": "2026-11-05",
+  "lock_status": "version-pinned; reproducible-closure-incomplete",
+  "host": {
+    "os": "Debian 13 (trixie), amd64",
+    "package_source": "https://snapshot.debian.org/archive/debian/20261105T000000Z/",
+    "package_security_source": "https://snapshot.debian.org/archive/debian-security/20261105T000000Z/",
+    "container_digest": null,
+    "status": "snapshot timestamp pinned; image digest and full apt package closure pending"
+  },
+  "tools": [
+    {
+      "id": "linux-llvm",
+      "version": "23.1.5",
+      "url": "https://releases.llvm.org/23.1.5/",
+      "host": "Linux x86_64",
+      "target": "Linux arm64 kernel (ARCH=arm64, LLVM=1)",
+      "install": "Official LLVM release archive; do not use moving latest URLs.",
+      "verification": "Verify official release checksum/signature; record archive SHA-256 at materialization.",
+      "status": "version pinned; MiSeed build unverified"
+    },
+    {
+      "id": "gnu-aarch64-cross",
+      "version": "14.2.0-1",
+      "package": "gcc-aarch64-linux-gnu=4:14.2.0-1",
+      "url": "https://snapshot.debian.org/archive/debian/20261105T000000Z/",
+      "host": "Debian 13 amd64",
+      "target": "aarch64-linux-gnu; Linux fallback and EDK II GCC5 toolchain candidate",
+      "install": "APT from the pinned Debian snapshot, with package versions enforced.",
+      "verification": "APT Release/InRelease signature and Packages SHA256; lock all resolved .deb hashes before L2.",
+      "status": "Debian 14.2 candidate remains untested; separate WSL Ubuntu 24.04 GCC 13.3.0 built Linux v6.18.60 generic arm64 defconfig Image (not MiSeed config)"
+    },
+    {
+      "id": "python-host",
+      "version": "3.11.18",
+      "url": "https://www.python.org/downloads/release/python-31118/",
+      "host": "Linux and Windows; project host tools",
+      "target": "host-native",
+      "install": "Use official Python distribution/source release and immutable version; security-only 3.11 releases may be source-only.",
+      "verification": "Verify python.org SHA-256/signature; run repository L0/L1 on 3.11.18 before build use.",
+      "status": "version selected from current supported 3.11 security series; exact package/hash and this patch's runtime test pending"
+    },
+    {
+      "id": "edk2-python",
+      "version": "3.13.5-1",
+      "package": "python3=3.13.5-1",
+      "url": "https://snapshot.debian.org/archive/debian/20261105T000000Z/",
+      "host": "Debian 13 amd64",
+      "target": "EDK II BaseTools host runtime",
+      "install": "APT from the pinned Debian snapshot.",
+      "verification": "APT repository signature and package SHA256; run BaseTools Python checks against the pinned EDK II commit.",
+      "status": "package version selected; EDK II compatibility/build unverified"
+    },
+    {
+      "id": "edk2-nasm",
+      "version": "2.16.03-1",
+      "package": "nasm=2.16.03-1",
+      "url": "https://snapshot.debian.org/archive/debian/20261105T000000Z/",
+      "host": "Debian 13 amd64",
+      "target": "EDK II assembly build prerequisite",
+      "install": "APT from pinned Debian snapshot.",
+      "verification": "APT signature and package SHA256; record nasm --version.",
+      "status": "version pinned; not installed or build-tested"
+    },
+    {
+      "id": "edk2-acpica",
+      "version": "20250404-1",
+      "package": "acpica-tools=20250404-1",
+      "url": "https://snapshot.debian.org/archive/debian/20261105T000000Z/",
+      "host": "Debian 13 amd64",
+      "target": "EDK II ACPI compiler prerequisite",
+      "install": "APT from pinned Debian snapshot.",
+      "verification": "APT signature and package SHA256; record iasl -v.",
+      "status": "version pinned; not installed or build-tested"
+    },
+    {
+      "id": "rust-recovery",
+      "version": "1.98.0",
+      "url": "https://static.rust-lang.org/dist/",
+      "host": "Linux x86_64",
+      "target": "aarch64-unknown-linux-musl candidate for a self-contained Recovery helper",
+      "install": "rustup with exact toolchain and target in rust-toolchain.toml; Cargo.lock required when dependencies are chosen.",
+      "verification": "Verify rustup component manifests/signatures and rustc -Vv; run a minimal real target build after Recovery code exists.",
+      "status": "stable version pinned from official release; no Cargo project or cross-build exists"
+    },
+    {
+      "id": "qemu",
+      "version": "10.2.4",
+      "url": "https://download.qemu.org/",
+      "host": "Linux x86_64",
+      "target": "aarch64-softmmu virt machine and AAVMF test environment",
+      "install": "Official QEMU source release; verify detached release signature and record source archive SHA-256.",
+      "verification": "qemu-system-aarch64 --version and AAVMF firmware hash; tests limited to generic EFI/initramfs behavior.",
+      "status": "version pinned; not installed or run; cannot emulate SM8250/ABL/phone hardware"
+    },
+    {
+      "id": "debian-arm64-rootfs",
+      "version": "trixie snapshot 2026-11-05T00:00:00Z",
+      "url": "https://snapshot.debian.org/archive/debian/20261105T000000Z/",
+      "host": "Debian amd64 debootstrap host",
+      "target": "arm64 Recovery userspace",
+      "install": "debootstrap from the dated snapshot only after package manifest is approved.",
+      "verification": "Record suite, package list, every .deb SHA-256 and Debian copyright/license data.",
+      "status": "repository snapshot pinned; package closure/rootfs not generated"
+    }
+  ],
+  "reproducibility_gaps": [
+    "Debian container image digest and complete transitive .deb hash closure",
+    "EDK II/Mu manifest-selected dependencies and pip wheel hashes",
+    "Linux patch hashes/order/config and successful applicability to v6.18.60",
+    "Cargo.lock and crate license inventory",
+    "rootfs package list and package hashes",
+    "MiSeed board-config L2 builds and independent artifact reproduction; current generic defconfig is only a toolchain smoke build"
+  ]
+}
