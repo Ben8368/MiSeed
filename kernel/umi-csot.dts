@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * MiSeed's first board build target for Xiaomi Mi 10 (umi, CSOT reference).
+ * The board ID and inherited ABL framebuffer are from the tested upstream
+ * headless boot reference at misaka-link/umi-linux@cf83073887899f485a5c606f9842c5e691ea796c.
+ * They are reference inputs, not measurements from this MiSeed device.
+ */
+/dts-v1/;
+
+#include <dt-bindings/arm/qcom,ids.h>
+#include "sm8250.dtsi"
+#include "pm8150.dtsi"
+#include "pm8150b.dtsi"
+#include "pm8150l.dtsi"
+#include "pm8009.dtsi"
+
+/ {
+	model = "Xiaomi Mi 10 (CSOT, MiSeed L2)";
+	compatible = "xiaomi,umi", "qcom,sm8250";
+	chassis-type = "handset";
+	qcom,msm-id = <QCOM_ID_SM8250 0x20001>;
+	qcom,board-id = <0x2b 0>;
+
+	/* ABL's stock overlay expects this alias for the ARM architectural timer. */
+	arch_timer: timer { };
+
+	/* ABL is expected to fill the zero-sized RAM range from its memory map. */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x0>;
+	};
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		framebuffer: framebuffer@9c000000 {
+			compatible = "simple-framebuffer";
+			reg = <0x0 0x9c000000 0x0 0x2300000>;
+			width = <1080>;
+			height = <2340>;
+			stride = <4320>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	/* Keep the inherited ABL splash buffer out of the Linux allocator. */
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		cont-splash@9c000000 {
+			reg = <0x0 0x9c000000 0x0 0x2300000>;
+			no-map;
+		};
+	};
+
+	#include "umi-csot-abl-anchors.dtsi"
+};

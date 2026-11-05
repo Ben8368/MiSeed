@@ -1,8 +1,56 @@
 {
   "schema_version": 1,
   "lock_date": "2026-11-05",
-  "lock_status": "revision-pinned; build-closure-incomplete",
-  "scope": "Reviewed upstream identities and selected reference snapshots. This is not a claim that code was imported, patches apply, or a product build succeeded.",
+  "lock_status": "revision-pinned; first-board-boot-l2-profile-compiled; full-build-closure-incomplete",
+  "scope": "Reviewed upstream identities and selected reference snapshots. The first arm64 Linux/CSOT Android boot image L2 profile is recorded below; full transitive toolchain closure and MiSeed device boot remain unverified.",
+  "build_profiles": [
+    {
+      "id": "umi-csot-boot-l2",
+      "kernel_source": "linux-stable@f45ed76d6791cf72ff1265ee93511175bbbc2f18",
+      "device_reference": "misaka-umi-linux-tested-reference@cf83073887899f485a5c606f9842c5e691ea796c",
+      "device_reference_scope": "Upstream-reported Xiaomi Mi 10 umi/CSOT ABL header-v2 boot; not MiSeed L3 evidence.",
+      "boot_header_template": {
+        "url": "https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img",
+        "sha256": "a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a",
+        "use": "metadata-only Android v2 header template; kernel, ramdisk, DTB and cmdline payloads are replaced"
+      },
+      "project_inputs": {
+        "dts": "kernel/umi-csot.dts",
+        "config": "kernel/umi-l2.config",
+        "init": "kernel/rescue_init.c",
+        "build_script": "tools/build_kernel_l2.sh",
+        "anchor_extractor": "tools/extract_abl_anchors.py",
+        "header_dtb_extractor": "tools/extract_boot_v2_dtb.py",
+        "initramfs_builder": "tools/make_initramfs.py",
+        "boot_packer": "tools/pack_android_boot_v2.py"
+      },
+      "input_sha256": {
+        "kernel/umi-csot.dts": "3f9f2f6f4e065b413ab564a479586974e39ce70595f05ffa4b2b4d1d91ad9f1e",
+        "kernel/umi-l2.config": "e0179269cebe333571fb3eb506a1dda94e56980cdd73164f9b01c37e89814ff8",
+        "kernel/rescue_init.c": "b405b5219883cec1c6ad0d089136cd16707c74bc8fccda7e8bff9a79b303d79f",
+        "tools/build_kernel_l2.sh": "efb7eef8ff3975a29f58a5c90423e6b53890978801c534042d8cc4223bab8395",
+        "tools/extract_abl_anchors.py": "982c84ac14d319f68b9dbda47e8c1d1491c15977c5893562d5b0f64099b18a48",
+        "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
+        "tools/make_initramfs.py": "644d4cbcffc58aaf02715af9d6e2dbe45df2072dd2c3cfffafe5694a6c95dbf3",
+        "tools/pack_android_boot_v2.py": "9db5259e94a73afd5847baa8d452fbe4bdfde372b016da4cce16d7397f8f48f51",
+        "LICENSES/BSD-3-Clause.txt": "8f0e2dfa56521e68f247ea8772f3f83eb9db045a793a8d6061bfb7803a69489b",
+        "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+      },
+      "generated_artifacts": {
+        "abl_anchor_include_sha256": "9f196b3a82932dbb581c623a41e670f6dfed00bb1bfeff60d3228732f7cb9a23",
+        "resolved_config_sha256": "4fbf7e199be9af3edb8e178a73b1e0988ebff89e2eaebf1cea7780482609e8fe",
+        "kernel_image_gz_sha256": "05fd0e5204a9227ef05f5ed53f3ad844e439212a73ceafbbd408ffc8d3fc4c16",
+        "rescue_initramfs_sha256": "a607bfac326c2f7791b145320ba4cabec0eb4d3088095489b3b3159bd263395d",
+        "dtb_sha256": "48580c7e16ecea2ec976a8830c4fad2cfbfbac2a615e2c16fc69847dc24a7734",
+        "boot_img_sha256": "5a05d0ddb3669e8e1218a302f9bf7dd98b91998bbbf7e455d31bcdcf4bf89486",
+        "boot_img_size_bytes": 15876096
+      },
+      "project_code_license": "AGPL-3.0-only",
+      "dts_license": "BSD-3-Clause",
+      "build": "arm64 Image.gz, dtc -@ qcom/umi-csot.dtb, static rescue initramfs, Android boot header v2; WSL2 Ubuntu 24.04 x86_64, GCC 13.3.0, GNU make 4.3",
+      "status": "Local boot L2 compiled and header/segment read-back verified. Host artifact does not prove MiSeed boot; actual memory handoff, ABL behavior, CI, full package hashes and MiSeed RAM test remain open."
+    }
+  ],
   "sources": [
     {
       "id": "linux-stable",
@@ -16,7 +64,7 @@
       "included_paths": [],
       "submodules": [],
       "patches": [],
-      "verification": "Official stable tag resolved with git ls-remote; tag signature and source archive checksum must be verified when materialized. Generic arm64 defconfig Image built in WSL with Ubuntu GCC 13.3.0; the selected Debian GCC 14.2 and Umi board config remain untested."
+      "verification": "Official stable tag resolved with git ls-remote; exact commit materialized from the pinned revision. MiSeed Umi/CSOT arm64 Image.gz and DTB compiled locally with Ubuntu GCC 13.3.0; selected Debian GCC 14.2, full package closure, independent reproduction and device boot remain unverified."
     },
     {
       "id": "edk2",
@@ -102,12 +150,26 @@
       "tag": null,
       "revision": "cf83073887899f485a5c606f9842c5e691ea796c",
       "license": "GPL-2.0-only",
-      "license_evidence": ["LICENSE", "per-file SPDX headers; CSOT DTS declares BSD-3-Clause"],
+      "license_evidence": ["LICENSE", "per-file SPDX headers; CSOT DTS declares BSD-3-Clause; adapted board properties are accompanied by LICENSES/BSD-3-Clause.txt"],
       "role": "device-tested CSOT boot-chain reference; do not import as a whole or claim MiSeed validation",
       "included_paths": ["boot-build/", "rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-csot.dts"],
       "submodules": [],
       "patches": [],
       "verification": "Pinned public source inspected, including the CSOT DTS and boot build implementation. Upstream README reports testing on umi/CSOT with ABL boot-header-v2, kernel/initrd/DTB, dtc -@ symbols and stock DTBO. Treat those as upstream-reported device results; MiSeed has not booted this input. Panel driver and touchscreen are reported unsupported."
+    },
+    {
+      "id": "misaka-umi-boot-header-template",
+      "url": "https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img",
+      "tag": "v2026-09-27",
+      "revision": null,
+      "sha256": "a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a",
+      "license": "GPL-2.0-only",
+      "license_evidence": ["misaka-link/umi-linux LICENSE at pinned source revision"],
+      "role": "metadata-only Android boot header v2 template; payload bytes are never copied into MiSeed output",
+      "included_paths": [],
+      "submodules": [],
+      "patches": [],
+      "verification": "Release asset SHA-256 checked before parsing. The build reads v2 header fields and source DTB symbol names only; it replaces kernel, ramdisk, DTB and command line, and never executes or distributes the reference image."
     }
   ],
   "unlocked_inputs": [
