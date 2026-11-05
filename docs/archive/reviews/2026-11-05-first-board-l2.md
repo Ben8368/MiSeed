@@ -60,3 +60,11 @@ MISEED_WORK_ROOT=/tmp/miseed-boot-l2 MISEED_OUTPUT_ROOT=/tmp/miseed-boot-l2/arti
 - Ubuntu 24.04 直接 apt 版本已钉住；完整依赖包哈希、runner 镜像 digest、独立复建和同 HEAD 远端 CI 仍开放。
 - GitHub branch protection API 曾返回 403。本项目分支保护依维护者决定，等项目跑通且仓库公开后再设置并核验；当前延期不是已启用的保护。
 - 本轮只生成文件，没有启动设备、刷写分区或改动供电设置。未推送、未创建 PR、未提交。
+
+## Hosted CI 超时后的构建基线复核（2026-11-05）
+
+PR #1 首次 GitHub Actions Boot L2 job（run `42039446452`）在 30 分钟上限被取消。日志最后位于 `drivers/mtd` / `drivers/net`，无编译错误；原因是上一版构建脚本从全 ARM64 `defconfig` 开始，启用了与 Umi 板无关的大量驱动。构建脚本改为 `allnoconfig` 后合并 MiSeed 板级配置片段，并断言救援 init ELF、Qualcomm GENI 串口控制台及 DT overlay 等必要配置。
+
+复核环境为同一 Windows x64 + WSL2 Ubuntu 24.04 x86_64 / GCC 13.3.0 / GNU make 4.3。命令：`bash tools/build_kernel_l2.sh`，退出码 0。输出 `.work/boot-l2/boot.img` 2,453,504 字节，SHA-256 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`；resolved `.config` SHA-256 `5074b89c39e6904c84ae3d5edf11c500c88e3bee7a1bf7c482c8238818da0e42`；`Image.gz` SHA-256 `a1f99ae27e457e59ac323479e46f0c1d8898908d98a0bb8a1ff057944d4fc975`。DTB 152 个锁定 ABL overlay symbols 回读通过，Android v2 boot 段打包通过。
+
+构建跨 WSL `/tmp` 与 Windows `/mnt/c` 路径时 GNU make 输出 `Clock skew detected` 警告，产物哈希已生成；GitHub Ubuntu runner 不使用该跨文件系统路径，仍需远端同 HEAD CI 证实。新镜像仍仅为 L2，未做 VM 或真机启动；维护者后续自行 RAM 测试前不宣称启动成功。

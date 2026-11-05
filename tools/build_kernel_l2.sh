@@ -74,11 +74,11 @@ grep -Fqx 'dtb-y += umi-csot.dtb' "$qcom_dts_dir/Makefile" || printf '\ndtb-y +=
 grep -Fqx 'DTC_FLAGS_umi-csot += -@' "$qcom_dts_dir/Makefile" || printf 'DTC_FLAGS_umi-csot += -@\n' >> "$qcom_dts_dir/Makefile"
 
 mkdir -p "$build_tree"
-make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- allnoconfig
 "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
     "$build_tree/.config" "$config_fragment"
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-for option in ARCH_QCOM BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY; do
+for option in ARCH_QCOM BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "resolved config lost CONFIG_${option}"
 done
 
