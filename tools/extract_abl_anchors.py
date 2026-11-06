@@ -61,10 +61,10 @@ def included_labels(entry: Path, include_root: Path) -> set[str]:
 
 
 def main() -> int:
-    if len(sys.argv) not in (5, 6):
-        print("usage: extract_abl_anchors.py INPUT.dtb OUTPUT.dtsi BASE.dts INCLUDE_ROOT [VERIFY.dtb]", file=sys.stderr)
+    if len(sys.argv) not in (6, 7):
+        print("usage: extract_abl_anchors.py INPUT.dtb OUTPUT.dtsi BASE.dts INCLUDE_ROOT DTBO_TARGETS.txt [VERIFY.dtb]", file=sys.stderr)
         return 2
-    src, dst, base_dts, include_root = map(Path, sys.argv[1:5])
+    src, dst, base_dts, include_root, target_file = map(Path, sys.argv[1:6])
     ref_symbols = symbols(src)
     names = []
     for name, path in ref_symbols.items():
@@ -75,28 +75,40 @@ def main() -> int:
     names = list(dict.fromkeys(names))
     if len(names) < 152:
         raise SystemExit(f"expected at least 152 ABL anchors, found {len(names)}")
+    abl_reference_count = len(names)
+    target_names: list[str] = []
+    for line_number, raw_line in enumerate(target_file.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", line):
+            raise SystemExit(f"invalid DTBO target symbol at {target_file}:{line_number}: {line!r}")
+        target_names.append(line)
+    if len(target_names) != 241 or len(set(target_names)) != len(target_names):
+        raise SystemExit(f"expected 241 unique DTBO target symbols, found {len(target_names)} lines / {len(set(target_names))} unique")
+    names = list(dict.fromkeys(names + target_names))
     existing = included_labels(base_dts, include_root)
     missing_names = [name for name in names if name not in existing]
     content = [
         "/* SPDX-License-Identifier: GPL-2.0-only */",
-        "/* Empty ABL overlay targets; names extracted from the locked CSOT reference DTB.",
-        " * No upstream properties or boot payload are included. */",
+        "/* Empty ABL overlay targets; names extracted from the locked CSOT reference DTB and",
+        " * the local UMI DTBO reference symbol list. No overlay properties or boot payloads included. */",
         "abl_ovf {",
     ]
     content.extend(f"\t\t{name}: ovf{i} {{ }};" for i, name in enumerate(missing_names))
     content.append("\t};")
     generated = "\n".join(content) + "\n"
-    if len(sys.argv) == 6:
+    if len(sys.argv) == 7:
         if not dst.is_file() or dst.read_text(encoding="utf-8") != generated:
             raise SystemExit("generated ABL anchor include differs from the locked DTS inputs")
-        built_symbols = symbols(Path(sys.argv[5]))
+        built_symbols = symbols(Path(sys.argv[6]))
         unresolved = sorted(set(names) - set(built_symbols))
         if unresolved:
             raise SystemExit(f"DTB is missing {len(unresolved)} reference overlay symbols: {', '.join(unresolved[:8])}")
-        print(f"verified all {len(names)} locked ABL overlay symbols in the built DTB")
+        print(f"verified {abl_reference_count} ABL reference anchors and all {len(target_names)} DTBO target symbols in the built DTB")
     else:
         dst.write_text(generated, encoding="utf-8", newline="\n")
-        print(f"wrote {len(missing_names)} empty ABL overlay anchors; {len(names) - len(missing_names)} symbols already exist in the Linux DTS")
+        print(f"wrote {len(missing_names)} empty overlay anchors for {abl_reference_count} ABL reference anchors and {len(target_names)} DTBO targets; {len(names) - len(missing_names)} symbols already exist in the Linux DTS")
     return 0
 
 

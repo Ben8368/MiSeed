@@ -36,10 +36,10 @@
       "version": "Ubuntu 24.04 WSL2 x86_64 / GCC 13.3.0 / GNU make 4.3",
       "url": "https://packages.ubuntu.com/noble/",
       "host": "WSL2 Ubuntu 24.04 x86_64; GitHub Actions ubuntu-24.04 runner",
-      "target": "Linux v6.18.60 arm64 Image.gz, MiSeed CSOT DTB with ABL symbols, static rescue initramfs and Android boot header v2 image",
+      "target": "Linux v6.18.60 arm64 uncompressed Image, MiSeed CSOT DTB with ABL symbols, static rescue initramfs and Android boot header v2 image (128 MiB cap)",
       "install": "CI pins versioned and generic AArch64 GCC entry points, binutils, make, bc, bison, flex, libssl-dev, libelf-dev, libc6-dev-arm64-cross and device-tree-compiler; transitive package hashes are pending.",
-      "verification": "tools/build_kernel_l2.sh verifies the Linux commit, cross GCC 13.3.0 and make 4.3; local WSL2 and GitHub Actions run 42046511356 both completed L2 with identical boot.img SHA-256. Resolve and record runner image and transitive package hashes before claiming a fully reproducible environment.",
-      "status": "Local WSL2 and hosted Ubuntu 24.04 boot L2 compiled with identical artifact hash; actual RAM boot, hosted runner digest and full apt package hash closure remain unverified."
+      "verification": "tools/build_kernel_l2.sh verifies the Linux commit, cross GCC 13.3.0 and make 4.3; current local WSL2 L2 uses uncompressed Image. Earlier hosted run 42046511356 covered the prior Image.gz artifact only. Resolve runner image and transitive package hashes before claiming a fully reproducible environment.",
+      "status": "Local WSL2 raw-Image boot L2 compiled; raw-Image profile CI, device boot, hosted runner digest and full apt package hash closure remain unverified."
     },
     {
       "id": "python-host",

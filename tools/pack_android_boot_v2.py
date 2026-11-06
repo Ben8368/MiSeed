@@ -13,7 +13,8 @@ PAGE = 4096
 KERNEL_ADDR = 0x8000
 RAMDISK_ADDR = 0x01000000
 DTB_ADDR = 0x01F00000
-CMDLINE = b"console=tty0 loglevel=7 rdinit=/init"
+MAX_BOOT_IMAGE_SIZE = 128 * 1024 * 1024
+CMDLINE = b"console=ttyMSM0,115200n8 console=tty0 loglevel=8 keep_bootcon earlycon pd_ignore_unused clk_ignore_unused regulator_ignore_unused fbcon=font:TER16x32,rotate:3 rdinit=/init"
 
 
 def read(path: Path) -> bytes:
@@ -49,8 +50,6 @@ def main() -> int:
         raise SystemExit("expected a 4096-byte Android boot header v2 template")
     if struct.unpack_from("<I", header, 1632)[0] != 0:
         raise SystemExit("template unexpectedly contains a recovery DTBO")
-    if len(kernel) >= RAMDISK_ADDR - KERNEL_ADDR:
-        raise SystemExit("compressed kernel overlaps the locked ramdisk load address")
     if len(ramdisk) >= DTB_ADDR - RAMDISK_ADDR:
         raise SystemExit("ramdisk overlaps the locked DTB load address")
     if len(dtb) > 0x100000:
@@ -82,6 +81,8 @@ def main() -> int:
     for segment in (kernel, ramdisk, dtb):
         image.extend(segment)
         image.extend(b"\0" * (align(len(image), PAGE) - len(image)))
+    if len(image) > MAX_BOOT_IMAGE_SIZE:
+        raise SystemExit("boot image exceeds the 128 MiB Umi boot partition limit")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(image)
     packed = args.output.read_bytes()

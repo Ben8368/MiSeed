@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
-  "lock_date": "2026-11-05",
-  "lock_status": "revision-pinned; first-board-boot-l2-profile-compiled; full-build-closure-incomplete",
-  "scope": "Reviewed upstream identities and selected reference snapshots. The first arm64 Linux/CSOT Android boot image L2 profile is recorded below; full transitive toolchain closure and MiSeed device boot remain unverified.",
+  "lock_date": "2026-11-06",
+  "lock_status": "revision-pinned; rotate:3 display/camera avoidance L3; configfs ACM COM6/help verified on f7d50a25; Android→Fastboot→Android verified; PON diagnostic bac940c2 RAM-booted with no host USB enumeration; expanded kmsg/PMIC diagnosis image 7c0c67ac built and awaits RAM boot; PON handoff and charging remain unverified",
+  "scope": "Reviewed upstream identities and selected reference snapshots. Linux/CSOT profile includes early console, forced diagnostic command line, USB CDC-ACM, SM8250 providers, Qualcomm PON reboot-mode, and framebuffer console at L2. Rotate:3 display/camera avoidance and CDC-ACM serial enumeration/console are L3 on f7d50a25. Android→Fastboot→Android passed. PON diagnostic image bac940c2 was RAM-booted from detected umi Fastboot and returned Sending/Booting OKAY; photo confirmed DT mode-bootloader=2, no qcom,pm8998-pon platform device, and empty /sys/class/udc. Host had no ACM/ADB/Fastboot enumeration. Latest image 7c0c67ac adds recent kmsg and PMIC driver-directory diagnostics, built but not yet RAM-booted. PON handoff and charging remain unverified.",
   "build_profiles": [
     {
       "id": "umi-csot-boot-l2",
       "kernel_source": "linux-stable@f45ed76d6791cf72ff1265ee93511175bbbc2f18",
       "device_reference": "misaka-umi-linux-tested-reference@cf83073887899f485a5c606f9842c5e691ea796c",
+      "board_support_reference": "colorgarden-umi-reference@5fa2e0048f89b82355d2a9de89c1d74ab9910959",
       "device_reference_scope": "Upstream-reported Xiaomi Mi 10 umi/CSOT ABL header-v2 boot; not MiSeed L3 evidence.",
       "boot_header_template": {
         "url": "https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img",
@@ -22,33 +23,42 @@
         "anchor_extractor": "tools/extract_abl_anchors.py",
         "header_dtb_extractor": "tools/extract_boot_v2_dtb.py",
         "initramfs_builder": "tools/make_initramfs.py",
-        "boot_packer": "tools/pack_android_boot_v2.py"
+        "boot_packer": "tools/pack_android_boot_v2.py",
+        "dtbo_targets": "kernel/umi-csot-dtbo-targets.txt"
       },
       "input_sha256": {
-        "kernel/umi-csot.dts": "3f9f2f6f4e065b413ab564a479586974e39ce70595f05ffa4b2b4d1d91ad9f1e",
-        "kernel/umi-l2.config": "e0179269cebe333571fb3eb506a1dda94e56980cdd73164f9b01c37e89814ff8",
-        "kernel/rescue_init.c": "b405b5219883cec1c6ad0d089136cd16707c74bc8fccda7e8bff9a79b303d79f",
-        "tools/build_kernel_l2.sh": "efb7eef8ff3975a29f58a5c90423e6b53890978801c534042d8cc4223bab8395",
-        "tools/extract_abl_anchors.py": "982c84ac14d319f68b9dbda47e8c1d1491c15977c5893562d5b0f64099b18a48",
+        "kernel/umi-csot.dts": "89972b4c14693ac774f432737a2f210ed690eea7597aed0b5705bdf147e7d9b0",
+        "kernel/umi-l2.config": "e508fbd091e80864c705c997cfd30565e94b78125e212d5b096981f862c3cab4",
+        "kernel/rescue_init.c": "b16c29b09b36486545b02c86ad409158621b32505a419b0c30d3f8747bc79372",
+        "tools/build_kernel_l2.sh": "859350ddbbd370a2e003fdca5bac9cc91187e09492d6ed602e4260c2f7ae5a35",
+        "tools/extract_abl_anchors.py": "971c781396c3472520aabcb10cad4a7c46964e5bc560ae6ed1d397397198adae",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
         "tools/make_initramfs.py": "644d4cbcffc58aaf02715af9d6e2dbe45df2072dd2c3cfffafe5694a6c95dbf3",
-        "tools/pack_android_boot_v2.py": "9db5259e94a73afd5847baa8d452fbe4bdfde372b016da4cce16d7397f8f48f51",
+        "tools/pack_android_boot_v2.py": "c2f659c5eccc29aed2ffc7e721599b0710c13bb93c034c8331915dcd584629cd",
         "LICENSES/BSD-3-Clause.txt": "8f0e2dfa56521e68f247ea8772f3f83eb9db045a793a8d6061bfb7803a69489b",
-        "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
-      },
-      "generated_artifacts": {
-        "abl_anchor_include_sha256": "9f196b3a82932dbb581c623a41e670f6dfed00bb1bfeff60d3228732f7cb9a23",
-        "resolved_config_sha256": "4fbf7e199be9af3edb8e178a73b1e0988ebff89e2eaebf1cea7780482609e8fe",
-        "kernel_image_gz_sha256": "05fd0e5204a9227ef05f5ed53f3ad844e439212a73ceafbbd408ffc8d3fc4c16",
-        "rescue_initramfs_sha256": "a607bfac326c2f7791b145320ba4cabec0eb4d3088095489b3b3159bd263395d",
-        "dtb_sha256": "48580c7e16ecea2ec976a8830c4fad2cfbfbac2a615e2c16fc69847dc24a7734",
-        "boot_img_sha256": "5a05d0ddb3669e8e1218a302f9bf7dd98b91998bbbf7e455d31bcdcf4bf89486",
-        "boot_img_size_bytes": 15876096
+        "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
+        "kernel/umi-csot-dtbo-targets.txt": "3c8483b0996bed1b757bba6ad68b5439c5c168c8bb3bec586ce48e603e0d5dd1"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
-      "build": "arm64 Image.gz, dtc -@ qcom/umi-csot.dtb, static rescue initramfs, Android boot header v2; WSL2 Ubuntu 24.04 x86_64, GCC 13.3.0, GNU make 4.3",
-      "status": "Local boot L2 compiled and header/segment read-back verified. Host artifact does not prove MiSeed boot; actual memory handoff, ABL behavior, CI, full package hashes and MiSeed RAM test remain open."
+      "build": "arm64 uncompressed Image (VA48/PA48) with forced diagnostic command line, GENI earlycon/console, configfs USB CDC-ACM (legacy g_serial disabled to avoid UDC contention), RPMh PHY rails, Qualcomm PON reboot-mode, and ABL framebuffer console; dtc -@ qcom/umi-csot.dtb; static rescue initramfs; Android boot header v2; WSL2 Ubuntu 24.04 x86_64, GCC 13.3.0, GNU make 4.3",
+      "status": "Baseline f7d50a25 L2/L3 confirms rotate:3 framebuffer, configfs ACM, Windows COM6, and MiSeed help console. Android→Fastboot→Android passed. Current PDC-disabled diagnostic image 33b986f6 was RAM-booted; COM6 is present. Serial status confirms PON DT mode-bootloader=0x2, PMIC child nodes default available with valid two-cell reg properties, but c440000.spmi has no bound driver, /sys/bus/spmi/devices is empty, and qcom,pm8998-pon platform device is missing. CONFIG_QCOM_PDC=y candidate built at L2 but two RAM boots had no USB enumeration, with Android ADB returning once; PDC option was removed from current config. PON handoff, charging, and direct Linux→Fastboot remain incomplete; fallback Linux→Android→Fastboot→Android passed L3.",
+      "dtbo_symbol_reference": {
+        "origin": "Local Xiaomi UMI MIUI OS1.0.7.0.TJBCNXM package, firmware-update/dtbo.img",
+        "sha256": "d6a6f4c07d7ce88f6213cfed0cee26d55f908e8eff38675faadc6f6e4671eee6",
+        "archive": ".work/miui_UMI_OS1.0.7.0.TJBCNXM_2cc115c0ee_13.0.zip (local reference; not part of project inputs)",
+        "use": "Extracted 241 overlay target symbol names only as input data for symbol anchors; no DTBO binary, overlay properties, or payloads are copied into the build. This MIUI reference is not verified as the DTBO installed on the connected LOS device."
+      },
+      "generated_artifacts": {
+        "abl_anchor_include_sha256": "faad288a83a353234f0fd8b0300e9fdf18bdddf41463401091d31a4d77480361",
+        "resolved_config_sha256": "8c6e7caac2f17f1e657bf9eedb228130ce57394524c5fd8006eeeb99a1822c9a",
+        "kernel_image_sha256": "45b4e25540d5c877869eca06c8372acea995abdb91bb8ba6259bffd696dfe9d1",
+        "rescue_initramfs_sha256": "84c5eb874bbce40e8848ec1e144b152eb2f798e0217fe85b9cd6f99d91a3cd67",
+        "dtb_sha256": "32331bad24d382f7f3be99b8ed330b0a84a1ec4132bf1a5843c180e3408993e3",
+        "dtbo_target_symbol_count": 241,
+        "boot_img_sha256": "33b986f64a57b4ee8d1c5528e657c3bc38e85f0ac40faf5700dd4ad9f76a3d6c",
+        "boot_img_size_bytes": 7131136
+      }
     }
   ],
   "sources": [
@@ -59,7 +69,10 @@
       "tag_object": "16829bf498b811706e98e480879e3fe1754d797e",
       "revision": "f45ed76d6791cf72ff1265ee93511175bbbc2f18",
       "license": "GPL-2.0-only",
-      "license_evidence": ["COPYING", "LICENSES/preferred/GPL-2.0"],
+      "license_evidence": [
+        "COPYING",
+        "LICENSES/preferred/GPL-2.0"
+      ],
       "role": "selected kernel baseline; LTS branch",
       "included_paths": [],
       "submodules": [],
@@ -72,7 +85,9 @@
       "tag": null,
       "revision": "561c006ac6bb962d8e53b369b6a6a01d2d9ae579",
       "license": "BSD-2-Clause-Patent",
-      "license_evidence": ["License.txt"],
+      "license_evidence": [
+        "License.txt"
+      ],
       "role": "selected upstream UEFI framework snapshot; board port not selected",
       "included_paths": [],
       "submodules": [],
@@ -85,12 +100,25 @@
       "tag": null,
       "revision": "5fa2e0048f89b82355d2a9de89c1d74ab9910959",
       "license": "LicenseRef-Mixed",
-      "license_evidence": ["LICENSE", "LICENSES/", "DTS and driver SPDX headers"],
-      "role": "board support reference only; not yet converted into reviewed patches",
-      "included_paths": ["dts/sm8250-xiaomi-umi*.dts[i]", "patches/panel-xiaomi-umi.c", "docs/DISPLAY.md", "docs/TOUCH.md"],
+      "license_evidence": [
+        "LICENSE",
+        "LICENSES/",
+        "DTS and driver SPDX headers"
+      ],
+      "role": "board support reference; selected Umi DTS properties adapted for reserved-memory and USB/UART L2; no panel driver imported",
+      "included_paths": [
+        "dts/sm8250-xiaomi-umi*.dts[i]",
+        "patches/panel-xiaomi-umi.c",
+        "docs/DISPLAY.md",
+        "docs/TOUCH.md"
+      ],
       "submodules": [],
       "patches": [],
-      "verification": "Exact master commit checked against the repository remote. Per-file license and applicability to Linux v6.18.60 are not fully reviewed or tested."
+      "verification": "Exact commit checked against the repository remote; adapted DTS is BSD-3-Clause. Mixed-license panel/touch code was not imported. Read the pinned diagnostic config and report for early-console and boot-argument hypotheses; only standard options were selected for MiSeed, with no reference config or runtime claims imported. This bring-up pass also references the pinned Umi early-board support set to select SM8250 clocks, RPMh power domains, interconnect, SMMU, PMIC arbiter, and large fbcon font/rotation options; no upstream DTS/config file is copied into the project.",
+      "reviewed_paths": {
+        "config/umi.config": "7f71cb347672113e11906d810b3412812be040de33ea82ff2170ecdbe9733578",
+        "docs/DIAGNOSIS.md": "06c207a5b31803a3e1d2b4ce5e50047dc7eac5ca509ce617badcdf1036b48333"
+      }
     },
     {
       "id": "mu-silicium-reference",
@@ -98,10 +126,20 @@
       "tag": null,
       "revision": "6b3d90b79e191e08171bfedd3980234a7e49d340",
       "license": "LicenseRef-Mixed",
-      "license_evidence": ["repository README", "GPLDrivers/", "GPLApplications/", "GPLLibrary/", "Binaries submodule declaration"],
+      "license_evidence": [
+        "repository README",
+        "GPLDrivers/",
+        "GPLApplications/",
+        "GPLLibrary/",
+        "Binaries submodule declaration"
+      ],
       "role": "Mu manifest/platform reference only; dependency closure not adopted",
-      "included_paths": ["Platforms/Xiaomi/umiPkg/"],
-      "submodules": ["Binaries (exact gitlink not recorded in this research lock)"],
+      "included_paths": [
+        "Platforms/Xiaomi/umiPkg/"
+      ],
+      "submodules": [
+        "Binaries (exact gitlink not recorded in this research lock)"
+      ],
       "patches": [],
       "verification": "Exact main commit checked against remote; recursive submodules and manifest-selected dependency revisions remain to be resolved."
     },
@@ -111,7 +149,9 @@
       "tag": null,
       "revision": "6f805f26a4366fe56790130dc2f8f3e1b4c2fe28",
       "license": "BSD-2-Clause-Patent",
-      "license_evidence": ["License.txt"],
+      "license_evidence": [
+        "License.txt"
+      ],
       "role": "Mu dependency reference only; not selected independently of manifest",
       "included_paths": [],
       "submodules": [],
@@ -124,7 +164,9 @@
       "tag": null,
       "revision": "fd0a4a741a93566508cc75521d161351d77d1f0a",
       "license": "BSD-2-Clause-Patent",
-      "license_evidence": ["License.txt"],
+      "license_evidence": [
+        "License.txt"
+      ],
       "role": "Mu platform reference only; not selected independently of manifest",
       "included_paths": [],
       "submodules": [],
@@ -137,9 +179,16 @@
       "tag": null,
       "revision": "727f6c26347055ab70eac2104e6a4edc80c8d556",
       "license": "BSD-3-Clause",
-      "license_evidence": ["LICENSE", "SPDX headers"],
+      "license_evidence": [
+        "LICENSE",
+        "SPDX headers"
+      ],
       "role": "implementation reference only; not a fork or build input",
-      "included_paths": ["Platforms/Xiaomi/umiPkg/", "Drivers/InheritedFbDxe/", "BootShim/"],
+      "included_paths": [
+        "Platforms/Xiaomi/umiPkg/",
+        "Drivers/InheritedFbDxe/",
+        "BootShim/"
+      ],
       "submodules": [],
       "patches": [],
       "verification": "Exact main commit checked against remote. Associated XNU validation is not MiSeed Linux validation."
@@ -150,9 +199,15 @@
       "tag": null,
       "revision": "cf83073887899f485a5c606f9842c5e691ea796c",
       "license": "GPL-2.0-only",
-      "license_evidence": ["LICENSE", "per-file SPDX headers; CSOT DTS declares BSD-3-Clause; adapted board properties are accompanied by LICENSES/BSD-3-Clause.txt"],
+      "license_evidence": [
+        "LICENSE",
+        "per-file SPDX headers; CSOT DTS declares BSD-3-Clause; adapted board properties are accompanied by LICENSES/BSD-3-Clause.txt"
+      ],
       "role": "device-tested CSOT boot-chain reference; do not import as a whole or claim MiSeed validation",
-      "included_paths": ["boot-build/", "rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-csot.dts"],
+      "included_paths": [
+        "boot-build/",
+        "rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-csot.dts"
+      ],
       "submodules": [],
       "patches": [],
       "verification": "Pinned public source inspected, including the CSOT DTS and boot build implementation. Upstream README reports testing on umi/CSOT with ABL boot-header-v2, kernel/initrd/DTB, dtc -@ symbols and stock DTBO. Treat those as upstream-reported device results; MiSeed has not booted this input. Panel driver and touchscreen are reported unsupported."
@@ -164,7 +219,9 @@
       "revision": null,
       "sha256": "a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a",
       "license": "GPL-2.0-only",
-      "license_evidence": ["misaka-link/umi-linux LICENSE at pinned source revision"],
+      "license_evidence": [
+        "misaka-link/umi-linux LICENSE at pinned source revision"
+      ],
       "role": "metadata-only Android boot header v2 template; payload bytes are never copied into MiSeed output",
       "included_paths": [],
       "submodules": [],

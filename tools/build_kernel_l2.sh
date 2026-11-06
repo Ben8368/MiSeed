@@ -11,7 +11,7 @@ readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
 readonly source_cache="${work_root}/linux-stable.git"
 readonly source_tree="${work_root}/linux-source-${kernel_revision}"
-readonly build_tree="${output_root}/build"
+readonly build_tree="${MISEED_BUILD_ROOT:-${work_root}/build-${kernel_revision}}"
 readonly template="${work_root}/reference-boot-v2.img"
 readonly input_dts="${repo_root}/kernel/umi-csot.dts"
 readonly config_fragment="${repo_root}/kernel/umi-l2.config"
@@ -67,10 +67,11 @@ fi
 readonly qcom_dts_dir="$source_tree/arch/arm64/boot/dts/qcom"
 readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
+readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
 python3 "$repo_root/tools/extract_abl_anchors.py" \
-    "$reference_dtb" "$anchor_dtsi" "$input_dts" "$qcom_dts_dir"
+    "$reference_dtb" "$anchor_dtsi" "$input_dts" "$qcom_dts_dir" "$dtbo_targets"
 install -m 0644 "$input_dts" "$qcom_dts_dir/umi-csot.dts"
 install -m 0644 "$anchor_dtsi" "$qcom_dts_dir/umi-csot-abl-anchors.dtsi"
 grep -Fqx 'dtb-y += umi-csot.dtb' "$qcom_dts_dir/Makefile" || printf '\ndtb-y += umi-csot.dtb\n' >> "$qcom_dts_dir/Makefile"
@@ -81,12 +82,15 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
 "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
     "$build_tree/.config" "$config_fragment"
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-for option in ARCH_QCOM BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE; do
+for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL_SM8250 COMMON_CLK_QCOM SM_GCC_8250 QCOM_CLK_RPMH QCOM_RPMHPD QCOM_GDSC HWSPINLOCK QCOM_SMEM QCOM_LLCC INTERCONNECT INTERCONNECT_QCOM INTERCONNECT_QCOM_SM8250 INTERCONNECT_QCOM_OSM_L3 IOMMU_SUPPORT ARM_SMMU SPMI SPMI_MSM_PMIC_ARB MFD_SPMI_PMIC POWER_RESET_QCOM_PON BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE SERIAL_EARLYCON CMDLINE_FORCE FRAMEBUFFER_CONSOLE_ROTATION FONTS FONT_TER16x32 QCOM_COMMAND_DB QCOM_RPMH USB_GADGET USB_DWC3 USB_DWC3_QCOM USB_DWC3_GADGET USB_CONFIGFS USB_CONFIGFS_ACM U_SERIAL_CONSOLE PHY_QCOM_USB_SNPS_FEMTO_V2 REGULATOR REGULATOR_FIXED_VOLTAGE REGULATOR_QCOM_RPMH; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "resolved config lost CONFIG_${option}"
 done
+grep -Fqx 'CONFIG_ARM64_VA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit virtual addresses"
+grep -Fqx 'CONFIG_ARM64_PA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit physical addresses"
+grep -Fqx 'CONFIG_CMDLINE="console=ttyMSM0,115200n8 console=tty0 loglevel=8 keep_bootcon earlycon pd_ignore_unused clk_ignore_unused regulator_ignore_unused fbcon=font:TER16x32,rotate:3 rdinit=/init"' "$build_tree/.config" || fail "resolved config lost the forced diagnostic command line"
 
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-    -j"$jobs" Image.gz qcom/umi-csot.dtb
+    -j"$jobs" Image qcom/umi-csot.dtb
 
 readonly dtb="$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb"
 readonly symbols="$(fdtget "$dtb" /__symbols__ arch_timer 2>/dev/null || true)"
@@ -96,18 +100,18 @@ readonly symbol_count="$(fdtget -p "$dtb" /__symbols__ | wc -l)"
 (( anchor_count > 0 )) || fail "DTB has no placeholder anchors under /abl_ovf"
 (( symbol_count >= 152 )) || fail "DTB has only $symbol_count overlay symbols"
 python3 "$repo_root/tools/extract_abl_anchors.py" \
-    "$reference_dtb" "$anchor_dtsi" "$input_dts" "$qcom_dts_dir" "$dtb"
+    "$reference_dtb" "$anchor_dtsi" "$input_dts" "$qcom_dts_dir" "$dtbo_targets" "$dtb"
 [[ "$(fdtget "$dtb" / model)" == "Xiaomi Mi 10 (CSOT, MiSeed L2)" ]] || fail "unexpected board DTB model"
 
 readonly rescue_bin="$output_root/rescue-init"
 readonly initramfs="$output_root/rescue-initramfs.cpio.gz"
-readonly kernel_gz="$build_tree/arch/arm64/boot/Image.gz"
+readonly kernel_image="$build_tree/arch/arm64/boot/Image"
 aarch64-linux-gnu-gcc -Os -static -s -Wall -Wextra -Werror \
     -o "$rescue_bin" "$repo_root/kernel/rescue_init.c"
 python3 "$repo_root/tools/make_initramfs.py" --init "$rescue_bin" --output "$initramfs"
 python3 "$repo_root/tools/pack_android_boot_v2.py" \
     --template "$template" --template-sha256 "$boot_sha256" \
-    --kernel "$kernel_gz" --ramdisk "$initramfs" --dtb "$dtb" \
+    --kernel "$kernel_image" --ramdisk "$initramfs" --dtb "$dtb" \
     --output "$output_root/boot.img"
 
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
@@ -115,7 +119,7 @@ sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" 
     "$repo_root/tools/extract_boot_v2_dtb.py" "$config_fragment" \
     "$repo_root/kernel/rescue_init.c" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \
-    "$build_tree/.config" "$kernel_gz" "$initramfs" "$dtb" "$output_root/boot.img"
+    "$build_tree/.config" "$kernel_image" "$initramfs" "$dtb" "$output_root/boot.img"
 printf '\nLinux revision: %s\nReference report revision: %s\n' "$kernel_revision" "$reference_revision"
 printf 'Android header template SHA-256: %s (metadata only; payloads replaced)\n' "$boot_sha256"
 printf 'Compiler: %s\nBuild output: %s\n' "$(aarch64-linux-gnu-gcc --version | sed -n '1p')" "$output_root"
