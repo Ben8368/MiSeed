@@ -1,7 +1,7 @@
 # 当前状态
 
 确认日期：2026-11-06。WP2 首个 Umi/CSOT Android v2 `boot.img` 已由 PR hosted CI 和 Apple Silicon/Colima native arm64 构建，哈希均为 `e00640c5…d1e620c`；本机 RAM 启动返回 `Booting OKAY`，实际启动未确认，不能记为 L3。native arm64 4 并行本机复建 74.1 秒；apt 传递包哈希、runner digest 未闭合；详见 [验证记录](archive/reviews/2026-11-06-macos-build-fastboot.md)。
-分支 `codex/board-l2-closure` 面向 `main` 的 PR #1 保持 open，HEAD `dc5ad41e` 的 [CI run 7](https://github.com/Ben8368/MiSeed/actions/runs/42150777131) 六项检查全通过。设备/许可调查见 [WP1](archive/research/2026-11-05-wp1-input-review.md)；身份/NV 禁访、BL 重锁禁止。分支保护延期到项目跑通且仓库公开后再设置核验。
+分支 `codex/board-l2-closure` 面向 `main` 的 PR #1 保持 open，HEAD `be05ff3f` 的 [CI run 8](https://github.com/Ben8368/MiSeed/actions/runs/42151528210) 六项检查全通过。设备/许可调查见 [WP1](archive/research/2026-11-05-wp1-input-review.md)；身份/NV 禁访、BL 重锁禁止。分支保护延期到项目跑通且仓库公开后再设置核验。
 
 ## 近期优先级
 
