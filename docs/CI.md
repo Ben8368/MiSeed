@@ -19,6 +19,7 @@ workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 
 - Git 下扫描已跟踪和未忽略新文件；无 Git 时排除约定的本地目录。不能代替凭据扫描、许可审查、锚点/reference-style 链接与语义去重。
 - [check_commits.py](../tools/check_commits.py)：Git 原生 trailer 解析；只检查 PR base..head 的非 merge 新提交。自动检查中文标题与署名分类；正文语言、真实归属和 squash 消息需人工核对，规则见 [AI_RULES](AI_RULES.md)。
 - 校验/回归不联网、不访问手机；runner 和 setup-python 的工具获取仍依赖网络。产品构建覆盖缺口见 [TD-001](TECH_DEBT.md)。
+- macOS 本地产品 L2 使用 Colima/Rosetta 容器入口，命令和局限见[主机工具](HOST_TOOLS.md)；GitHub hosted L2 仍在 Ubuntu 24.04 执行。
 
 ## GitHub 接线
 

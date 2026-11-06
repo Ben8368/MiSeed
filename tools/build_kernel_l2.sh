@@ -24,6 +24,9 @@ fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"; }
 
 for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc dtc fdtget; do require "$tool"; done
+require nproc
+readonly jobs="${MISEED_JOBS:-$(nproc)}"
+[[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
 [[ -f "$input_dts" && -f "$config_fragment" ]] || fail "board DTS or config fragment is missing"
 [[ "$(aarch64-linux-gnu-gcc -dumpfullversion)" == "13.3.0" ]] || fail "expected aarch64-linux-gnu-gcc 13.3.0"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
@@ -83,7 +86,7 @@ for option in ARCH_QCOM BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS
 done
 
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-    -j"$(nproc)" Image.gz qcom/umi-csot.dtb
+    -j"$jobs" Image.gz qcom/umi-csot.dtb
 
 readonly dtb="$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb"
 readonly symbols="$(fdtget "$dtb" /__symbols__ arch_timer 2>/dev/null || true)"

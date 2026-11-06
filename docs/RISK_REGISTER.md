@@ -4,8 +4,8 @@
 
 | 编号 | 风险与现有证据 | 阻断边界 | 关闭条件 |
 | --- | --- | --- | --- |
-| RISK-001 / P1 | 采集观察到 `umi`/Mi 10、`kona`、Android/Lineage 元数据、`orange` 和 by-name 名称；采集仍为 PARTIAL。维护者报告 CSOT；misaka-link pinned CSOT 配置报告 umi ABL boot-header-v2 实机启动，已用于 MiSeed 设备契约。实际内存图、本机 ABL/DTBO、具体面板/触控、固件/槽位语义未知；DTS 仅沿用上游零长度 RAM 节点，依赖 ABL 填充 | 声称本机变体完全识别、原生面板/触控可用或 MiSeed 已真机启动 | 维护者 RAM 启动实测确认内存交接和 overlay 行为；本机面板/触控只在声称相应能力前核实；按阶段取得设备证据 |
-| RISK-002 / P1 | 首个 Umi/CSOT boot L2 已在 WSL2 编译并归档输入/产物哈希；runner digest、apt 传递包哈希、独立复建、CI 同 HEAD 结果和逐文件许可审计仍开放 | 可复现的完整 MiSeed 构建闭包、设备可启动或发布声明 | 闭合工具与依赖哈希/许可，PR 同 HEAD L2 CI 通过并独立重建一致；设备可启动声明另需维护者 RAM 测试 L3 |
+| RISK-001 / P1 | 采集观察到 `umi`/Mi 10、`kona`、Android/Lineage 元数据、`orange` 和 by-name 名称；采集仍为 PARTIAL。维护者报告 CSOT；misaka-link pinned CSOT 配置报告 umi ABL boot-header-v2 实机启动。当前镜像的 RAM 启动命令被 ABL 接受，但维护者只反馈黑屏/报错/重启的复合结果，未留错误原文；实际内存图、本机 ABL/DTBO、具体面板/触控、固件/槽位语义未知 | 声称本机变体完全识别、原生面板/触控可用或 MiSeed 已真机启动 | 维护者补齐屏幕/错误/ADB 证据并确认内存交接和 overlay 行为；面板/触控只在声称相应能力前核实；按阶段取得设备证据 |
+| RISK-002 / P1 | 首个 Umi/CSOT boot L2 已在 Ubuntu hosted CI、WSL2 和 Apple Silicon macOS/Colima-Rosetta 构建，镜像哈希一致；runner digest、apt 传递包哈希和逐文件许可审计仍开放 | 可复现的完整 MiSeed 构建闭包、设备可启动或发布声明 | 闭合工具与依赖哈希/许可，PR 同 HEAD L2 CI 通过并独立重建一致；设备可启动声明另需维护者 RAM 测试 L3 |
 | RISK-003 / P1（恢复限制） | 维护者报告曾以官方工具成功线刷且身份信息保持；官方包脚本静态审查未见身份/NV 目标，允许 `misc` 随官方流程更新。身份/NV 仍严格禁访；重锁 BL 绝对禁止。MiSeed 专用回退演练尚无 | 宣称 MiSeed 镜像已验证可回退；任何 BL 锁定操作 | 复用维护者既有官方恢复经验作回退依据，不要求重复官方流程；MiSeed 特有失败回退仅在后续获授权 L3 评估，流程始终维持 BL 解锁、排除 lock 脚本并保护身份/NV |
 | RISK-004 / P0 | 充电/温控保护与板级参数未核实 | 主动危险充电、超频、日用安全声明 | 参数来源与实际变体匹配、保护/错误路径审查及专项 L3 |
 | RISK-005 / P1 | 自有原创内容已按 ADR-0005 采用 AGPL-3.0-only；第三方逐文件许可、GPL-2.0-only 隔离、安装信息及适用网络源码义务仍需审查 | 第三方代码/固件导入与公开分发 | 保留来源/NOTICE，完成文件级兼容审查、对应源代码、安装信息和网络交互源码提供方案 |
