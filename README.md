@@ -9,6 +9,7 @@
 2. [当前状态](docs/CONTEXT.md)：确认已做、未做和近期优先级。
 3. [实施计划](docs/implementation-plan.md)：确认里程碑、工作包和开工输入；接口与语言分工查 [架构](docs/ARCHITECTURE.md)，救援行为查 [Recovery 契约](docs/RECOVERY.md)，本机核实与只读采集查 [设备契约](docs/platforms.md)。
 4. 修改前查 [协作规则](docs/AI_RULES.md) 和 [验收要求](docs/QUALITY.md)；引入外部实现时查 [来源规范](docs/PROVENANCE.md)。
+5. macOS L2 构建、ADB/Fastboot RAM 验证步骤查 [主机工具](docs/HOST_TOOLS.md)。
 
 ## 本地检查
 

@@ -2,24 +2,22 @@
 
 ## 本机身份
 
-设备字段按证据来源分类；用户自述和候选项目记录都不等于本机观测。来源及回退调查详见[WP1 输入调查](archive/research/2026-11-05-wp1-input-review.md)。
+设备字段按证据来源分类；详见[WP1 输入调查](archive/research/2026-11-05-wp1-input-review.md)。
 
 | 项 | 当前值 / 证据 | 待核实 |
 | --- | --- | --- |
-| 设备身份 | DEVICE_OBSERVED：`ro.product.device=umi`、`ro.product.model=Mi 10`、`ro.board.platform=kona`；USER_REPORTED：国行 / SM8250 | 精确 SKU、SM8250 标识、板号 |
+| 设备身份 | DEVICE_OBSERVED：`umi` / Mi 10 / `kona`；USER_REPORTED：国行、SM8250 | SKU、板号待核 |
 | 内存 | USER_REPORTED：12GB | 本机容量、保留区、ABL 占用 |
-| 存储 | USER_REPORTED：256GB；UPSTREAM_VERIFIED：UFS；DEVICE_OBSERVED：122 个 by-name 链接名，无 `_a`/`_b` 后缀，含系统、身份/NV 分区 | UFS/LUN 容量、分区大小、槽位语义；名称不证明可刷写性 |
-| 显示 | USER_REPORTED：CSOT；UPSTREAM_VERIFIED：misaka-link 在 umi/CSOT 配置上报告实机启动；其 DTS 为继承 ABL simple-framebuffer，panel 驱动关闭 | 本机 panel ID、DSC 型号/参数；上游仅支持 headless 显示路径，不证明本机原生 DRM panel 可用 |
+| 存储 | USER_REPORTED：256GB；UPSTREAM_VERIFIED：UFS；观测到 122 个 by-name 链接，无 A/B 后缀 | GPT/LUN 与分区未知；本地包 `boot` 128MiB，[研究](archive/research/2026-11-06-stock-boot-layout.md)；名称不证明可写 |
+| 显示 | USER_REPORTED：CSOT；DEVICE_OBSERVED：Android cmdline 报告 OLED panel ID 0B；MiSeed VA48/PA48 rotate:3 镜像 RAM boot 后，维护者确认 16×32 大字横向日志及倒转摄像头避让可用 | fbcon 软件旋转只覆盖 Linux 控制台，不代表 native DRM/DSI panel 驱动或 Android UI 已支持 |
 | 触控 | UNVERIFIED；候选树同时含 ST FTS 与 Goodix | 实际 Touch IC、固件及驱动 |
-| Bootloader | DEVICE_OBSERVED：`ro.boot.verifiedbootstate=orange`；AOSP 将该值映射为 UNLOCKED；`ro.boot.flash.locked` 未提供 | Bootloader 版本、fastboot 能力、实际槽位；Android 属性不是对 bootloader/fastboot 行为的独立验证 |
-| ABL / boot header | UPSTREAM_VERIFIED（上游实机报告）：umi ABL 接受 Android boot header v2，载荷含 kernel/initrd/DTB；本机 ABL 版本未观测 | 本机版本/参数；不能外推为其他 header 或 MiSeed 镜像已验证 |
-| DTB / DTBO | UPSTREAM_VERIFIED（上游 CSOT 配置）：`dtc -@` 生成 `__symbols__`，匹配 ABL `/abl_ovf` overlay 锚点并保留原厂 DTBO；其配置报告 152 anchors | 本机 DTB/DTBO 版本与匹配仍未知；方案可据上游锁定，非本机直接读取 |
-| Android | DEVICE_OBSERVED：release=`16`、Lineage=`23.2-20261101-NIGHTLY-umi`、fingerprint 含 `umi_global`/`TJBMIXM` | Lineage fingerprint 不作为实物区域证据；release 与 fingerprint 字段差异待解释 |
+| Bootloader | Fastboot：`umi`、已解锁、安全启动开启、下载上限 805306368；版本空 | 槽位、ABL 版本、内存图未知；下载上限非启动上限 |
+| ABL / boot header | DEVICE_OBSERVED：官方 LOS 23.2 v2 boot 与仅替换 kernel 的同组件镜像均经 `fastboot boot` 启动；128 MiB boot 中 122.984 MiB kernel 启动完成 | ABL `Load Error` 未定位；最大尺寸未知 |
+| DTB / DTBO | L2 通过 152 个 ABL 锚点、241 个参考目标符号检查 | 本机 DTBO 未锁定；MIUI 包仅为符号参考；启动交接未验证 |
+| Android | 2026-11-06 返回后见 Xiaomi global Android 13 / `V14.0.5.0.TJBMIXM`、kernel `4.19.325...`；较早采集称 LOS 23.2 | 快照冲突，ROM/分区状态待确认；fingerprint 不证明硬件区域 |
 | 底层固件 | USER_REPORTED：国行；刷 Lineage 前官方 1.0.5；最新 Fastboot 包 1.0.3 | 当前设备固件未从分区读取 |
 | Recovery | USER_REPORTED：无需个人数据备份；官方 Recovery 1.0.7 / Fastboot 1.0.3 在 `.work/` | `misc` 随官方线刷允许更新；Recovery 入口未验证；身份/NV 禁访，BL 重锁严禁 |
-UPSTREAM_VERIFIED 是上游公开源码/设备测试报告，不是本机直接观测。ADB 采集 PARTIAL（退出码 1）；输出在忽略的 `local/`。AOSP 将 `orange` 映射为 UNLOCKED（[Boot flow](https://source.android.com/docs/security/features/verifiedboot/boot-flow)），但不证明 fastboot 版本/能力。停止条件见调查记录。
-
-“硬件变体”指 `umi` 下 SKU、主板修订及面板/触控物料组合。当前只观察到通用 model `Mi 10`；`umi_global` fingerprint 是软件标识，不能核实销售 SKU。CSOT 自述不能推出 panel ID 或 Touch IC。
+UPSTREAM_VERIFIED 非本机直测；LOCAL_PACKAGE_OBSERVED 是未鉴真的 `.work/` 数据。ADB 采集 PARTIAL（退出码 1），输出在忽略的 `local/`。
 
 ## 只读采集入口
 
@@ -32,7 +30,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 
 [采集器](../tools/collect_device.py)只执行固定的 `get-state`、逐项 `getprop` 和 `ls -l /dev/block/by-name`，不提权、不重启、不读分区内容。型号不是 umi 或设备不可用时停止，不自动选择其他设备。
 输出只允许保存到忽略的 local/，拒绝覆盖已有文件；退出码 0＝字段采集完整，1＝部分字段缺失/失败且已保存，2＝用法/设备/保存失败。权限不足只记录失败，不尝试 root。
-不主动查询序列号/IMEI，不保存 adb 原始错误；设备返回值仍是未核实的本地资料，公开前需人工脱敏。采集成功不证明面板/触控、固件哈希、分区容量、临时启动能力或回退可用，也不授权写入。
+不采集序列号/IMEI 或原始错误；公开前人工脱敏。采集成功不证明面板/触控、分区容量、临时启动能力或回退可用，也不授权写入。
 
 ## 待锁定的运行契约
 
@@ -52,9 +50,9 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 
 | 功能 | 状态 | 证据 |
 | --- | --- | --- |
-| Linux RAM bring-up / UEFI 基础执行 | 计划；采用上游 CSOT headless boot-chain 约束 | 上游报告已实机验证；MiSeed 尚无 L2/L3 |
+| Linux RAM bring-up / UEFI | LOS 122.984 MiB、MiSeed 大字横屏/rotate:3 与 CDC-ACM 为 L3；PON 未进 Fastboot；UEFI 未测 | [USB 记录](archive/reviews/2026-11-06-usb-acm-ramboot.md) / [尺寸记录](archive/hardware/2026-11-06-kernel-size-fastboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 实际触控 / USB 诊断 | 计划 | 无 L2/L3 |
+| CSOT 显示 / 触控 / USB | rotate:3、COM6/help、Linux→Android→Fastboot→Android 为 L3；触控未实现 | [MiSeed 记录](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 电池 / 充电 / 温控 | 设计中 | 无 L2/L3 |
+| 电池 / 充电 / 温控 | MiSeed 未实现；Android 单次样本不可作充电参数 | RISK-004；须匹配来源、保护审查及专项 L3 |

@@ -1,14 +1,15 @@
 # 当前状态
 
-确认日期：2026-11-05。阶段：WP1 输入调查进行中；已固定源码提交和工具版本候选。已复现上游 CSOT boot repack，并用 Ubuntu GCC 13.3 构建 Linux v6.18.60 通用 arm64 defconfig；尚无 MiSeed 板级内核/UEFI 构建或 L3。
-当前工作分支为 `work/initial-import`，包含 WP1 输入审查交付；目标远端为 `Ben8368/MiSeed`，初始化时无分支。设备只读采集 PARTIAL；自有内容选 AGPL-3.0-only，第三方逐文件许可待审。维护者提供国行官方 Recovery 1.0.7 / Fastboot 1.0.3 包；文件摘要已记录，官方恢复入口未验证。身份/NV 分区禁止访问；维护者严禁重锁 BL，官方脚本的 lock 变体禁止运行。`misc` 允许随官方线刷流程更新。branch protection 未核实。见 [WP1 调查](archive/research/2026-11-05-wp1-input-review.md)。
+确认日期：2026-11-06。LOS 23.2 与 122.984 MiB 内核 RAM 启动通过，尺寸未定；[记录](archive/hardware/2026-11-06-kernel-size-fastboot.md)。`f7d50a25` 的大字横屏/摄像头避让、COM6/help 已 L3。当前诊断版 `33b986f6` 的 PON DT 值为 `0x2`，但 Arbiter/SPMI/PON 未绑定；PDC 对照版丢失 USB 枚举，已撤销。中转路径 Linux→Android→Fastboot→Android 已 L3。详见[记录](archive/reviews/2026-11-06-usb-acm-ramboot.md)。
+
+分支 `codex/board-l2-closure`，PR #1 open。维护者于 2026-11-06 明确本次 PR1 可暂不包含充电；当前验收采用 Linux→Android→Fastboot→Android 中转路径，Linux 直达 Fastboot 和充电留后续。不得声称这两项已完成，也不得主动充电。身份/NV 禁访，禁止重锁 BL，不刷写。
 
 ## 近期优先级
 
-1. 以 misaka-link 的 umi/CSOT 上游实机报告锁定 headless ABL header-v2/DTB/DTBO 约束；本机具体 panel ID/触控仅影响相应驱动能力声明。
-2. 完成固定输入构建闭包及 MiSeed 板级 L2；用户既有官方 MiFlash 成功恢复经验纳入回退证据，身份/NV 禁访且 BL 重锁绝对禁止。
-3. 由维护者在 GitHub UI 配置/核验 PR 与 CI 保护；这不阻止继续主机端 L2 工作。
+1. 后续定位 PDC/IRQ 与 SPMI Arbiter，验证 Linux 直达 Fastboot；任何 BCB 写入须另行授权并有回退方案。
+2. 后续依据匹配来源实现电源/充电，过保护审查与 L3；未完成前不控制充电。
+3. 持续锁定设备变体、固件与工具依赖；以设备实测和来源审计支撑后续能力声明。
 
 ## 最近验证
 
-[新远端导入验证](archive/reviews/2026-11-05-miseed-import.md)；此前结果见 [WP1 输入调查验证](archive/reviews/2026-11-05-wp1-input-review.md)。
+硬件尺寸及 RAM 启动：[记录](archive/hardware/2026-11-06-kernel-size-fastboot.md)；MiSeed USB、Framebuffer 与电源安全风险：[记录](archive/reviews/2026-11-06-usb-acm-ramboot.md)；构建 L2 证据和输入锁：[manifests/sources.lock.json](../manifests/sources.lock.json)。

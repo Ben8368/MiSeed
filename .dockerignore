@@ -1,0 +1,13 @@
+.git
+.work
+out
+local
+.venv
+__pycache__
+*.img
+*.bin
+*.elf
+*.dtb
+*.dtbo
+*.cpio
+*.log
