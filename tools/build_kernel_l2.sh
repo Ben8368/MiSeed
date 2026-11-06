@@ -10,8 +10,8 @@ readonly boot_sha256="a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f
 readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
 readonly source_cache="${work_root}/linux-stable.git"
-readonly source_tree="${work_root}/linux-source-${kernel_revision}"
-readonly build_tree="${MISEED_BUILD_ROOT:-${work_root}/build-${kernel_revision}}"
+source_tree="${work_root}/linux-source-${kernel_revision}"
+build_tree="${MISEED_BUILD_ROOT:-${work_root}/build-${kernel_revision}}"
 readonly template="${work_root}/reference-boot-v2.img"
 readonly input_dts="${repo_root}/kernel/umi-csot.dts"
 readonly config_fragment="${repo_root}/kernel/umi-l2.config"
@@ -42,13 +42,10 @@ PY
 fi
 [[ "$(sha256sum "$template" | awk '{print $1}')" == "$boot_sha256" ]] || fail "locked Android header-v2 template SHA-256 mismatch"
 
-if [[ ! -d "$source_tree" ]]; then
-    readonly source_stage="$(mktemp -d "${work_root}/linux-source.XXXXXX")"
-    if [[ -n "${MISEED_KERNEL_SOURCE:-}" ]]; then
-        [[ "$(git -C "$MISEED_KERNEL_SOURCE" rev-parse HEAD)" == "$kernel_revision" ]] || fail "Linux source revision mismatch"
-        [[ -z "$(git -C "$MISEED_KERNEL_SOURCE" status --porcelain)" ]] || fail "Linux source tree must be clean"
-        git -C "$MISEED_KERNEL_SOURCE" archive "$kernel_revision" | tar -x -C "$source_stage"
-    else
+if [[ -n "${MISEED_KERNEL_SOURCE:-}" ]]; then
+    [[ "$(git -C "$MISEED_KERNEL_SOURCE" rev-parse HEAD)" == "$kernel_revision" ]] || fail "Linux source revision mismatch"
+    [[ -z "$(git -C "$MISEED_KERNEL_SOURCE" status --porcelain)" ]] || fail "Linux source tree must be clean"
+else
     if [[ ! -d "$source_cache" ]]; then
         git init --bare "$source_cache"
         git -C "$source_cache" remote add origin "$kernel_url"
@@ -56,13 +53,30 @@ if [[ ! -d "$source_tree" ]]; then
     if ! git -C "$source_cache" cat-file -e "${kernel_revision}^{commit}" 2>/dev/null; then
         git -C "$source_cache" fetch --depth=1 --filter=blob:none origin "$kernel_revision"
     fi
-    [[ "$(git -C "$source_cache" rev-parse "$kernel_revision^{commit}")" == "$kernel_revision" ]] || fail "Linux revision mismatch"
-        git -C "$source_cache" archive "$kernel_revision" | tar -x -C "$source_stage"
-    fi
-    printf '%s\n' "$kernel_revision" > "$source_stage/.miseed-source-revision"
-    mv "$source_stage" "$source_tree"
 fi
-[[ "$(cat "$source_tree/.miseed-source-revision")" == "$kernel_revision" ]] || fail "cached Linux source revision marker mismatch"
+readonly source_repository="${MISEED_KERNEL_SOURCE:-$source_cache}"
+[[ "$(git -C "$source_repository" rev-parse "${kernel_revision}^{commit}")" == "$kernel_revision" ]] || fail "Linux revision mismatch"
+
+source_verified=false
+if [[ -d "$source_tree" ]] && python3 "$repo_root/tools/verify_kernel_source.py" \
+        --repository "$source_repository" --revision "$kernel_revision" --source "$source_tree"; then
+    source_verified=true
+fi
+if [[ "$source_verified" != true ]]; then
+    source_stage="$(mktemp -d "${work_root}/linux-source.XXXXXX")"
+    git -C "$source_repository" archive "$kernel_revision" | tar -x -C "$source_stage"
+    printf '%s\n' "$kernel_revision" > "$source_stage/.miseed-source-revision"
+    if [[ -e "$source_tree" || -L "$source_tree" ]]; then
+        printf 'warning: unverified source cache preserved; using fresh source and build trees\n' >&2
+        source_tree="$source_stage"
+        build_tree="$(mktemp -d "${work_root}/build-clean.XXXXXX")"
+    else
+        mv -- "$source_stage" "$source_tree"
+        if [[ -e "$build_tree" || -L "$build_tree" ]]; then
+            build_tree="$(mktemp -d "${work_root}/build-clean.XXXXXX")"
+        fi
+    fi
+fi
 
 readonly qcom_dts_dir="$source_tree/arch/arm64/boot/dts/qcom"
 readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"

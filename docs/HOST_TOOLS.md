@@ -15,7 +15,7 @@ esac
 shasum -a 256 ".work/boot-l2-${build_arch}/boot.img"
 ```
 
-入口脚本创建独立 Colima profile（4 CPU、8 GiB、60 GiB）。工具容器使用固定 digest 的 Ubuntu 24.04；Apple Silicon native arm64，Intel Mac amd64。构建源码缓存保存在 Colima volume，产物按架构分别写入忽略目录 `.work/boot-l2-arm64/` 或 `.work/boot-l2-amd64/`，避免切换容器架构时复用不兼容的主机工具。默认 `MISEED_JOBS=4`，可设为正整数调整。
+入口脚本创建独立 Colima profile（4 CPU、8 GiB、60 GiB）。工具容器使用固定 digest 的 Ubuntu 24.04；Apple Silicon native arm64，Intel Mac amd64。构建源码及 Kbuild 缓存保存在按容器架构隔离的 Colima volume，复用前对照固定 Git tree 核查源码，核查失败则保留原缓存并改用干净源码和构建目录；产物按架构分别写入忽略目录 `.work/boot-l2-arm64/` 或 `.work/boot-l2-amd64/`，避免切换容器架构时复用不兼容的主机工具。默认 `MISEED_JOBS=4`，可设为正整数调整。
 
 2026-11-06 在同一 Apple Silicon/VZ profile（4 vCPU、8 GiB）用相同锁定源码比较：4 并行 amd64/Rosetta 冷输出构建 312.7 秒；4 并行 native arm64 构建 74.1 秒，约快 4.2 倍。两者生成 2,453,504-byte 镜像，SHA-256 都是 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`。复测命令和边界见[验证记录](archive/reviews/2026-11-06-macos-build-fastboot.md)。
 
