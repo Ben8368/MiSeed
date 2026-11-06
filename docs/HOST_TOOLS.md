@@ -2,17 +2,24 @@
 
 ## macOS 构建 L2 镜像
 
-内核脚本在 Linux 上运行；macOS 使用 Colima/VZ Linux 虚拟机与 Rosetta amd64 容器复用同一脚本，不在 Darwin 上原生编译。Apple Silicon 已构建出与 PR hosted L2 相同的镜像哈希。需要 Homebrew、Colima、Docker CLI 和 Docker Buildx：
+内核脚本在 Linux 上运行；macOS 使用 Colima/VZ Linux 虚拟机和同架构容器，不在 Darwin 上原生编译。Apple Silicon 默认跑 native arm64 容器；Intel Mac 使用 amd64 容器。需要 Homebrew、Colima、Docker CLI 和 Docker Buildx：
 
 ```sh
 brew install colima docker docker-buildx
 bash tools/build_kernel_l2_macos.sh
-shasum -a 256 .work/boot-l2/boot.img
+case "$(uname -m)" in
+  arm64) build_arch=arm64 ;;
+  x86_64) build_arch=amd64 ;;
+  *) exit 1 ;;
+esac
+shasum -a 256 ".work/boot-l2-${build_arch}/boot.img"
 ```
 
-入口脚本创建独立 Colima profile（4 CPU、8 GiB、60 GiB），Apple Silicon 启用 VZ/Rosetta；Linux 工具容器使用 Ubuntu 24.04 amd64 和仓库中的 apt 版本锁。构建缓存保存在 Colima volume，镜像保存在忽略目录 `.work/`。`MISEED_JOBS=1` 默认限制并行度；可设置为正整数调整。Intel Mac 使用 amd64 虚拟机路径。
+入口脚本创建独立 Colima profile（4 CPU、8 GiB、60 GiB）。工具容器使用固定 digest 的 Ubuntu 24.04；Apple Silicon native arm64，Intel Mac amd64。构建源码缓存保存在 Colima volume，产物按架构分别写入忽略目录 `.work/boot-l2-arm64/` 或 `.work/boot-l2-amd64/`，避免切换容器架构时复用不兼容的主机工具。默认 `MISEED_JOBS=4`，可设为正整数调整。
 
-首次构建需要网络拉取锁定的 Linux commit 和 Android v2 头模板。Dockerfile 固定 Ubuntu 24.04 amd64 基础镜像 digest 和直接 apt 包版本；apt 传递依赖哈希尚未闭合，不能宣称完整可复现。命令只构建主机产物；证据等级和本次结果见 [CONTEXT](CONTEXT.md) 与[验证记录](archive/reviews/2026-11-06-macos-build-fastboot.md)。
+2026-11-06 在同一 Apple Silicon/VZ profile（4 vCPU、8 GiB）用相同锁定源码比较：4 并行 amd64/Rosetta 冷输出构建 312.7 秒；4 并行 native arm64 构建 74.1 秒，约快 4.2 倍。两者生成 2,453,504-byte 镜像，SHA-256 都是 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`。复测命令和边界见[验证记录](archive/reviews/2026-11-06-macos-build-fastboot.md)。
+
+首次构建需要网络拉取锁定的 Linux commit 和 Android v2 头模板。Dockerfile 固定多架构 Ubuntu 24.04 基础镜像 digest 与直接 apt 包版本；arm64/amd64 GCC 包版本按容器架构选择。apt 传递依赖哈希尚未闭合，不能宣称完整可复现。命令只构建主机产物；证据等级见 [CONTEXT](CONTEXT.md)。
 
 ## ADB / Fastboot 工具与连接
 
