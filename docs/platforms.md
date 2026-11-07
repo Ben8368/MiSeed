@@ -50,9 +50,9 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 
 | 功能 | 状态 | 证据 |
 | --- | --- | --- |
-| Linux RAM bring-up / UEFI | LOS 122.984 MiB、MiSeed 大字横屏/rotate:3 与 CDC-ACM 为 L3；PON 未进 Fastboot；UEFI 未测 | [USB 记录](archive/reviews/2026-11-06-usb-acm-ramboot.md) / [尺寸记录](archive/hardware/2026-11-06-kernel-size-fastboot.md) |
+| Linux RAM bring-up / UEFI | LOS 122.984 MiB、既有 rotate:3 显示/ACM 为 L3；2026-11-07 PDC 开启、TLMM 禁用的诊断镜像连续两轮直接返回 Bootloader Fastboot，`ce196d57` 的 PON 已 L3；PR2 集成版 `3711704c` 仅 L2；UEFI 未测 | [直接 Fastboot](archive/hardware/2026-11-07-direct-fastboot.md) / [尺寸记录](archive/hardware/2026-11-06-kernel-size-fastboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | rotate:3、COM6/help、Linux→Android→Fastboot→Android 为 L3；触控未实现 | [MiSeed 记录](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
+| CSOT 显示 / 触控 / USB | 既有 rotate:3、COM6/help 为 L3；`ce196d57` 的 macOS ACM status/bootloader 及 Linux→Fastboot 为 L3；PR2 集成版待 L3；TLMM 禁用，触控未实现 | [本轮记录](archive/hardware/2026-11-07-direct-fastboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
 | 电池 / 充电 / 温控 | MiSeed 未实现；Android 单次样本不可作充电参数 | RISK-004；须匹配来源、保护审查及专项 L3 |

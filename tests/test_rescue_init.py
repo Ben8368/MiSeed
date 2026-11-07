@@ -30,10 +30,12 @@ static int test_open(const char *path, int flags, ...);
 static DIR *test_opendir(const char *path);
 static ssize_t test_read(int fd, void *buffer, size_t size);
 static unsigned int test_sleep(unsigned int seconds);
+static long test_reboot_syscall(long number, ...);
 #define open test_open
 #define opendir test_opendir
 #define read test_read
 #define sleep test_sleep
+#define syscall test_reboot_syscall
 #define main miseed_pid1_main
 #include "@SOURCE@"
 #undef main
@@ -41,10 +43,20 @@ static unsigned int test_sleep(unsigned int seconds);
 #undef opendir
 #undef read
 #undef sleep
+#undef syscall
 
 static int kmsg_fd = -1;
 static int delayed_udc;
 static int retries;
+static int missing_pon;
+static int reboot_calls;
+
+static long test_reboot_syscall(long number, ...) {
+    (void)number;
+    reboot_calls++;
+    errno = EPERM;
+    return -1;
+}
 
 static int test_open(const char *path, int flags, ...) {
     mode_t mode = 0;
@@ -65,6 +77,10 @@ static int test_open(const char *path, int flags, ...) {
 }
 
 static DIR *test_opendir(const char *path) {
+    if (missing_pon && !strcmp(path, "/sys/bus/platform/devices")) {
+        errno = ENOENT;
+        return NULL;
+    }
     if (!strcmp(path, "/sys/class/udc")) path = getenv("TEST_UDC_DIR");
     return opendir(path);
 }
@@ -84,6 +100,8 @@ static ssize_t test_read(int fd, void *buffer, size_t size) {
         "6,11,0,-;unrelated error\n",
         "3,12,0,-;critical message\n",
         "6,13,0,-;unrelated information\n",
+        "6,14,0,-;PDC ready\n",
+        "6,15,0,-;PSCI ready\n",
     };
     static size_t index;
     if (fd == kmsg_fd) {
@@ -126,6 +144,11 @@ int main(int argc, char **argv) {
         wait_for_usb_acm();
         if (retries != 2) return 3;
     } else if (!strcmp(argv[1], "console")) usb_console();
+    else if (!strcmp(argv[1], "bootloader-unbound")) {
+        missing_pon = 1;
+        request_bootloader();
+        if (reboot_calls) return 5;
+    }
     else return 4;
     return 0;
 }
@@ -150,9 +173,15 @@ class RescueInitTests(unittest.TestCase):
         result = subprocess.run([self.program, "logs"], capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)
         for token in ["dwc3", "USB", "PHY", "UDC", "pending", "PON", "SPMI",
-                      "PMIC", "failed", "could not", "error", "critical message"]:
+                      "PMIC", "PDC", "PSCI", "failed", "could not", "error", "critical message"]:
             self.assertIn(token, result.stdout)
         self.assertNotIn("unrelated information", result.stdout)
+
+    def test_unbound_pon_refuses_without_reboot_syscall(self):
+        result = subprocess.run([self.program, "bootloader-unbound"],
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Bootloader request refused", result.stderr)
 
     def test_late_udc_and_failed_bind_are_retried(self):
         with tempfile.TemporaryDirectory() as directory:

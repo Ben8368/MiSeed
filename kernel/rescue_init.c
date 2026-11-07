@@ -171,6 +171,8 @@ static void report_usb_kernel_messages(void) {
         if (content) content++;
         else content = message;
         if (error_level || contains_case_insensitive(content, "pon") ||
+            contains_case_insensitive(content, "pdc") ||
+            contains_case_insensitive(content, "psci") ||
             contains_case_insensitive(content, "spmi") ||
             contains_case_insensitive(content, "pmic") ||
             contains_case_insensitive(content, "dwc3") ||
@@ -243,7 +245,7 @@ static void report_usb_probe_devices(void) {
     report_usb_kernel_messages();
 }
 
-static void report_platform_driver(const char *label, const char *compatible) {
+static int report_platform_driver(const char *label, const char *compatible) {
     const char *root = "/sys/bus/platform/devices";
     DIR *dir = opendir(root);
     struct dirent *entry;
@@ -251,10 +253,11 @@ static void report_platform_driver(const char *label, const char *compatible) {
     char driver[256];
     unsigned char compatibles[512];
     int found = 0;
+    int bound = 0;
 
     if (!dir) {
         printf("%s device list unavailable: %s\n", label, strerror(errno));
-        return;
+        return 0;
     }
     while ((entry = readdir(dir)) != NULL) {
         ssize_t length;
@@ -284,10 +287,12 @@ static void report_platform_driver(const char *label, const char *compatible) {
         }
         driver[length] = '\0';
         printf("%s device %s driver=%s\n", label, entry->d_name, driver);
+        bound = 1;
     }
     closedir(dir);
     if (!found) printf("%s compatible device missing: %s\n", label,
                        compatible);
+    return bound;
 }
 
 static void report_spmi_devices(void) {
@@ -420,6 +425,7 @@ static void report_spmi_dt_nodes(void) {
 }
 
 static void report_runtime_status(void) {
+    report_platform_driver("PDC", "qcom,sm8250-pdc");
     report_dt_u32("PON mode-bootloader",
         "/sys/firmware/devicetree/base/soc@0/spmi@c440000/pmic@0/pon@800/mode-bootloader");
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
@@ -427,6 +433,7 @@ static void report_runtime_status(void) {
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
     report_spmi_devices();
+    print_file("/sys/kernel/reboot/mode");
     report_usb_probe_devices();
 }
 
@@ -538,6 +545,11 @@ static void wait_for_usb_acm(void) {
 
 static void request_bootloader(void) {
     static const char target[] = "bootloader";
+    if (!report_platform_driver("PON", "qcom,pm8998-pon")) {
+        fputs("Bootloader request refused: PON reboot-mode driver is not bound.\n",
+              stderr);
+        return;
+    }
     long rc = syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                       LINUX_REBOOT_CMD_RESTART2, target);
     fprintf(stderr, "bootloader restart request failed: %s\n", strerror(errno));
