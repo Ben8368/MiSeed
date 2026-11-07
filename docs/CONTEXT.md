@@ -2,7 +2,7 @@
 
 日期：2026-11-08。按维护者要求回到 `b97f1d9977caf211e5c219a0fb3431b922247e0c`，在 `codex/charging-session-log` 开发只读充电日志；其后的充电控制/Gen4 适配已从当前源码移除。维护者本轮明确授权提交此版本并覆盖 PR #2 的旧充电提交；不合并。
 
-新日志镜像 `0bc3ef16…a4d72f4` 已 L2；本机 RAM 启动后完成电脑→充电器→电脑切换，导出 250 条连续记录，重复导出保留原记录，L3 通过；已返回原生 Fastboot。只读观察 USB 接入、硬件阶段与状态字，电池温度/SOC/V/A 无可信驱动则不可用。主动充电未实现；不访问身份/NV、不刷写。见[日志证据与用法](archive/hardware/2026-11-08-charging-log.md)。
+新日志镜像 `0bc3ef16…a4d72f4` 已 L2；本机 RAM 启动后完成电脑→充电器→电脑切换，导出 250 条连续记录，重复导出保留原记录，L3 通过；已返回原生 Fastboot。镜像只记录 USB/SMB5 状态，不读可信电池遥测；Android root 只读硬件调查见[电池与充电硬件记录](archive/hardware/2026-11-08-mi10-battery-survey.md)，发现 SOH/FCC 读数不一致及电池 profile 双候选，adb 已恢复普通用户。主动充电未实现；不访问身份/NV、不刷写。见[日志证据与用法](archive/hardware/2026-11-08-charging-log.md)。
 
 ## 近期优先级
 
