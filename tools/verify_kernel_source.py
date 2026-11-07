@@ -1,0 +1,109 @@
+"""Verify an extracted Linux cache against a pinned Git tree (offline)."""
+
+# SPDX-License-Identifier: AGPL-3.0-only
+
+import argparse
+import hashlib
+import os
+import stat
+import subprocess
+from pathlib import Path
+
+
+MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
+GENERATED = {
+    ".miseed-source-revision",
+    "arch/arm64/boot/dts/qcom/umi-csot.dts",
+    "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
+}
+
+
+def git(repository, *args):
+    return subprocess.check_output(["git", "-C", str(repository), *args])
+
+
+def blob_hash(data):
+    return hashlib.sha1(
+        b"blob " + str(len(data)).encode("ascii") + b"\0" + data,
+        usedforsecurity=False,
+    ).hexdigest()
+
+
+def verify_source(repository, revision, source):
+    """Reject changed, missing, or extra inputs; allow only known MiSeed overlays."""
+    source = Path(source)
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("cached source is not a regular directory")
+    if (source / ".miseed-source-revision").read_text().strip() != revision:
+        raise ValueError("cached Linux source revision marker mismatch")
+    if git(repository, "rev-parse", revision + "^{commit}").decode().strip() != revision:
+        raise ValueError("Linux revision mismatch")
+    tracked = set()
+    records = git(repository, "ls-tree", "-rz", "--full-tree", revision)
+    for record in records.split(b"\0"):
+        if not record:
+            continue
+        metadata, raw_name = record.split(b"\t", 1)
+        mode, kind, oid = metadata.decode("ascii").split()
+        name = os.fsdecode(raw_name)
+        tracked.add(name)
+        path = source / name
+        info = path.lstat()
+        if kind != "blob":
+            raise ValueError(f"unsupported Git input: {name}")
+        if mode == "120000":
+            if not stat.S_ISLNK(info.st_mode):
+                raise ValueError(f"changed symlink type: {name}")
+            actual = blob_hash(os.fsencode(os.readlink(path)))
+        elif mode in {"100644", "100755"} and stat.S_ISREG(info.st_mode):
+            if os.name != "nt" and bool(info.st_mode & 0o111) != (mode == "100755"):
+                raise ValueError(f"changed executable mode: {name}")
+            digest = hashlib.sha1(usedforsecurity=False)
+            digest.update(b"blob " + str(info.st_size).encode("ascii") + b"\0")
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            actual = digest.hexdigest()
+            if actual != oid and name == MAKEFILE:
+                original = git(repository, "show", revision + ":" + name)
+                expected = original
+                for prefix, rule in [(b"\n", b"dtb-y += umi-csot.dtb"),
+                                     (b"", b"DTC_FLAGS_umi-csot += -@")]:
+                    if rule not in expected.splitlines():
+                        expected += prefix + rule + b"\n"
+                if path.read_bytes() == expected:
+                    continue
+        else:
+            raise ValueError(f"changed file type: {name}")
+        if actual != oid:
+            raise ValueError(f"cached Linux source differs from pinned commit: {name}")
+
+    def walk_error(error):
+        raise error
+
+    for directory, dirs, files in os.walk(source, onerror=walk_error):
+        for name in files + [d for d in dirs if (Path(directory) / d).is_symlink()]:
+            path = Path(directory) / name
+            relative = path.relative_to(source).as_posix()
+            if relative not in tracked and relative not in GENERATED:
+                raise ValueError(f"unexpected cached source input: {relative}")
+            if relative in GENERATED and not stat.S_ISREG(path.lstat().st_mode):
+                raise ValueError(f"generated input is not a regular file: {relative}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repository", required=True, type=Path)
+    parser.add_argument("--revision", required=True)
+    parser.add_argument("--source", required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        verify_source(args.repository, args.revision, args.source)
+    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        parser.exit(1, f"source cache verification failed: {error}\n")
+    print(f"Cached Linux source verified against {args.revision}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

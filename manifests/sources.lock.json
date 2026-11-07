@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "lock_date": "2026-11-06",
-  "lock_status": "revision-pinned; rotate:3 display/camera avoidance L3; configfs ACM COM6/help verified on f7d50a25; Android→Fastboot→Android verified; PON diagnostic bac940c2 RAM-booted with no host USB enumeration; expanded kmsg/PMIC diagnosis image 7c0c67ac built and awaits RAM boot; PON handoff and charging remain unverified",
-  "scope": "Reviewed upstream identities and selected reference snapshots. Linux/CSOT profile includes early console, forced diagnostic command line, USB CDC-ACM, SM8250 providers, Qualcomm PON reboot-mode, and framebuffer console at L2. Rotate:3 display/camera avoidance and CDC-ACM serial enumeration/console are L3 on f7d50a25. Android→Fastboot→Android passed. PON diagnostic image bac940c2 was RAM-booted from detected umi Fastboot and returned Sending/Booting OKAY; photo confirmed DT mode-bootloader=2, no qcom,pm8998-pon platform device, and empty /sys/class/udc. Host had no ACM/ADB/Fastboot enumeration. Latest image 7c0c67ac adds recent kmsg and PMIC driver-directory diagnostics, built but not yet RAM-booted. PON handoff and charging remain unverified.",
+  "lock_date": "2026-11-07",
+  "lock_status": "revision-pinned; local diagnostic profile L2; device evidence maintained in docs/platforms.md",
+  "scope": "Reviewed upstream identities, selected reference snapshots and exact local diagnostic build inputs. Device capability and validation status are maintained in docs/platforms.md and its evidence links; this lock does not replace those records.",
   "build_profiles": [
     {
       "id": "umi-csot-boot-l2",
@@ -24,25 +24,27 @@
         "header_dtb_extractor": "tools/extract_boot_v2_dtb.py",
         "initramfs_builder": "tools/make_initramfs.py",
         "boot_packer": "tools/pack_android_boot_v2.py",
-        "dtbo_targets": "kernel/umi-csot-dtbo-targets.txt"
+        "dtbo_targets": "kernel/umi-csot-dtbo-targets.txt",
+        "source_verifier": "tools/verify_kernel_source.py"
       },
       "input_sha256": {
-        "kernel/umi-csot.dts": "89972b4c14693ac774f432737a2f210ed690eea7597aed0b5705bdf147e7d9b0",
-        "kernel/umi-l2.config": "e508fbd091e80864c705c997cfd30565e94b78125e212d5b096981f862c3cab4",
-        "kernel/rescue_init.c": "b16c29b09b36486545b02c86ad409158621b32505a419b0c30d3f8747bc79372",
-        "tools/build_kernel_l2.sh": "859350ddbbd370a2e003fdca5bac9cc91187e09492d6ed602e4260c2f7ae5a35",
+        "kernel/umi-csot.dts": "0d1fa09475c857451423a1e0675f13d31e3b07186313ebf1f25ccac5a6e4167d",
+        "kernel/umi-l2.config": "1cbd8807c4815ade6d5708b86a956103018a3e11d61672a9dd01f612451fe99b",
+        "kernel/rescue_init.c": "25e1b1fd4ea64348557230bda431f673bfa3a900c60b20bab626d2bcee61f153",
+        "tools/build_kernel_l2.sh": "13de7c778a47857fe6044fd09832aceb6c97dc12d1ad87731b88d42d27ae3f3e",
         "tools/extract_abl_anchors.py": "971c781396c3472520aabcb10cad4a7c46964e5bc560ae6ed1d397397198adae",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
         "tools/make_initramfs.py": "644d4cbcffc58aaf02715af9d6e2dbe45df2072dd2c3cfffafe5694a6c95dbf3",
         "tools/pack_android_boot_v2.py": "c2f659c5eccc29aed2ffc7e721599b0710c13bb93c034c8331915dcd584629cd",
         "LICENSES/BSD-3-Clause.txt": "8f0e2dfa56521e68f247ea8772f3f83eb9db045a793a8d6061bfb7803a69489b",
         "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
-        "kernel/umi-csot-dtbo-targets.txt": "3c8483b0996bed1b757bba6ad68b5439c5c168c8bb3bec586ce48e603e0d5dd1"
+        "kernel/umi-csot-dtbo-targets.txt": "3c8483b0996bed1b757bba6ad68b5439c5c168c8bb3bec586ce48e603e0d5dd1",
+        "tools/verify_kernel_source.py": "c5a86f3030bdd6d304f87ffc9789801a5ed2f1ae807996a3100f3daf9eba61b3"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
-      "build": "arm64 uncompressed Image (VA48/PA48) with forced diagnostic command line, GENI earlycon/console, configfs USB CDC-ACM (legacy g_serial disabled to avoid UDC contention), RPMh PHY rails, Qualcomm PON reboot-mode, and ABL framebuffer console; dtc -@ qcom/umi-csot.dtb; static rescue initramfs; Android boot header v2; WSL2 Ubuntu 24.04 x86_64, GCC 13.3.0, GNU make 4.3",
-      "status": "Baseline f7d50a25 L2/L3 confirms rotate:3 framebuffer, configfs ACM, Windows COM6, and MiSeed help console. Android→Fastboot→Android passed. Current PDC-disabled diagnostic image 33b986f6 was RAM-booted; COM6 is present. Serial status confirms PON DT mode-bootloader=0x2, PMIC child nodes default available with valid two-cell reg properties, but c440000.spmi has no bound driver, /sys/bus/spmi/devices is empty, and qcom,pm8998-pon platform device is missing. CONFIG_QCOM_PDC=y candidate built at L2 but two RAM boots had no USB enumeration, with Android ADB returning once; PDC option was removed from current config. PON handoff, charging, and direct Linux→Fastboot remain incomplete; fallback Linux→Android→Fastboot→Android passed L3.",
+      "build": "arm64 uncompressed Image (VA48/PA48), forced diagnostic command line, PDC/SPMI/PON reboot-mode, TLMM disabled for this GPIO-free RAM diagnostic, configfs USB CDC-ACM, RPMh PHY rails and inherited framebuffer console; dtc -@; static rescue initramfs; Android boot header v2; Ubuntu 24.04 arm64 / Colima VZ, GCC 13.3.0, GNU make 4.3",
+      "status": "PR #2 integrated profile local L2 exit 0; integrated image L3 pending. Original ce196d57 image L3 evidence and integration validation: docs/archive/hardware/2026-11-07-direct-fastboot.md; device capabilities: docs/platforms.md; TLMM exclusion: TD-002.",
       "dtbo_symbol_reference": {
         "origin": "Local Xiaomi UMI MIUI OS1.0.7.0.TJBCNXM package, firmware-update/dtbo.img",
         "sha256": "d6a6f4c07d7ce88f6213cfed0cee26d55f908e8eff38675faadc6f6e4671eee6",
@@ -51,12 +53,12 @@
       },
       "generated_artifacts": {
         "abl_anchor_include_sha256": "faad288a83a353234f0fd8b0300e9fdf18bdddf41463401091d31a4d77480361",
-        "resolved_config_sha256": "8c6e7caac2f17f1e657bf9eedb228130ce57394524c5fd8006eeeb99a1822c9a",
-        "kernel_image_sha256": "45b4e25540d5c877869eca06c8372acea995abdb91bb8ba6259bffd696dfe9d1",
-        "rescue_initramfs_sha256": "84c5eb874bbce40e8848ec1e144b152eb2f798e0217fe85b9cd6f99d91a3cd67",
-        "dtb_sha256": "32331bad24d382f7f3be99b8ed330b0a84a1ec4132bf1a5843c180e3408993e3",
+        "resolved_config_sha256": "e349dd6d4cf342e8607ecb5f06e0c7b31ff4a59b60b3a33c21a1c95e3030d35c",
+        "kernel_image_sha256": "d343d2c013a773435f285884f8a9894513d4b1184547553401effca39abd25e0",
+        "rescue_initramfs_sha256": "61e125959f5474cab027d0e49e6a76c1eb31eb32540095bb439be81455a081f6",
+        "dtb_sha256": "e9ba7befb7cbb1e814f4493b23534f1821c136c936487fb1dee38a594ee622ae",
         "dtbo_target_symbol_count": 241,
-        "boot_img_sha256": "33b986f64a57b4ee8d1c5528e657c3bc38e85f0ac40faf5700dd4ad9f76a3d6c",
+        "boot_img_sha256": "3711704ca29a02c3cd7a8b13d9e84beec8829a685adf3955f3f8292121c304ec",
         "boot_img_size_bytes": 7131136
       }
     }
@@ -77,7 +79,7 @@
       "included_paths": [],
       "submodules": [],
       "patches": [],
-      "verification": "Official stable tag resolved with git ls-remote; exact commit materialized from the pinned revision. MiSeed Umi/CSOT arm64 Image.gz and DTB compiled locally with Ubuntu GCC 13.3.0; selected Debian GCC 14.2, full package closure, independent reproduction and device boot remain unverified."
+      "verification": "Official stable tag resolved with git ls-remote; exact commit materialized from the pinned revision. Current MiSeed build inputs and generated artifact hashes are recorded in build_profiles; validation is maintained in the referenced evidence record. Package/toolchain closure remains subject to TD-001."
     },
     {
       "id": "edk2",
@@ -105,7 +107,7 @@
         "LICENSES/",
         "DTS and driver SPDX headers"
       ],
-      "role": "board support reference; selected Umi DTS properties adapted for reserved-memory and USB/UART L2; no panel driver imported",
+      "role": "board support reference; selected Umi DTS properties adapted for reserved-memory and USB/UART L2; no panel driver imported; TLMM external-abort observations used as rationale to disable the unused controller in this RAM diagnostic; no GPIO ranges copied",
       "included_paths": [
         "dts/sm8250-xiaomi-umi*.dts[i]",
         "patches/panel-xiaomi-umi.c",

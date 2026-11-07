@@ -171,8 +171,15 @@ static void report_usb_kernel_messages(void) {
         if (content) content++;
         else content = message;
         if (error_level || contains_case_insensitive(content, "pon") ||
+            contains_case_insensitive(content, "pdc") ||
+            contains_case_insensitive(content, "psci") ||
             contains_case_insensitive(content, "spmi") ||
             contains_case_insensitive(content, "pmic") ||
+            contains_case_insensitive(content, "dwc3") ||
+            contains_case_insensitive(content, "usb") ||
+            contains_case_insensitive(content, "phy") ||
+            contains_case_insensitive(content, "udc") ||
+            contains_case_insensitive(content, "pending") ||
             contains_case_insensitive(content, "error") ||
             contains_case_insensitive(content, "failed") ||
             contains_case_insensitive(content, "could not")) {
@@ -238,7 +245,7 @@ static void report_usb_probe_devices(void) {
     report_usb_kernel_messages();
 }
 
-static void report_platform_driver(const char *label, const char *compatible) {
+static int report_platform_driver(const char *label, const char *compatible) {
     const char *root = "/sys/bus/platform/devices";
     DIR *dir = opendir(root);
     struct dirent *entry;
@@ -246,10 +253,11 @@ static void report_platform_driver(const char *label, const char *compatible) {
     char driver[256];
     unsigned char compatibles[512];
     int found = 0;
+    int bound = 0;
 
     if (!dir) {
         printf("%s device list unavailable: %s\n", label, strerror(errno));
-        return;
+        return 0;
     }
     while ((entry = readdir(dir)) != NULL) {
         ssize_t length;
@@ -279,10 +287,12 @@ static void report_platform_driver(const char *label, const char *compatible) {
         }
         driver[length] = '\0';
         printf("%s device %s driver=%s\n", label, entry->d_name, driver);
+        bound = 1;
     }
     closedir(dir);
     if (!found) printf("%s compatible device missing: %s\n", label,
                        compatible);
+    return bound;
 }
 
 static void report_spmi_devices(void) {
@@ -415,6 +425,7 @@ static void report_spmi_dt_nodes(void) {
 }
 
 static void report_runtime_status(void) {
+    report_platform_driver("PDC", "qcom,sm8250-pdc");
     report_dt_u32("PON mode-bootloader",
         "/sys/firmware/devicetree/base/soc@0/spmi@c440000/pmic@0/pon@800/mode-bootloader");
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
@@ -422,6 +433,7 @@ static void report_runtime_status(void) {
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
     report_spmi_devices();
+    print_file("/sys/kernel/reboot/mode");
     report_usb_probe_devices();
 }
 
@@ -453,10 +465,6 @@ static int setup_usb_acm(void) {
     const char *root = "/sys/kernel/config/usb_gadget/miseed";
     const char *config = "/sys/kernel/config/usb_gadget/miseed/configs/c.1";
     const char *function = "/sys/kernel/config/usb_gadget/miseed/functions/acm.usb0";
-    DIR *dir;
-    struct dirent *entry;
-    char path[256];
-    char udc[128] = { 0 };
 
     if (ensure_dir("/sys/kernel/config") ||
         (mount("configfs", "/sys/kernel/config", "configfs", MS_NOSUID, NULL) &&
@@ -503,7 +511,13 @@ static int setup_usb_acm(void) {
     puts("USB ACM function linked into config c.1");
     list_directory("USB entries", config);
 
-    dir = opendir("/sys/class/udc");
+    return 0;
+}
+
+static int bind_usb_acm(void) {
+    DIR *dir = opendir("/sys/class/udc");
+    struct dirent *entry;
+    char udc[128] = { 0 };
     if (!dir) {
         fprintf(stderr, "open UDC list failed: %s\n", strerror(errno));
         return -1;
@@ -517,42 +531,65 @@ static int setup_usb_acm(void) {
         }
     }
     closedir(dir);
-    if (!udc[0]) {
-        fputs("no USB device controller registered\n", stderr);
+    if (!udc[0]) return -1;
+    if (write_value("/sys/kernel/config/usb_gadget/miseed/UDC", udc))
         return -1;
-    }
-    snprintf(path, sizeof(path), "%s/UDC", root);
-    if (write_value(path, udc)) return -1;
     printf("USB CDC-ACM diagnostic gadget bound to %s\n", udc);
     return 0;
 }
 
+static void wait_for_usb_acm(void) {
+    puts("Waiting for USB device controller; discovery will be retried.");
+    while (bind_usb_acm()) sleep(1);
+}
+
 static void request_bootloader(void) {
     static const char target[] = "bootloader";
+    if (!report_platform_driver("PON", "qcom,pm8998-pon")) {
+        fputs("Bootloader request refused: PON reboot-mode driver is not bound.\n",
+              stderr);
+        return;
+    }
     long rc = syscall(SYS_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                       LINUX_REBOOT_CMD_RESTART2, target);
     fprintf(stderr, "bootloader restart request failed: %s\n", strerror(errno));
     (void)rc;
 }
 
-static void usb_console(void) {
+static int reopen_usb_console(void) {
     int fd;
-    for (;;) {
-        fd = open("/dev/ttyGS0", O_RDWR | O_NOCTTY | O_CLOEXEC);
-        if (fd >= 0) break;
-        sleep(1);
-    }
-    if (dup2(fd, STDIN_FILENO) < 0 || dup2(fd, STDOUT_FILENO) < 0 ||
-        dup2(fd, STDERR_FILENO) < 0) _exit(1);
-    if (fd > STDERR_FILENO) close(fd);
 
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+    fd = open("/dev/ttyGS0", O_RDWR | O_NOCTTY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    if (dup2(fd, STDIN_FILENO) < 0 || dup2(fd, STDOUT_FILENO) < 0 ||
+        dup2(fd, STDERR_FILENO) < 0) {
+        if (fd > STDERR_FILENO) close(fd);
+        return -1;
+    }
+    if (fd > STDERR_FILENO) close(fd);
+    clearerr(stdin);
+    clearerr(stdout);
+    clearerr(stderr);
+    return 0;
+}
+
+static void usb_console(void) {
+    setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
+    while (reopen_usb_console()) sleep(1);
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
         puts("Commands: help, status, version, memory, cmdline, mounts, reboot, bootloader");
         fputs("miseed> ", stdout);
-        if (!fgets(line, sizeof(line), stdin)) { sleep(1); continue; }
+        if (!fgets(line, sizeof(line), stdin)) {
+            sleep(1);
+            while (reopen_usb_console()) sleep(1);
+            continue;
+        }
         line[strcspn(line, "\r\n")] = '\0';
         if (!strcmp(line, "help")) continue;
         if (!strcmp(line, "status")) report_runtime_status();
@@ -574,6 +611,7 @@ static void usb_console(void) {
 
 int main(void) {
     int usb_ready;
+    int usb_configured;
     (void)setsid();
     mount_virtual("devtmpfs", "/dev", "devtmpfs", MS_NOSUID);
     mount_virtual("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC);
@@ -583,14 +621,20 @@ int main(void) {
                       MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_RDONLY);
 
     usb_ready = node_exists("/dev/ttyGS0");
+    usb_configured = usb_ready;
     if (usb_ready) {
         puts("Reusing kernel-bound CDC-ACM gadget for early logs and console.");
     } else {
-        usb_ready = setup_usb_acm() == 0;
+        usb_configured = setup_usb_acm() == 0;
     }
-    if (usb_ready) {
-        pid_t child = fork();
-        if (child == 0) usb_console();
+    if (usb_configured) {
+        pid_t child;
+        fflush(NULL);
+        child = fork();
+        if (child == 0) {
+            if (!usb_ready) wait_for_usb_acm();
+            usb_console();
+        }
         if (child < 0) fprintf(stderr, "USB console fork failed: %s\n", strerror(errno));
     }
     puts("\nMiSeed Umi/CSOT RAM diagnostic. No storage is mounted.");
