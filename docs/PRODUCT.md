@@ -25,6 +25,7 @@ MiSeed 为小米 10 提供独立 UEFI、Linux 主线适配与 Recovery，以及�
 | RQ-06 | 第 5 轮：将 Recovery 纳入项目 | 独立救援用户空间的设计与行为见 [RECOVERY](RECOVERY.md)，共用内核不代表共用正常 rootfs |
 | RQ-07 | 第 5 轮：结合整个项目选择开发语言 | 语言职责集中在 [ARCHITECTURE](ARCHITECTURE.md)；语言选型是项目设计，不是用户指定所有底层实现 |
 | RQ-08 | 2026-11-06：日志横屏放大；通过 USB 控制 Linux 诊断内核、Fastboot 与 Android；基础电源管理和充电。2026-11-07：要求 RAM 镜像直接返回 Fastboot，不经 Android ADB | USB 控制与直接 Bootloader Fastboot 往返归 WP9，当前能力及证据见 [platforms](platforms.md)；PR1 充电延期决定保留，充电须锁定实际板级参数并通过保护审查与真机专项验收 |
+| RQ-11 | 2026-11-08：完全回到 `b97f1d9977caf211e5c219a0fb3431b922247e0c`，优先完成 USB 断开期间的充电信息记录，接回电脑后可导出全过程 | WP9 先交付只读日志；同次启动内持续采集、重连导出和缺失字段说明，验收不替代主动充电/温控能力 |
 
 对话助手的具体补丁版本、短 SHA、硬件组合、目录、命令与版本路线图均属建议；未经来源审查或本项目证据，不作为锁定配置、可用命令或已完成能力。
 

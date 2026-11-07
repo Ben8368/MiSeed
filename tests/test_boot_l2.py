@@ -28,6 +28,7 @@ class SourceCacheTests(unittest.TestCase):
         self.repo.mkdir()
         self.git("init", "-q")
         for name, text in {verifier.MAKEFILE: "# upstream rules\n",
+                           "drivers/mfd/Makefile": "# MFD upstream rules\n",
                            "include/board.dtsi": "original\n",
                            ".gitignore": "*.o\n"}.items():
             path = self.repo / name
@@ -51,10 +52,21 @@ class SourceCacheTests(unittest.TestCase):
     def test_pristine_and_known_project_overlays(self):
         self.verify()
         for name in verifier.GENERATED - {".miseed-source-revision"}:
+            (self.source / name).parent.mkdir(parents=True, exist_ok=True)
             (self.source / name).write_text("generated\n")
         with (self.source / verifier.MAKEFILE).open("a", newline="\n") as stream:
             stream.write("\ndtb-y += umi-csot.dtb\nDTC_FLAGS_umi-csot += -@\n")
         self.verify()
+
+    def test_mfd_observer_rule_is_allowed_but_other_edits_are_rejected(self):
+        path = self.source / "drivers/mfd/Makefile"
+        with path.open("a", newline="\n") as stream:
+            stream.write("\nobj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o\n")
+        self.verify()
+        with path.open("a", newline="\n") as stream:
+            stream.write("obj-y += unrelated.o\n")
+        with self.assertRaisesRegex(ValueError, "differs from pinned commit"):
+            self.verify()
 
     def test_modified_included_dtsi_with_matching_revision_is_rejected(self):
         (self.source / "include/board.dtsi").write_text("tampered\n")

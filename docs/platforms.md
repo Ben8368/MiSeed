@@ -55,4 +55,4 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | CSOT 显示 / 触控 / USB | 既有 rotate:3、COM6/help 为 L3；`ce196d57` 的 macOS ACM status/bootloader 及 Linux→Fastboot 为 L3；PR2 集成版待 L3；TLMM 禁用，触控未实现 | [本轮记录](archive/hardware/2026-11-07-direct-fastboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 电池 / 充电 / 温控 | MiSeed 未实现；Android 单次样本不可作充电参数 | RISK-004；须匹配来源、保护审查及专项 L3 |
+| 充电日志 / 管理 | 本机断线记录、重连导出 L3；主动充电/温控未实现 | [记录](archive/hardware/2026-11-08-charging-log.md)；RISK-004 |

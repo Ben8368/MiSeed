@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include <linux/reboot.h>
 #include <stdint.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 static void mount_virtual(const char *source, const char *target,
                           const char *type, unsigned long flags) {
@@ -138,6 +140,8 @@ static int contains_case_insensitive(const char *text, const char *needle) {
     }
     return 0;
 }
+
+#include "charge_log.h"
 
 static void report_usb_kernel_messages(void) {
     enum { LOG_COUNT = 64, LOG_LENGTH = 256 };
@@ -583,7 +587,8 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, version, memory, cmdline, mounts, reboot, bootloader");
+        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, reboot, bootloader");
+        puts("charge-log/logs: retained RAM timeline; charge: latest records; no charge control.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
             sleep(1);
@@ -597,6 +602,8 @@ static void usb_console(void) {
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");
         else if (!strcmp(line, "cmdline")) print_file("/proc/cmdline");
         else if (!strcmp(line, "mounts")) print_file("/proc/mounts");
+        else if (!strcmp(line, "charge")) charge_log_export(32);
+        else if (!strcmp(line, "charge-log") || !strcmp(line, "logs")) charge_log_export(0);
         else if (!strcmp(line, "reboot")) {
             puts("Normal reboot requested.");
             sync();
@@ -612,6 +619,7 @@ static void usb_console(void) {
 int main(void) {
     int usb_ready;
     int usb_configured;
+    unsigned int tick = 0;
     (void)setsid();
     mount_virtual("devtmpfs", "/dev", "devtmpfs", MS_NOSUID);
     mount_virtual("proc", "/proc", "proc", MS_NOSUID | MS_NODEV | MS_NOEXEC);
@@ -619,6 +627,15 @@ int main(void) {
     if (!ensure_dir("/sys/kernel/debug"))
         mount_virtual("debugfs", "/sys/kernel/debug", "debugfs",
                       MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_RDONLY);
+
+    (void)signal(SIGPIPE, SIG_IGN);
+    if (charge_log_init()) fprintf(stderr, "Charge RAM recorder unavailable: %s\n", strerror(errno));
+    charge_kmsg_fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (charge_kmsg_fd < 0) charge_log_append("ERROR", "kernel_log_unavailable errno=%d", errno);
+    charge_screen_fd = open("/dev/tty0", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    charge_log_append("START", "read_only=1 sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
+    charge_kernel_drain();
+    charge_snapshot();
 
     usb_ready = node_exists("/dev/ttyGS0");
     usb_configured = usb_ready;
@@ -632,6 +649,8 @@ int main(void) {
         fflush(NULL);
         child = fork();
         if (child == 0) {
+            if (charge_kmsg_fd >= 0) close(charge_kmsg_fd);
+            if (charge_screen_fd >= 0) close(charge_screen_fd);
             if (!usb_ready) wait_for_usb_acm();
             usb_console();
         }
@@ -639,5 +658,13 @@ int main(void) {
     }
     puts("\nMiSeed Umi/CSOT RAM diagnostic. No storage is mounted.");
     puts("USB ACM console is available when the gadget binds successfully.");
-    for (;;) sleep(60);
+    /* PID 1 records independently of every USB open/read/write and reconnect. */
+    for (;;) {
+        int status;
+        charge_kernel_drain();
+        if (++tick % 2 == 0) charge_snapshot();
+        if (waitpid(-1, &status, WNOHANG) > 0)
+            charge_log_append("ERROR", "USB_console_exited status=%d", status);
+        sleep(1);
+    }
 }

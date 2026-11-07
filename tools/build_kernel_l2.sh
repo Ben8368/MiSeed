@@ -15,6 +15,8 @@ build_tree="${MISEED_BUILD_ROOT:-${work_root}/build-${kernel_revision}}"
 readonly template="${work_root}/reference-boot-v2.img"
 readonly input_dts="${repo_root}/kernel/umi-csot.dts"
 readonly config_fragment="${repo_root}/kernel/umi-l2.config"
+readonly observer_applier="${repo_root}/tools/apply_power_observer.py"
+readonly observer_source="${repo_root}/kernel/power_observer.c"
 export KBUILD_BUILD_TIMESTAMP="2026-11-05 00:00:00 UTC"
 export KBUILD_BUILD_VERSION=1
 export KBUILD_BUILD_USER=MiSeed
@@ -28,6 +30,7 @@ require nproc
 readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
 [[ -f "$input_dts" && -f "$config_fragment" ]] || fail "board DTS or config fragment is missing"
+[[ -f "$observer_source" && -f "$observer_applier" && -f "$repo_root/kernel/charge_log.h" ]] || fail "power log source inputs are missing"
 [[ "$(aarch64-linux-gnu-gcc -dumpfullversion)" == "13.3.0" ]] || fail "expected aarch64-linux-gnu-gcc 13.3.0"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
 grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must enable ARCH_QCOM"
@@ -82,6 +85,7 @@ readonly qcom_dts_dir="$source_tree/arch/arm64/boot/dts/qcom"
 readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
 readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
+python3 "$observer_applier" --source "$source_tree"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
 python3 "$repo_root/tools/extract_abl_anchors.py" \
@@ -96,6 +100,9 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
 "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
     "$build_tree/.config" "$config_fragment"
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+for option in MEMFD_CREATE FILE_LOCKING; do
+    grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "RAM recorder lost CONFIG_${option}"
+done
 for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL_SM8250 COMMON_CLK_QCOM SM_GCC_8250 QCOM_CLK_RPMH QCOM_RPMHPD QCOM_GDSC HWSPINLOCK QCOM_SMEM QCOM_LLCC INTERCONNECT INTERCONNECT_QCOM INTERCONNECT_QCOM_SM8250 INTERCONNECT_QCOM_OSM_L3 IOMMU_SUPPORT ARM_SMMU SPMI QCOM_PDC SPMI_MSM_PMIC_ARB MFD_SPMI_PMIC POWER_RESET_QCOM_PON BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE SERIAL_EARLYCON CMDLINE_FORCE FRAMEBUFFER_CONSOLE_ROTATION FONTS FONT_TER16x32 QCOM_COMMAND_DB QCOM_RPMH USB_GADGET USB_DWC3 USB_DWC3_QCOM USB_DWC3_GADGET USB_CONFIGFS USB_CONFIGFS_ACM U_SERIAL_CONSOLE PHY_QCOM_USB_SNPS_FEMTO_V2 REGULATOR REGULATOR_FIXED_VOLTAGE REGULATOR_QCOM_RPMH; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "resolved config lost CONFIG_${option}"
 done
@@ -131,7 +138,8 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
     "$repo_root/tools/extract_boot_v2_dtb.py" "$config_fragment" \
-    "$repo_root/kernel/rescue_init.c" "$repo_root/tools/make_initramfs.py" \
+    "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
+    "$observer_source" "$observer_applier" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \
     "$build_tree/.config" "$kernel_image" "$initramfs" "$dtb" "$output_root/boot.img"
 printf '\nLinux revision: %s\nReference report revision: %s\n' "$kernel_revision" "$reference_revision"

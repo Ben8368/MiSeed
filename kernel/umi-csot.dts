@@ -111,6 +111,16 @@
 	mode-bootloader = <0x2>;
 };
 
+/* Diagnostic status reads only; this node never initializes/enables charging. */
+&spmi_bus {
+	pmic@2 {
+		power-observer@1000 {
+			compatible = "miseed,umi-power-observer";
+			reg = <0x1000>;
+		};
+	};
+};
+
 /*
  * This RAM diagnostic needs no GPIO consumers. Once PDC is available, TLMM
  * would probe all GPIO directions, including Umi regions reported to abort

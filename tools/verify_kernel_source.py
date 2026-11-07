@@ -15,6 +15,13 @@ GENERATED = {
     ".miseed-source-revision",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
     "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
+    "drivers/mfd/miseed_power_observer.c",
+}
+OVERLAY_RULES = {
+    MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
+               (b"", b"DTC_FLAGS_umi-csot += -@")],
+    "drivers/mfd/Makefile": [
+        (b"\n", b"obj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o")],
 }
 
 
@@ -64,11 +71,10 @@ def verify_source(repository, revision, source):
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
             actual = digest.hexdigest()
-            if actual != oid and name == MAKEFILE:
+            if actual != oid and name in OVERLAY_RULES:
                 original = git(repository, "show", revision + ":" + name)
                 expected = original
-                for prefix, rule in [(b"\n", b"dtb-y += umi-csot.dtb"),
-                                     (b"", b"DTC_FLAGS_umi-csot += -@")]:
+                for prefix, rule in OVERLAY_RULES[name]:
                     if rule not in expected.splitlines():
                         expected += prefix + rule + b"\n"
                 if path.read_bytes() == expected:
