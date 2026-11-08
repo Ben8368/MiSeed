@@ -49,7 +49,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。`e2ac23c4…c377` 真机 RAM 启动确认 QUPv3 父 wrapper `qupv3_id_2` 已启用，但 I2C15 延迟探测，原因为 `18200000.rsc:power-controller not ready`。镜像 `108f4474…360d` 确认 RPMh RSC 已绑定但 provider 未绑定；镜像 `2e5ddc0f…e087a` 进一步记录 `qcom-rpmhpd` probe `-95`。固定 Linux v6.18.60 的 QCOM_RPMHPD Kconfig 未选择 PM_OPP，而 provider probe 会读取 OPP 表；缺少实现时 OPP OF stub 返回 `-EOPNOTSUPP`，与设备错误码相符。源码暂存逻辑已补选 PM_OPP，L2 镜像 `9e065431…acfcea` 构建成功，尚待 RAM 启动验证。此前 I2C sysfs 为空、BQ25970 未绑定，PPS 控制器不可用；用户观察为 PD 固定档而无 PPS。前镜像设备 USB supply 为 `Unknown [SDP] DCP CDP`，并记录 Type-C hard-reset。后续核实修复后的 provider、I2C/IRQ、设备侧 APDO/PPS、保护/温控与停止恢复；并验证 RISK-010 overlay 隔离和 Type-C VBUS provider，完成 LOS 外部温控/电池电流路径审查。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处跟进项检查实际设备树/PMIC 接线及保护路径，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。镜像 `9e065431…acfcea` RAM 启动已确认 RPMh RSC 与 power-domain provider 绑定、I2C15 枚举、`15-0066` 绑定 `umi-bq25970-pps`，此前 provider `-95` 和 I2C deferred 阻塞已解除。但 `pps-status` 仍为 `state=1 error=0 requested_mv=0 requested_ma=0`，驱动状态 `PPS_WAIT_PLUG`；用户拔掉电脑 USB 接墙充仍见 PD 固定档。同期 PM8150B APSD supply 显示 `Unknown SDP DCP [CDP]`、约 4.58 V / 0.506 A；这不是 TCPM 合约证据。新增只读诊断遍历 power_supply 白名单属性，L2 镜像 `8f01d739…1955c8` 尚待 RAM 启动，以读取 `tcpm-source-psy-*` 的 `usb_type/online/电流电压`。本轮尚未拿到 TCPM 源的 APDO/PPS 能力报告。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。后续先据 TCPM 属性确定源/驱动状态，再继续 PPS 请求；完成保护/温控、停止恢复、RISK-010 overlay 隔离、Type-C VBUS provider、LOS 外部温控/电池电流路径审查。不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
 
 ## 诊断接口
 

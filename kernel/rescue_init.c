@@ -536,6 +536,60 @@ static void report_spmi_dt_nodes(void) {
     closedir(dir);
 }
 
+static void report_power_supply_diagnostics(void) {
+    static const char *const properties[] = {
+        "type", "online", "status", "usb_type", "voltage_now",
+        "current_now", "voltage_max", "current_max", "pd_current_max",
+        "input_current_limit", "charge_type", "scope"
+    };
+    const char *root = "/sys/class/power_supply";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    unsigned int count = 0;
+
+    if (!dir) {
+        printf("Power supply list unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        size_t i;
+        int found = 0;
+
+        if (entry->d_name[0] == '.') continue;
+        if (count++ == 32) {
+            puts("Power supply list truncated after 32 entries");
+            break;
+        }
+        printf("Power supply %s:", entry->d_name);
+        for (i = 0; i < sizeof(properties) / sizeof(properties[0]); i++) {
+            char path[512];
+            char value[160];
+            ssize_t length;
+            size_t j;
+            int fd;
+
+            if (snprintf(path, sizeof(path), "%s/%s/%s", root,
+                         entry->d_name, properties[i]) >= (int)sizeof(path))
+                continue;
+            fd = open(path, O_RDONLY | O_CLOEXEC);
+            if (fd < 0) continue;
+            length = read(fd, value, sizeof(value) - 1);
+            close(fd);
+            if (length <= 0) continue;
+            value[length] = '\0';
+            while (length > 0 && (value[length - 1] == '\n' ||
+                                  value[length - 1] == '\r'))
+                value[--length] = '\0';
+            for (j = 0; j < (size_t)length; j++)
+                if (!isprint((unsigned char)value[j])) value[j] = '?';
+            printf("%s %s=%s", found ? "," : "", properties[i], value);
+            found = 1;
+        }
+        puts(found ? "" : " no diagnostic properties");
+    }
+    closedir(dir);
+}
+
 static void report_runtime_status(void) {
     report_platform_driver("PDC", "qcom,sm8250-pdc");
     report_platform_driver("RPMh RSC", "qcom,rpmh-rsc");
@@ -548,6 +602,7 @@ static void report_runtime_status(void) {
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
     report_platform_driver("PON", "qcom,pm8998-pon");
     report_i2c_devices();
+    report_power_supply_diagnostics();
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
     report_spmi_devices();
