@@ -60,8 +60,8 @@ Type-C 继续 sink/device、仅 5 V/0.5 A 固定回退 + PPS APDO，DWC3 继续 
 | 层级 / 环境 | 命令 | 结果 |
 | --- | --- | --- |
 | L0 / Windows | `python -X utf8 tools/check_repo.py`、`git diff --check` | 0 / 通过 |
-| L1 / Windows Python 3.14 | `python -X utf8 -m unittest discover -s tests -v` | 0 / 89 项，45 通过、44 项 POSIX/编译器/libfdt 等平台相关跳过 |
-| L1 / WSL | `python3 -m unittest discover -s tests -v` | 0 / 89 项全部通过，无跳过 |
+| L1 / Windows Python 3.14 | `python -X utf8 -m unittest discover -s tests -v` | 0 / 95 项，51 通过、44 项 POSIX/编译器/libfdt 等平台相关跳过 |
+| L1 / WSL | `python3 -m unittest discover -s tests -v` | 0 / 95 项全部通过，无跳过 |
 | L0 / WSL | `shellcheck --severity=error tools/build_kernel_l2.sh tools/build_kernel_l2_macos.sh` | 0 / 无 error |
 | L2 / WSL | `MISEED_JOBS=12 MISEED_WORK_ROOT=/tmp/miseed-boot-l2 MISEED_OUTPUT_ROOT=/mnt/c/MiSeed/.work/pps-followup-l2 bash tools/build_kernel_l2.sh` | 0 / ARM64 镜像完整构建；入口强制运行 5 项真实 libfdt 正反例 |
 | 本地参考 DTBO | `python3 -u .work/pps-followup-reference/verify_overlays.py` | 0 / 29 项逐个叠加全部成功，主线 SPMI/TLMM 子树属性值与 phandle 逐字节一致 |
@@ -73,3 +73,7 @@ L2 仍为 Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18`、GCC 13.3.0（Ubuntu
 本轮开始时查询，旧 HEAD `78bcb2654d0a03f6e42a09544d0a77c01764b6b4` 的远端六项 CI 已全部成功，CodeRabbit 跳过；这是追加修复之前的结果。新提交 CI 须另查精确 PR HEAD。本轮没有 PPS、GPIO 或 PMIC 新 L3，也没有独立人工专项复核；RISK-004、RISK-010、TD-002 保留相应运行准入边界。
 
 首次追加提交 `570a0e3ca42df4cc9550e7e84ed6bed86439c557` 的远端 CI 暴露缓存测试工具桩缺少 fdtput/fdtoverlay；随后将强制叠加测试移到缓存选择之后，避免缓存专用夹具执行真实 DTB 测试，同时补齐工具桩。该提交 Boot L2 在下载已锁定参考 header 时收到 HTTP 504，尚未进入内核编译；不将其归为源码编译通过。修复后完整回归与 L2 重新执行，新提交远端结果另核。
+
+随后 HEAD `ea97c25e32de8c90e964c38337ef106e146adb3e` 的四个平台 Repository 与 PR commits 全部成功；Boot L2 仍在相同来源下载处收到 504。确认 GitHub release API 的资产 592897637 与原文件同名、同大小 28,209,152 B、同 SHA-256，故增加该 API 备用入口；来源资产未更换，不添加 token。下载最多三次，仅瞬时传输失败重试，临时文件完成且哈希匹配后才原子安装；404、哈希不符或错误现有缓存不绕过。新增 6 项离线传输/损坏/缓存反例，最终回归增为 95 项。备用入口与证据记入来源锁；后续远端结果按最终 HEAD 查询。
+
+实际下载复验：以 `tools/download_locked.py` 使用原 URL、记录的 API fallback 和原 SHA-256，保存到忽略的 `.work/pps-followup-reference/downloaded-reference.img`；原入口 504 后首次备用下载成功，退出 0，大小 28,209,152 B，SHA-256 `a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a`。最终完整 L2 再次退出 0，boot/DTB 哈希不变。

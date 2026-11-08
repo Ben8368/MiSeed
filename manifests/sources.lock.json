@@ -395,7 +395,9 @@
       "included_paths": [],
       "submodules": [],
       "patches": [],
-      "verification": "Release asset SHA-256 checked before parsing. The build reads v2 header fields and source DTB symbol names only; it replaces kernel, ramdisk, DTB and command line, and never executes or distributes the reference image."
+      "verification": "Release asset SHA-256 checked before parsing. The build reads v2 header fields and source DTB symbol names only; it replaces kernel, ramdisk, DTB and command line, and never executes or distributes the reference image.",
+      "download_fallback_url": "https://api.github.com/repos/misaka-link/umi-linux/releases/assets/592897637",
+      "download_fallback_evidence": "2026-11-08 release API asset 592897637: same filename, size 28209152 and sha256:a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a; accepts application/octet-stream; no token required."
     },
     {
       "id": "armbian-sm8250-power-runtime-reference",

@@ -2,7 +2,7 @@
 
 日期：2026-11-08。分支 `codex/umi-pd-pps-fastcharge`，基于 main `109225e`；工作进入[草稿 PR #3](https://github.com/Ben8368/MiSeed/pull/3)，未合并。Lineage 来源固定 `71b13e62f057a649b77fe4062feb73ee72ad609c`。新增官方源码对照、DTBO 隔离、UART-only GPIO、PD PHY 接线和补采，见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 
-WSL 89 项回归全过；Windows 45 通过、44 跳过；ARM64 L2 通过。最终 boot SHA-256 `b2068513…1770f0`；29 个参考 DTBO 独立叠加后主线 SPMI/TLMM 未变。TLMM 源码仅开放 GPIO34/35；PPS、Type-C/I2C15、VBUS 仍禁用，板级参数缺失拒绝 probe。**没有本次 PMIC/TLMM 或 PPS 新 L3，不可声称快充可用。** CI 按精确 PR HEAD 核验。
+WSL 95 项回归全过；Windows 51 通过、44 跳过；ARM64 L2 通过。最终 boot SHA-256 `b2068513…1770f0`；29 个参考 DTBO 独立叠加后主线 SPMI/TLMM 未变。TLMM 源码仅开放 GPIO34/35；PPS、Type-C/I2C15、VBUS 仍禁用，板级参数缺失拒绝 probe。**没有本次 PMIC/TLMM 或 PPS 新 L3，不可声称快充可用。** CI 按精确 PR HEAD 核验。
 
 已采身份和剩余缺项见[平台](platforms.md)，不重复索取。部分 Mac 原始日志未迁移。本轮未连接手机或修改供电；旧受限充电 L3 不覆盖快充或新拓扑。
 

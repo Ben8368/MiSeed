@@ -6,6 +6,8 @@ readonly kernel_url="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linu
 readonly kernel_revision="f45ed76d6791cf72ff1265ee93511175bbbc2f18"
 readonly reference_revision="cf83073887899f485a5c606f9842c5e691ea796c"
 readonly boot_url="https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img"
+# Same GitHub release asset; API endpoint avoids failing public release redirects.
+readonly boot_api_url="https://api.github.com/repos/misaka-link/umi-linux/releases/assets/592897637"
 readonly boot_sha256="a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a"
 readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
@@ -50,11 +52,8 @@ grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must 
 
 mkdir -p "$work_root" "$output_root"
 if [[ ! -f "$template" ]]; then
-    python3 - "$boot_url" "$template" <<'PY'
-import sys
-from urllib.request import urlretrieve
-urlretrieve(sys.argv[1], sys.argv[2])
-PY
+    python3 "$repo_root/tools/download_locked.py" --url "$boot_url" \
+        --fallback-url "$boot_api_url" --sha256 "$boot_sha256" --output "$template"
 fi
 [[ "$(sha256sum "$template" | awk '{print $1}')" == "$boot_sha256" ]] || fail "locked Android header-v2 template SHA-256 mismatch"
 
@@ -194,7 +193,7 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
 
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
-    "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
+    "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
     "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
     "$observer_source" "$observer_applier" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \
