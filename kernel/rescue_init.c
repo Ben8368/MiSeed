@@ -587,7 +587,7 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, reboot, bootloader");
+        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-stop, reboot, bootloader");
         puts("charge-log/logs: retained RAM timeline; charge: latest records; no charge control.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
@@ -604,7 +604,16 @@ static void usb_console(void) {
         else if (!strcmp(line, "mounts")) print_file("/proc/mounts");
         else if (!strcmp(line, "charge")) charge_log_export(32);
         else if (!strcmp(line, "charge-log") || !strcmp(line, "logs")) charge_log_export(0);
-        else if (!strcmp(line, "reboot")) {
+        else if (!strcmp(line, "charge-test")) {
+            int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_test", "arm");
+            charge_log_append("CONTROL", "charge_test_arm rc=%d", rc);
+            puts(rc ? "Charge test arm failed; inspect logs." :
+                 "Test armed: disconnect computer, attach charger. Ends on unplug or after 60 seconds; safety gates stay active.");
+        } else if (!strcmp(line, "charge-stop")) {
+            int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_test", "stop");
+            charge_log_append("CONTROL", "charge_test_stop rc=%d", rc);
+            puts(rc ? "Charge stop failed; disconnect the charger." : "Charging inhibited; test cancelled.");
+        } else if (!strcmp(line, "reboot")) {
             puts("Normal reboot requested.");
             sync();
             (void)reboot(RB_AUTOBOOT);

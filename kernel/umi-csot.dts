@@ -14,6 +14,7 @@
 #include "pm8150b.dtsi"
 #include "pm8150l.dtsi"
 #include "pm8009.dtsi"
+#include "umi-pm8150b.dtsi"
 
 /* The SM8250 MTP defaults do not match the Umi remote-processor carveouts. */
 /delete-node/ &adsp_mem;

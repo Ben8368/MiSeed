@@ -162,6 +162,7 @@ static void charge_snapshot(void) {
     static const char * const attrs[] = {
         "type", "status", "present", "online", "capacity", "temp",
         "voltage_now", "current_now", "health", "usb_type", "charge_type",
+        "charge_behaviour", "charge_test",
     };
     DIR *dir = opendir("/sys/class/power_supply");
     struct dirent *entry;

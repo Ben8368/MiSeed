@@ -29,6 +29,8 @@ class SourceCacheTests(unittest.TestCase):
         self.git("init", "-q")
         for name, text in {verifier.MAKEFILE: "# upstream rules\n",
                            "drivers/mfd/Makefile": "# MFD upstream rules\n",
+                           "drivers/power/supply/Makefile": "# upstream power rules\n",
+                           "drivers/power/supply/Kconfig": "# upstream power config\n",
                            "include/board.dtsi": "original\n",
                            ".gitignore": "*.o\n"}.items():
             path = self.repo / name
@@ -133,7 +135,8 @@ class SourceCacheTests(unittest.TestCase):
         (work / "reference-boot-v2.img").write_bytes(template)
         tools = self.root / "bin"
         tools.mkdir()
-        for name, output in [("aarch64-linux-gnu-gcc", "13.3.0"), ("make", "GNU Make 4.3"),
+        for name, output in [("aarch64-linux-gnu-gcc", "13.3.0"), ("aarch64-linux-gnu-nm", ""),
+                             ("make", "GNU Make 4.3"),
                              ("dtc", ""), ("fdtget", "")]:
             stub = tools / name
             stub.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(output) + "\n")

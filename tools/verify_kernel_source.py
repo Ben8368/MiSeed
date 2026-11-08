@@ -16,12 +16,22 @@ GENERATED = {
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
     "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
     "drivers/mfd/miseed_power_observer.c",
+    "drivers/power/supply/qcom_fg.c",
+    "drivers/power/supply/qcom_pm8150b_charger.c",
+    "drivers/power/supply/miseed-power.Kconfig",
+    "drivers/power/supply/umi_charge_policy.h",
+    "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
 }
 OVERLAY_RULES = {
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
                (b"", b"DTC_FLAGS_umi-csot += -@")],
     "drivers/mfd/Makefile": [
         (b"\n", b"obj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o")],
+    "drivers/power/supply/Makefile": [
+        (b"\n", b"obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o"),
+        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o")],
+    "drivers/power/supply/Kconfig": [
+        (b"\n", b'source "drivers/power/supply/miseed-power.Kconfig"')],
 }
 
 

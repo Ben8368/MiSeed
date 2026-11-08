@@ -10,7 +10,7 @@ readonly boot_sha256="a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f
 readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
 readonly source_cache="${work_root}/linux-stable.git"
-source_tree="${work_root}/linux-source-${kernel_revision}"
+source_tree="${MISEED_EXTRACTED_SOURCE:-${work_root}/linux-source-${kernel_revision}}"
 build_tree="${MISEED_BUILD_ROOT:-${work_root}/build-${kernel_revision}}"
 readonly template="${work_root}/reference-boot-v2.img"
 readonly input_dts="${repo_root}/kernel/umi-csot.dts"
@@ -25,7 +25,7 @@ export KBUILD_BUILD_HOST=Ubuntu2404
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"; }
 
-for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc dtc fdtget; do require "$tool"; done
+for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget; do require "$tool"; done
 require nproc
 readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
@@ -86,6 +86,7 @@ readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
 readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
 python3 "$observer_applier" --source "$source_tree"
+python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
 python3 "$repo_root/tools/extract_abl_anchors.py" \
@@ -100,6 +101,12 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
 "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
     "$build_tree/.config" "$config_fragment"
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+for option in BATTERY_MISEED_QCOM_FG CHARGER_MISEED_PM8150B; do
+    grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "runtime power driver must be built-in: ${option}"
+done
+for option in MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5; do
+    grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "power compile test lost CONFIG_${option}"
+done
 for option in MEMFD_CREATE FILE_LOCKING; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "RAM recorder lost CONFIG_${option}"
 done
@@ -111,7 +118,18 @@ grep -Fqx 'CONFIG_ARM64_PA_BITS=48' "$build_tree/.config" || fail "resolved conf
 grep -Fqx 'CONFIG_CMDLINE="console=ttyMSM0,115200n8 console=tty0 loglevel=8 keep_bootcon earlycon pd_ignore_unused clk_ignore_unused regulator_ignore_unused fbcon=font:TER16x32,rotate:3 rdinit=/init"' "$build_tree/.config" || fail "resolved config lost the forced diagnostic command line"
 
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-    -j"$jobs" Image qcom/umi-csot.dtb
+    -j"$jobs" Image qcom/umi-csot.dtb modules
+
+# Runtime drivers must be built-in; the rescue image needs no module loader.
+for driver in qcom_fg qcom_pm8150b_charger; do
+    [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"
+    install -m 0644 "$build_tree/drivers/power/supply/${driver}.o" "$output_root/${driver}.o"
+done
+cp "$build_tree/.config" "$output_root/resolved.config"
+aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
+for symbol in qcom_fg_probe smb5_probe; do
+    grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
+done
 
 readonly dtb="$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb"
 readonly symbols="$(fdtget "$dtb" /__symbols__ arch_timer 2>/dev/null || true)"
@@ -140,6 +158,10 @@ sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" 
     "$repo_root/tools/extract_boot_v2_dtb.py" "$config_fragment" \
     "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
     "$observer_source" "$observer_applier" "$repo_root/tools/make_initramfs.py" \
+    "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \
+    "$repo_root/kernel/power/Kconfig" "$repo_root/kernel/power/umi_charge_policy.h" \
+    "$repo_root/kernel/power/umi-pm8150b.dtsi" "$repo_root/tools/apply_power_port.py" \
+    "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \
     "$build_tree/.config" "$kernel_image" "$initramfs" "$dtb" "$output_root/boot.img"
 printf '\nLinux revision: %s\nReference report revision: %s\n' "$kernel_revision" "$reference_revision"
