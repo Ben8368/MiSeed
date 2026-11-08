@@ -299,6 +299,64 @@ static int report_platform_driver(const char *label, const char *compatible) {
     return bound;
 }
 
+static void report_i2c_devices(void) {
+    const char *root = "/sys/bus/i2c/devices";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    char path[512];
+    char driver[256];
+    char compatible[256];
+    unsigned int count = 0;
+
+    if (!dir) {
+        printf("I2C device list unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        ssize_t length;
+        int fd;
+
+        if (entry->d_name[0] == '.') continue;
+        if (count++ == 64) {
+            puts("I2C device list truncated after 64 entries");
+            break;
+        }
+        if (snprintf(path, sizeof(path), "%s/%s/driver", root,
+                     entry->d_name) >= (int)sizeof(path))
+            continue;
+        length = readlink(path, driver, sizeof(driver) - 1);
+        if (length < 0) strcpy(driver, "unbound");
+        else {
+            driver[length] = '\0';
+        }
+
+        if (snprintf(path, sizeof(path), "%s/%s/of_node/compatible", root,
+                     entry->d_name) >= (int)sizeof(path))
+            continue;
+        fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            printf("I2C device %s driver=%s compatible=unavailable\n",
+                   entry->d_name, driver);
+            continue;
+        }
+        length = read(fd, compatible, sizeof(compatible) - 1);
+        close(fd);
+        if (length < 0) {
+            printf("I2C device %s driver=%s compatible=read-error\n",
+                   entry->d_name, driver);
+            continue;
+        }
+        for (ssize_t i = 0; i < length; i++)
+            if (compatible[i] == '\0') compatible[i] = ' ';
+        compatible[length] = '\0';
+        printf("I2C device %s driver=%s compatible=%s\n",
+               entry->d_name, driver, compatible);
+    }
+    closedir(dir);
+    if (!count) puts("I2C device list empty");
+    list_directory("Type-C class devices", "/sys/class/typec");
+}
+
 static void report_spmi_devices(void) {
     const char *root = "/sys/bus/spmi/devices";
     DIR *dir = opendir(root);
@@ -434,6 +492,7 @@ static void report_runtime_status(void) {
         "/sys/firmware/devicetree/base/soc@0/spmi@c440000/pmic@0/pon@800/mode-bootloader");
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
     report_platform_driver("PON", "qcom,pm8998-pon");
+    report_i2c_devices();
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
     report_spmi_devices();

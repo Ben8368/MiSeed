@@ -94,6 +94,11 @@ static int test_open(const char *path, int flags, ...) {
         snprintf(mapped, sizeof(mapped), "%s/%s", getenv("TEST_POWER_ROOT"), path + 24);
         return open(mapped, flags, mode);
     }
+    if (getenv("TEST_I2C_ROOT") && !strncmp(path, "/sys/bus/i2c/devices/", 21)) {
+        char mapped[1024];
+        snprintf(mapped, sizeof(mapped), "%s/%s", getenv("TEST_I2C_ROOT"), path + 21);
+        return open(mapped, flags, mode);
+    }
     if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
         char mapped[1024];
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
@@ -111,6 +116,8 @@ static DIR *test_opendir(const char *path) {
     if (!path) { errno = ENOENT; return NULL; }
     if (!strcmp(path, "/sys/class/power_supply") && getenv("TEST_POWER_ROOT"))
         path = getenv("TEST_POWER_ROOT");
+    if (getenv("TEST_I2C_ROOT") && !strcmp(path, "/sys/bus/i2c/devices"))
+        path = getenv("TEST_I2C_ROOT");
     if (getenv("TEST_PPS_ROOT") && !strcmp(path, pps_prefix)) path = getenv("TEST_PPS_ROOT");
     return opendir(path);
 }
@@ -172,6 +179,7 @@ static unsigned int test_sleep(unsigned int seconds) {
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
     if (!strcmp(argv[1], "logs")) report_usb_kernel_messages();
+    else if (!strcmp(argv[1], "i2c-report")) report_i2c_devices();
     else if (!strcmp(argv[1], "bind")) {
         delayed_udc = 1;
         wait_for_usb_acm();
@@ -288,6 +296,20 @@ class RescueInitTests(unittest.TestCase):
                       "PMIC", "PDC", "PSCI", "failed", "could not", "error", "critical message"]:
             self.assertIn(token, result.stdout)
         self.assertNotIn("unrelated information", result.stdout)
+
+    def test_i2c_report_shows_driver_and_device_tree_compatible(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            device = root / "15-0066"
+            (device / "of_node").mkdir(parents=True)
+            (device / "of_node/compatible").write_bytes(b"miseed,umi-bq25970-pps\0")
+            (device / "driver").symlink_to("../../drivers/umi-bq25970-pps")
+            env = dict(os.environ, TEST_I2C_ROOT=str(root))
+            result = subprocess.run([self.program, "i2c-report"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("I2C device 15-0066", result.stdout)
+            self.assertIn("umi-bq25970-pps", result.stdout)
 
     def test_unbound_pon_refuses_without_reboot_syscall(self):
         result = subprocess.run([self.program, "bootloader-unbound"],
