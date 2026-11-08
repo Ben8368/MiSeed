@@ -1,6 +1,6 @@
 # 当前状态
 
-日期：2026-11-08。PR #2 已发布 HEAD `a6eceed`；CodeRabbit 复核修复仍在本地工作树，未提交或推送。修复后 macOS 本地 L2 构建成功，`boot.img` SHA-256 `4396142a…b3ca6c`；75 项回归中 61 项通过，14 项因 Linux 专属环境跳过。远端 CI 仍对应发布 HEAD，不覆盖本地修复；用户要求暂缓合并。逐项结论与验证见[PR #2 CodeRabbit 复核](archive/reviews/2026-11-08-pr2-coderabbit.md)。此前真机结果和 PR 发布 HEAD CI 记录见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
+日期：2026-11-08。PR #2 已推送 CodeRabbit 复核修复（commit `6b40cf1`），未合并。修复后 macOS 本地 L2 构建成功，`boot.img` SHA-256 `4396142a…b3ca6c`；75 项回归中 61 项通过，14 项因 Linux 专属环境跳过。GitHub 当前 PR HEAD `6b40cf19874c4b91d58b954291ad06500184e7ef` 尚未返回 PR workflow run；需待其 CI 和开发者以外的独立专项复核完成，再评估合并。逐项结论与验证见[PR #2 CodeRabbit 复核](archive/reviews/2026-11-08-pr2-coderabbit.md)。此前真机结果和原发布 HEAD CI 记录见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
 
 本机新镜像 RAM 启动及 600 秒准备完成；维护者提前结束，日志观测约 25.5 秒受限启充、拔出停充、78% 电量下恢复正常策略。1524 条连续记录、覆盖 0、复读一致；温度 36°C，23 条稳定 FG 电流中位 −85,449 µA。不代表 600 秒超时、异常保护或快充已通过。
 
