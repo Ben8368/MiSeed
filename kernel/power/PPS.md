@@ -49,7 +49,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。真机诊断发现 I2C sysfs 为空；compiled DTB 中 I2C15 虽为 `okay`，其 QUPv3 父节点 `qupv3_id_2` 原为 `disabled`。当前 profile 已同时启用该父 wrapper，L2 验证 QUP2 组内只有 I2C15/BQ25970 child 为 `okay`，其他 I2C/SPI child 保持 `disabled`。修正后仍需真机确认运行时 pinctrl/I2C/IRQ 绑定，并验证 RISK-010 overlay 隔离和 Type-C VBUS provider；完成 LOS 外部温控/电池电流路径审查。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处跟进项检查实际设备树/PMIC 接线及保护路径，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。`e2ac23c4…c377` 真机 RAM 启动确认 QUPv3 父 wrapper `qupv3_id_2` 已启用，但 I2C15 延迟探测，原因为 `18200000.rsc:power-controller not ready`。镜像 `108f4474…360d` 确认 RPMh RSC 已绑定但 provider 未绑定；镜像 `2e5ddc0f…e087a` 进一步记录 `qcom-rpmhpd` probe `-95`。固定 Linux v6.18.60 的 QCOM_RPMHPD Kconfig 未选择 PM_OPP，而 provider probe 会读取 OPP 表；缺少实现时 OPP OF stub 返回 `-EOPNOTSUPP`，与设备错误码相符。源码暂存逻辑已补选 PM_OPP，L2 镜像 `9e065431…acfcea` 构建成功，尚待 RAM 启动验证。此前 I2C sysfs 为空、BQ25970 未绑定，PPS 控制器不可用；用户观察为 PD 固定档而无 PPS。前镜像设备 USB supply 为 `Unknown [SDP] DCP CDP`，并记录 Type-C hard-reset。后续核实修复后的 provider、I2C/IRQ、设备侧 APDO/PPS、保护/温控与停止恢复；并验证 RISK-010 overlay 隔离和 Type-C VBUS provider，完成 LOS 外部温控/电池电流路径审查。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处跟进项检查实际设备树/PMIC 接线及保护路径，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
 
 ## 诊断接口
 

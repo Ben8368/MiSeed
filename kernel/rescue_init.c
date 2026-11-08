@@ -204,6 +204,56 @@ static void report_usb_kernel_messages(void) {
         printf("Kernel diag %.228s\n", recent[i % LOG_COUNT]);
 }
 
+static void report_rpmh_kernel_messages(void) {
+    enum { LOG_COUNT = 32, LOG_LENGTH = 384 };
+    int fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    char message[2048];
+    char recent[LOG_COUNT][LOG_LENGTH];
+    unsigned int matches = 0;
+    unsigned int i;
+
+    if (fd < 0) {
+        fprintf(stderr, "RPMh kernel log unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while (1) {
+        ssize_t length = read(fd, message, sizeof(message) - 1);
+        char *content;
+
+        if (length < 0) {
+            if (errno != EAGAIN && errno != EINTR)
+                fprintf(stderr, "RPMh kernel log read failed: %s\n",
+                        strerror(errno));
+            if (errno != EINTR) break;
+            continue;
+        }
+        if (!length) break;
+        message[length] = '\0';
+        content = strchr(message, ';');
+        if (content) content++;
+        else content = message;
+        if (contains_case_insensitive(content, "rpmh") ||
+            contains_case_insensitive(content, "cmd-db") ||
+            contains_case_insensitive(content, "cmd_db") ||
+            contains_case_insensitive(content, "power-controller") ||
+            contains_case_insensitive(content, "power domain")) {
+            size_t copy_length = strnlen(content, LOG_LENGTH - 1);
+            memcpy(recent[matches % LOG_COUNT], content, copy_length);
+            recent[matches % LOG_COUNT][copy_length] = '\0';
+            matches++;
+        }
+    }
+    close(fd);
+    if (!matches) {
+        puts("No RPMh/CMD DB/power-domain kernel messages retained");
+        return;
+    }
+    for (i = matches > LOG_COUNT ? matches % LOG_COUNT : 0;
+         i < (matches > LOG_COUNT ? matches % LOG_COUNT + LOG_COUNT : matches);
+         i++)
+        printf("Kernel RPMh diag %.340s\n", recent[i % LOG_COUNT]);
+}
+
 static void report_usb_probe_devices(void) {
     const char *root = "/sys/bus/platform/devices";
     DIR *dir = opendir(root);
@@ -488,6 +538,11 @@ static void report_spmi_dt_nodes(void) {
 
 static void report_runtime_status(void) {
     report_platform_driver("PDC", "qcom,sm8250-pdc");
+    report_platform_driver("RPMh RSC", "qcom,rpmh-rsc");
+    report_platform_driver("RPMh power-domain provider", "qcom,sm8250-rpmhpd");
+    list_directory("RPMh power-domain driver",
+                   "/sys/bus/platform/drivers/qcom-rpmhpd");
+    report_rpmh_kernel_messages();
     report_dt_u32("PON mode-bootloader",
         "/sys/firmware/devicetree/base/soc@0/spmi@c440000/pmic@0/pon@800/mode-bootloader");
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");

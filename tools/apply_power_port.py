@@ -14,6 +14,13 @@ RULES = (
     "obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi_pps.o",
 )
 KCONFIG_RULE = 'source "drivers/power/supply/miseed-power.Kconfig"'
+# rpmhpd_probe() reads OPP tables while registering its genpd provider.
+RPMHPD_KCONFIG_RULE = (
+    'config QCOM_RPMHPD\n'
+    '\ttristate "Qualcomm RPMh Power domain driver"\n'
+    '\tdepends on QCOM_RPMH && QCOM_COMMAND_DB\n'
+    '\tselect PM_OPP'
+)
 
 
 def destination_dir(source, relative):
@@ -56,6 +63,18 @@ def stage(source, inputs):
             if rule not in text.splitlines():
                 text += "\n" + rule + "\n"
         path.write_text(text, encoding="utf-8", newline="\n")
+
+    rpmhpd_kconfig = destination_dir(source, "drivers/pmdomain/qcom") / "Kconfig"
+    if rpmhpd_kconfig.is_symlink():
+        raise ValueError("refusing RPMh power-domain Kconfig symlink")
+    text = rpmhpd_kconfig.read_text(encoding="utf-8")
+    rule = RPMHPD_KCONFIG_RULE
+    base_rule = rule.removesuffix("\n\tselect PM_OPP")
+    if rule not in text:
+        if text.count(base_rule) != 1:
+            raise ValueError("pinned QCOM_RPMHPD Kconfig stanza changed")
+        text = text.replace(base_rule, rule, 1)
+        rpmhpd_kconfig.write_text(text, encoding="utf-8", newline="\n")
 
 
 def main():
