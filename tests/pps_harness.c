@@ -46,7 +46,7 @@ union power_supply_propval { int intval; };
 struct power_supply { int id; int prop[PROP_COUNT]; };
 static struct power_supply pd, bms, sw;
 static unsigned int regs[0x30];
-static int io_count, fail_at, enable_count, fixed_count, release_count, kick_count;
+static int io_count, fail_at, enable_count, fixed_count, release_count, wd_writes;
 static int fail_stop, fail_fixed, fail_claim, fail_sensor, fail_request, fail_caps;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
 static unsigned int delayed_reg;
@@ -71,7 +71,7 @@ static int regmap_read(struct regmap *map, unsigned int r, unsigned int *v) {
 }
 static int regmap_write(struct regmap *map, unsigned int r, unsigned int v) {
  int ret = io_fail(); if (ret) return ret;
- if (r == 0x0b) kick_count++;
+ if (r == 0x0b) wd_writes++;
  if (r == 0x0c) {
   if (fail_stop && !(v & BIT(7))) return -EIO;
   if (v & BIT(7)) {
@@ -159,7 +159,7 @@ static void reset(void) {
  memset(&c,0,sizeof(c));memset(regs,0,sizeof(regs));
  memset(&pd,0,sizeof(pd));memset(&bms,0,sizeof(bms));memset(&sw,0,sizeof(sw));
  c.pd=&pd;c.bms=&bms;c.sw=&sw;c.seconds=60;
- clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=kick_count=0;
+ clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
  missing_property=NULL;hot_during_request=0;
@@ -226,9 +226,15 @@ int main(void) {
  reset();run();clock_ms=c.deadline;tick();assert(c.state==PPS_DONE && release_count==1);
  reset();c.seconds=600;run();clock_ms=c.deadline-200;tick();assert(c.state==PPS_RUN);
  clock_ms=c.deadline;tick();assert(c.state==PPS_DONE);
+ /* Match LOS: disable only bit 2, preserve frequency/timing and do not feed.
+  * A historical timeout flag is not an active watchdog with DIS set.
+  */
+ reset();regs[0x0b]=0x4b;run();assert(regs[0x0b]==0x4f && wd_writes==1);
+ for(int i=0;i<10;i++){clock_ms+=200;tick();assert(c.state==PPS_RUN && wd_writes==1);}
+ assert(!umi_pps_stop(&c,PPS_OFF,0) && wd_writes==1);
  /* Current/voltage/temperature/SOC/protection/contract/ownership failures. */
  for(int fault=0;fault<23;fault++) {
-  reset();run();int feeds=kick_count;
+  reset();run();int prior_wd_writes=wd_writes;
   switch(fault) {
    case 0: fail_sensor=1;break;
    case 1: bms.prop[POWER_SUPPLY_PROP_TEMP]=451;break;
@@ -238,7 +244,7 @@ int main(void) {
    case 5: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-6001000;break;
    case 6: regs[0x10]=0x80;break;
    case 7: regs[0x11]=0x01;break;
-   case 8: regs[0x0b]|=BIT(3);break;
+   case 8: regs[0x0b]&=~BIT(2);break;
    case 9: bad_readback=1;break;
    case 10: adc(0,3001);break;
    case 11: adc(4,4100);break;
@@ -255,7 +261,7 @@ int main(void) {
    case 22: regs[0x2b]|=BIT(3);break;
   }
   clock_ms+=200;tick();assert(c.state==PPS_FAULT);
-  assert(!(regs[0x0c]&BIT(7)) && !claim_owned && kick_count==feeds);
+  assert(!(regs[0x0c]&BIT(7)) && !claim_owned && wd_writes==prior_wd_writes);
  }
  /* No enable after failed negotiation, missing APDO, or exclusive claim. */
  for(int f=0;f<5;f++) {
@@ -274,33 +280,33 @@ int main(void) {
  assert(c.state==PPS_FAULT && c.last_error==-ETIME && !pps_activations && !enable_count);
  /* A blocking read may cross either deadline after the worker's first check. */
  reset();begin();clock_ms=c.start_deadline-1;delayed_reg=0x0d;read_delay_ms=2;
- int pre_enable_feeds=kick_count;tick();
+ int pre_enable_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && c.last_error==-ETIMEDOUT && !enable_count && !claim_owned);
- assert(kick_count==pre_enable_feeds);
+ assert(wd_writes==pre_enable_wd_writes);
  reset();begin();clock_ms=c.start_deadline-1;delayed_reg=0x0b;read_delay_ms=2;
- pre_enable_feeds=kick_count;tick();
- assert(c.state==PPS_FAULT && !enable_count && kick_count==pre_enable_feeds);
+ pre_enable_wd_writes=wd_writes;tick();
+ assert(c.state==PPS_FAULT && !enable_count && wd_writes==pre_enable_wd_writes);
  reset();run();clock_ms=c.deadline-1;delayed_reg=0x0d;read_delay_ms=2;
- int old_voltage=voltage_requests,old_current=current_requests,old_kicks=kick_count;tick();
+ int old_voltage=voltage_requests,old_current=current_requests,old_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && c.last_error==-ETIME && !claim_owned);
- assert(voltage_requests==old_voltage && current_requests==old_current && kick_count==old_kicks);
+ assert(voltage_requests==old_voltage && current_requests==old_current && wd_writes==old_wd_writes);
  /* An expired voltage request must not be followed by a current request. */
  reset();run();clock_ms=c.deadline-1;request_delay_ms=2;
- old_current=current_requests;old_kicks=kick_count;tick();
- assert(c.state==PPS_FAULT && current_requests==old_current && kick_count==old_kicks);
- /* Protection verification may itself consume the remaining refresh window. */
+ old_current=current_requests;old_wd_writes=wd_writes;tick();
+ assert(c.state==PPS_FAULT && current_requests==old_current && wd_writes==old_wd_writes);
+ /* Protection verification may itself consume the remaining control window. */
  reset();run();clock_ms=c.deadline-1;delayed_reg=0x02;read_delay_ms=2;
- old_kicks=kick_count;assert(umi_pps_refresh(&c)==-ETIME && kick_count==old_kicks);
- reset();run();hot_during_request=1;int pre_feeds=kick_count;clock_ms+=200;tick();
- assert(c.state==PPS_FAULT && kick_count==pre_feeds && !claim_owned);
- /* Missing, implausible or stale external telemetry must stop with no feed. */
+ old_wd_writes=wd_writes;assert(umi_pps_validate_cycle(&c)==-ETIME && wd_writes==old_wd_writes);
+ reset();run();hot_during_request=1;int pre_fault_wd_writes=wd_writes;clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && wd_writes==pre_fault_wd_writes && !claim_owned);
+ /* Missing, implausible or stale external telemetry must stop without watchdog writes. */
  for(int i=1;i<=5;i++) {
-  reset();run();thermal_fail=i;int previous=kick_count;tick();
-  assert(c.state==PPS_FAULT && !claim_owned && kick_count==previous);
+  reset();run();thermal_fail=i;int previous=wd_writes;tick();
+  assert(c.state==PPS_FAULT && !claim_owned && wd_writes==previous);
  }
  reset();thermal_delay_ms=41;begin();assert(c.state==PPS_FAULT && !enable_count);
- reset();run();thermal_mc[1]=125000;pre_feeds=kick_count;tick();
- assert(c.state==PPS_FAULT && kick_count==pre_feeds);
+ reset();run();thermal_mc[1]=125000;pre_fault_wd_writes=wd_writes;tick();
+ assert(c.state==PPS_FAULT && wd_writes==pre_fault_wd_writes);
  /* Thermal reduction is applied to PD current, and cannot auto-increase. */
  reset();run();bms.prop[POWER_SUPPLY_PROP_TEMP]=400;
  for(int i=0;i<5;i++)thermal_mc[i]=40000;
@@ -311,10 +317,10 @@ int main(void) {
  reset();run();bms.prop[POWER_SUPPLY_PROP_TEMP]=430;
  for(int i=0;i<5;i++)thermal_mc[i]=43000;
  tick();assert(c.state==PPS_FAULT && !claim_owned);
- /* Failed stop retains ownership, does not feed, retries both mechanisms. */
- reset();run();fail_stop=1;int feeds=kick_count;
+ /* Failed stop retains ownership, does not write watchdog, retries both mechanisms. */
+ reset();run();fail_stop=1;int prior_wd_writes=wd_writes;
  assert(umi_pps_stop(&c,PPS_OFF,0)==-EIO && c.stop_pending && claim_owned);
- assert(kick_count==feeds);fail_stop=0;tick();assert(!c.stop_pending && !claim_owned);
+ assert(wd_writes==prior_wd_writes);fail_stop=0;tick();assert(!c.stop_pending && !claim_owned);
  reset();run();fail_fixed=1;
  assert(umi_pps_stop(&c,PPS_OFF,0)==-EIO && claim_owned && !(regs[0x0c]&BIT(7)));
  fail_fixed=0;tick();assert(!claim_owned && !c.stop_pending);

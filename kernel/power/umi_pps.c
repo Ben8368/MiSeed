@@ -30,7 +30,7 @@
 #define BQ_CONTROL 0x0c
 #define BQ_ENABLE BIT(7)
 #define BQ_WATCHDOG 0x0b
-#define BQ_WD_5S 2
+#define BQ_WD_DISABLED BIT(2)
 #define BQ_ADC 0x14
 #define BQ_ADC_BASE 0x16
 #define PPS_FIXED 1
@@ -39,7 +39,7 @@
 enum umi_pps_state { PPS_OFF, PPS_WAIT_UNPLUG, PPS_WAIT_PLUG,
 	PPS_SETTLE, PPS_RUN, PPS_DONE, PPS_FAULT };
 
-/* Expected writable protection image, checked before every watchdog refresh. */
+/* Expected writable protection image, checked during every control cycle. */
 struct umi_pps_reg { unsigned int reg, mask, value; };
 struct umi_pps {
 	struct device *dev;
@@ -246,7 +246,9 @@ static int umi_pps_parse(struct umi_pps *c)
 	/* Continuous ADC, averaging, 13 bits, every channel enabled. */
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x14, 0xed, 0xa8};
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x15, 0xff, 0};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x0b, 0x07, BQ_WD_5S};
+	/* Match fixed LOS init_device: enable_wdt(false). Do not change timing. */
+	c->protection[c->nprotection++] = (struct umi_pps_reg){BQ_WATCHDOG,
+		BQ_WD_DISABLED, BQ_WD_DISABLED};
 	return 0;
 }
 
@@ -263,9 +265,6 @@ static int umi_pps_verify(struct umi_pps *c)
 			return ret;
 		if ((v & r->mask) != r->value)
 			return -EPERM;
-		/* Do not discard read-to-clear events during protection readback. */
-		if (r->reg == BQ_WATCHDOG && (v & BIT(3)))
-			return -ETIME;
 		/* Native Android 0x2b was 0xd0. Preserve and require its VOUT
 		 * control bit; do not guess the contradictory header's polarity.
 		 */
@@ -372,7 +371,7 @@ static int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 		ret = regmap_read(c->map, BQ_CONTROL, &control);
 	if (ret)
 		return ret;
-	s->fault = fault || latched || (state & 0xcb) || (wd & BIT(3)) ||
+	s->fault = fault || latched || (state & 0xcb) || !(wd & BQ_WD_DISABLED) ||
 		!(alarm & BIT(1)) || (c->state == PPS_RUN && !(control & BQ_ENABLE)) ||
 		(c->state == PPS_SETTLE && (control & BQ_ENABLE));
 	s->alarm = !!(alarm & 0xf0);
@@ -501,25 +500,13 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	return ret;
 }
 
-static int umi_pps_refresh(struct umi_pps *c)
+static int umi_pps_validate_cycle(struct umi_pps *c)
 {
-	unsigned int v;
 	int ret = umi_pps_check_deadline(c);
 
-	/* Real write, not regmap_update_bits (which may elide an unchanged value).
-	 * Watchdog expiry / refresh semantics still require device-specific L3.
-	 * Never refresh on faults, cleanup, or from an independent keepalive task.
-	 */
+	/* Readback only: LOS disables the pump watchdog; no periodic keepalive. */
 	if (!ret)
 		ret = umi_pps_verify(c);
-	if (!ret)
-		ret = regmap_read(c->map, BQ_WATCHDOG, &v);
-	if (!ret && (v & BIT(3)))
-		ret = -ETIME;
-	if (!ret)
-		ret = umi_pps_check_deadline(c);
-	if (!ret)
-		ret = regmap_write(c->map, BQ_WATCHDOG, v & ~BIT(7));
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
 	return ret;
@@ -620,7 +607,7 @@ static void umi_pps_work(struct work_struct *work)
 		}
 		if (!s.bus_low && !s.bus_high && !s.alarm) {
 			/* All gates reread after negotiation; enable is the last operation. */
-			ret = umi_pps_refresh(c);
+			ret = umi_pps_validate_cycle(c);
 			if (!ret)
 				ret = umi_pps_check_deadline(c);
 			if (!ret)
@@ -654,7 +641,7 @@ static void umi_pps_work(struct work_struct *work)
 		goto fail;
 	}
 	ret = umi_pps_request(c, next);
-	/* A PD request can sleep. Never feed using telemetry from before it. */
+	/* A PD request can sleep. Validate fresh telemetry after it returns. */
 	if (!ret)
 		ret = umi_pps_battery(c, &s);
 	if (!ret)
@@ -665,7 +652,7 @@ static void umi_pps_work(struct work_struct *work)
 	if (!ret && umi_pps_now() >= c->deadline)
 		ret = -ETIME;
 	if (!ret)
-		ret = umi_pps_refresh(c);
+		ret = umi_pps_validate_cycle(c);
 	if (ret)
 		goto fail;
 	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d thermal_mc=%d thermal_level=%d thermal_bat_ma=%d\n",
