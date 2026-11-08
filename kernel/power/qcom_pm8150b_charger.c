@@ -317,6 +317,7 @@ struct smb5_chip {
 	struct mutex lock;
 	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
 	unsigned long test_deadline;
+	unsigned int test_seconds;
 	int max_fv_uv;
 };
 
@@ -564,8 +565,8 @@ static void smb5_status_change_work(struct work_struct *work)
  }
  if (!rc && online && chip->test_armed && chip->test_saw_disconnect && !chip->test_active) {
   chip->test_active = true;
-  chip->test_deadline = jiffies + UMI_CHARGE_TEST_SECONDS * HZ;
-  dev_info(chip->dev, "miseed-charge test window started: %u seconds maximum\n", UMI_CHARGE_TEST_SECONDS);
+  chip->test_deadline = jiffies + chip->test_seconds * HZ;
+  dev_info(chip->dev, "miseed-charge test window started: %u seconds maximum\n", chip->test_seconds);
  }
  if (chip->test_active && time_after_eq(jiffies, chip->test_deadline)) {
   chip->test_active = false;
@@ -851,7 +852,7 @@ static ssize_t charge_test_show(struct device *dev, struct device_attribute *att
  ssize_t n;
  mutex_lock(&chip->lock);
  n = sysfs_emit(buf, "armed=%u active=%u seconds_max=%u\n",
-                chip->test_armed, chip->test_active, UMI_CHARGE_TEST_SECONDS);
+                chip->test_armed, chip->test_active, chip->test_seconds);
  mutex_unlock(&chip->lock);
  return n;
 }
@@ -861,9 +862,12 @@ static ssize_t charge_test_store(struct device *dev, struct device_attribute *at
 {
  struct smb5_chip *chip = power_supply_get_drvdata(dev_get_drvdata(dev));
  int rc;
- if (!sysfs_streq(buf, "arm") && !sysfs_streq(buf, "stop")) return -EINVAL;
+ if (!sysfs_streq(buf, "arm") && !sysfs_streq(buf, "arm-10min") &&
+     !sysfs_streq(buf, "stop")) return -EINVAL;
  mutex_lock(&chip->lock);
- chip->test_armed = sysfs_streq(buf, "arm");
+ chip->test_armed = !sysfs_streq(buf, "stop");
+ chip->test_seconds = sysfs_streq(buf, "arm-10min") ?
+                      UMI_CHARGE_EXTENDED_TEST_SECONDS : UMI_CHARGE_TEST_SECONDS;
  chip->inhibit = !chip->test_armed;
  chip->test_active = false;
  chip->test_saw_disconnect = false;
@@ -932,6 +936,7 @@ static int smb5_probe(struct platform_device *pdev)
 	mutex_init(&chip->lock);
 	/* First boot stays inhibited until telemetry is checked and a test is armed. */
 	chip->inhibit = true;
+	chip->test_seconds = UMI_CHARGE_TEST_SECONDS;
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chip->regmap)

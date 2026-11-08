@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "lock_date": "2026-11-08",
-  "lock_status": "revision-pinned; runtime power port L2 and one bounded local charging case L3; fault and long-term qualification open",
+  "lock_status": "revision-pinned; opt-in 600-second SOC-bypass diagnostic L2; prior bounded charging L3 remains image-specific; fast charge blocked",
   "scope": "Reviewed upstream identities, selected reference snapshots and exact local diagnostic build inputs. Device capability and validation status are maintained in docs/platforms.md and its evidence links; this lock does not replace those records.",
   "build_profiles": [
     {
@@ -39,7 +39,7 @@
       "input_sha256": {
         "kernel/umi-csot.dts": "4ce9815528ee61f4257df7f452932c8201b9785d2272921b1e338655635f2378",
         "kernel/umi-l2.config": "900a35ae153e44acf6c733e9ac2d72cf936c9066c12df6b799a6c4062dd6eb38",
-        "kernel/rescue_init.c": "7708d69ca4b59682c7fad9cd896b9241c8eda54d2f785b379ce62b612b389370",
+        "kernel/rescue_init.c": "2d7b9bdb62845c07fa4484a2e7fa63d3ef4cb126af5a5d20336c3088c37aed03",
         "tools/build_kernel_l2.sh": "2cfb66671d4c68219838b36b23058061eec2e7a6cf3787c6be90adbf68761725",
         "tools/extract_abl_anchors.py": "971c781396c3472520aabcb10cad4a7c46964e5bc560ae6ed1d397397198adae",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
@@ -53,16 +53,16 @@
         "kernel/power_observer.c": "ec019c4f138e7762629a316b808a44ae632d17a70825631b71dfede77f462256",
         "tools/apply_power_observer.py": "6c3c4b1c5133128e1e28eab8b00845e834b080425bc074000d83f53d19dcb22c",
         "kernel/power/qcom_fg.c": "2d0db26f6f660502e0605be6bc496d83d5bf2ec1227e4a50a19752f980f6fd2f",
-        "kernel/power/qcom_pm8150b_charger.c": "f1cf5266f61ec6726ea7d5d06f99e695e1ef3ed18e7e50cfaa861e3b81a37d3f",
+        "kernel/power/qcom_pm8150b_charger.c": "dee716e6f8fb14d016070d7a90b0d5f3d57b273d369ee26dbf888eaf3ede0bd5",
         "kernel/power/Kconfig": "b2a87423f8ade21adc060d56601f7ae6f570504866e234adafd87bc30624196e",
         "tools/apply_power_port.py": "f4c51c8e42334a7b54fd82e9566cd407e4325c50873693c011d69c5d9519529e",
-        "kernel/power/umi_charge_policy.h": "ad7b9ee1a7e3c6d8a17da49d6709aee1e32ec5874b71da49c53733a63a58777e",
+        "kernel/power/umi_charge_policy.h": "2e604e8d1efa289ed4f60552a9d42c85bf606b8f39abaebda00eaf547fcd8183",
         "kernel/power/umi-pm8150b.dtsi": "206b0589b185874f96311d481e7f28421691842f7718249a13310f06c8122bd0"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
-      "build": "Pinned Linux 6.18.60, Umi CSOT ABL header v2, FG/SMB5/ADC5 built-in, rescue RAM logger and explicit bounded charge test; no BQ25970 or Type-C source initialization; probe starts inhibited.",
-      "status": "Runtime FG/SMB5/ADC5 port L2 and 66 Linux offline tests passed. Authorized local L3: inhibited boot, one charger insertion with 23 enabled samples, unplug stop, restoration of 70/65 policy, 1004 contiguous records and identical replay. Device remains in RAM Linux with computer USB and charging inhibited by SOC policy. This is a bounded single case, not protection-fault or long-term charging qualification. Evidence: docs/archive/hardware/2026-11-08-umi-runtime-power.md.",
+      "build": "Pinned Linux 6.18.60, Umi CSOT ABL header v2, FG/SMB5/ADC5 built-in, rescue RAM logger and explicit 60/600-second bounded charge tests; no BQ25970 or Type-C source initialization; probe starts inhibited.",
+      "status": "Current 600-second opt-in diagnostic build L2 and 68 Linux offline regressions passed; no new L3. Prior 60-second build 10ec0d0e...d9ce7c4 retains its separately scoped one-insertion L3 evidence. Fast-charge pump/PD/PPS not enabled. Current assessment: docs/archive/reviews/2026-11-08-fastcharge-ci.md.",
       "dtbo_symbol_reference": {
         "origin": "Local Xiaomi UMI MIUI OS1.0.7.0.TJBCNXM package, firmware-update/dtbo.img",
         "sha256": "d6a6f4c07d7ce88f6213cfed0cee26d55f908e8eff38675faadc6f6e4671eee6",
@@ -93,7 +93,7 @@
         "tools/collect_charge_log.py": "5214dab6752bf387f61b4918edbe9d8a5a2263a43ebb47c5f2898e6d29d91255"
       },
       "power_port_scope": {
-        "purpose": "Umi runtime integration; initial charge inhibition; explicitly armed one-insertion test with 60 second bound then misaka 70/65 hysteresis",
+        "purpose": "Umi runtime integration; first boot inhibited; explicitly armed single-insertion 60-second default or 600-second opt-in SOC bypass, then normal 70/65 hysteresis. Current and protection gates unchanged.",
         "config": {
           "BATTERY_MISEED_QCOM_FG": "y",
           "CHARGER_MISEED_PM8150B": "y",
@@ -110,23 +110,28 @@
           "diagnostic_input_and_fcc_cap_ua": 500000
         },
         "evidence": "docs/archive/hardware/2026-11-08-umi-runtime-power.md",
-        "active_charging_tested": true
+        "active_charging_tested": true,
+        "test_windows_seconds": [
+          60,
+          600
+        ]
       },
       "generated_artifacts": {
-        "kernel_image_sha256": "0c7054d01d4b0176325412cdbf357e6a276788dae3135e91a3097151bcfc6c62",
+        "kernel_image_sha256": "242457ef7f5a317cee2db41842d6743a32636ee69770aab334c83962eb49e2d4",
         "kernel_image_size_bytes": 6953472,
-        "boot_img_sha256": "10ec0d0ee1a8255e14db31e0cc0f112dfbe310541a16eabc8992be4bdd9ce7c4",
+        "boot_img_sha256": "793ca218ce21e8c51f597356e940a9bbfb33aeb56267b0d2a5d6b91a957030c5",
         "boot_img_size_bytes": 7405568,
         "resolved_config_sha256": "42681b2b42daad5c964e2e6eb4f6899877d6d43aab50e307eb3a8a8977868d78",
         "resolved_config_size_bytes": 65493,
-        "rescue_initramfs_sha256": "4b45ab8104c7d53cc5e57ffff095033b5e8989d7fd472f92392e0e6a3d9cf603",
-        "rescue_initramfs_size_bytes": 266478,
+        "rescue_initramfs_sha256": "39e81a9a6f80ee2ed2df7f62939ad067df37430fdbdd287e7f5a01fce38167db",
+        "rescue_initramfs_size_bytes": 266568,
         "dtb_sha256": "f108a562c88b9f7d6ac8393b9657c821b2212abab3bfa60ce08271ed9765bf39",
         "dtb_size_bytes": 173021,
         "fg_object_sha256": "4663fd83eb6dc2019fcb991f93f4630e508cd0033c0d019d9b318ab21587d557",
         "fg_object_size_bytes": 23976,
-        "charger_object_sha256": "6925d6238e5e1b19bf5bd2eaa14fce86efc29ab59a09a7f45d51558cd9838cd3",
-        "charger_object_size_bytes": 21536
+        "charger_object_sha256": "b33a255dc9f6482ffcacd8d7321f9bbcb42ba6ed69846e9f06dc32f0c0a06bee",
+        "charger_object_size_bytes": 21832,
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md"
       },
       "runtime_evidence_previous_diagnostic": {
         "date": "2026-11-08",
@@ -228,11 +233,19 @@
           "original_path": "power/qcom_pm8150b_charger.c",
           "original_sha256": "331689123647bd48de7183ca100df2bd90120956c52796bfcbcb47b54ff5882b",
           "local_path": "kernel/power/qcom_pm8150b_charger.c",
-          "local_sha256": "f1cf5266f61ec6726ea7d5d06f99e695e1ef3ed18e7e50cfaa861e3b81a37d3f",
+          "local_sha256": "dee716e6f8fb14d016070d7a90b0d5f3d57b273d369ee26dbf888eaf3ede0bd5",
           "license": "GPL-2.0-only",
           "authors_preserved": true
         }
-      ]
+      ],
+      "fast_charge_assessment": {
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md",
+        "reviewed_path": "power/bq25970_charger.c",
+        "git_blob_sha": "6315672ddc4cd0720f22b5b173f6666b1db3d38a",
+        "imported": false,
+        "enabled": false,
+        "reason": "Disabled watchdog, unconditional delayed pump enable on Type-C ONLINE, unchecked protection setup; board sense resistor and PD/PPS control loop not qualified; TLMM/GPIO68 unavailable."
+      }
     },
     {
       "id": "mu-silicium-reference",

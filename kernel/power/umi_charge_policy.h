@@ -14,6 +14,7 @@
 #define UMI_CHARGE_UPPER_SOC 70
 #define UMI_CHARGE_LOWER_SOC 65
 #define UMI_CHARGE_TEST_SECONDS 60
+#define UMI_CHARGE_EXTENDED_TEST_SECONDS 600
 
 static inline int umi_charge_policy(int online, int present, int good,
 		int temp, int voltage, int soc, int max_uv,

@@ -334,6 +334,37 @@ class RescueInitTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 
+    def test_charge_commands_select_explicit_duration_and_stop(self):
+        import pty
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            supply = root / "pm8150b-charger"
+            supply.mkdir()
+            control = supply / "charge_test"
+            control.touch()
+            master, slave = pty.openpty()
+            env = dict(os.environ, TEST_TTY=os.ttyname(slave), TEST_POWER_ROOT=str(root))
+            process = subprocess.Popen([self.program, "console"], env=env,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            os.close(slave)
+            try:
+                self.read_until(master, b"miseed> ")
+                for command, value, message in (
+                    (b"charge-test\n", "arm", b"after 60 seconds"),
+                    (b"charge-test-10min\n", "arm-10min", b"after 600 seconds"),
+                    (b"charge-stop\n", "stop", b"test cancelled"),
+                ):
+                    control.write_text("")
+                    os.write(master, command)
+                    self.read_until(master, message)
+                    self.assertEqual(control.read_text(), value)
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                os.close(master)
+
     def test_ram_ring_reports_overwrite_and_replay_does_not_consume(self):
         output = self.run_log("log-ring")
         self.assertEqual(output.count("CHARGE_LOG_BEGIN"), 2)
