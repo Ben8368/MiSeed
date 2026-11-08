@@ -23,10 +23,13 @@ static inline int umi_charge_policy(int online, int present, int good,
 	(void)test;
 	if (!online || !present || !good || temp <= UMI_CHARGE_COOL_DECIC ||
 	    temp > UMI_CHARGE_WARM_DECIC || voltage <= 0 ||
-	    voltage >= max_uv || max_uv > UMI_CHARGE_MAX_UV ||
+	    max_uv > UMI_CHARGE_MAX_UV ||
 	    soc < 0 || soc > 100)
 		return 0;
-	/* LOS has no artificial 70% stop; charger termination follows FV. */
+	/* SMB5 hardware regulates/terminates at the verified programmed FV.
+	 * Do not turn a transient BMS voltage sample into repeated global stops.
+	 * LOS Umi uses staged FV/FCC votes rather than this software cutoff.
+	 */
 	return 1;
 }
 #endif

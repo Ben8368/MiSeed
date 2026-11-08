@@ -37,3 +37,15 @@
 | 未覆盖 / 下一步 | `status` 仅能读到当前活动合同，不能区分 `-95` 是 TCPM 激活入口拒绝还是后续能力校验失败，也不能显示源 PDO/APDO。新增显式只读 `tcpm-log` 命令读取 Linux TCPM debugfs 协议环，输出最多 128 行；此 debugfs 文件读取会消费其日志环，所以不由 `status` 自动调用。新 L2 镜像待 RAM 启动后先读此协议记录，再按实际 Source_Capabilities 与请求/响应定位 PPS 不活跃原因。当前不宣称 PPS 已激活或充电保护 L3 完成 |
 
 实现根据 Linux [TCPM](https://github.com/torvalds/linux/blob/v6.18/drivers/usb/typec/tcpm/tcpm.c) 的 PPS 激活路径和 [power_supply `online` / `usb_type` ABI](https://github.com/torvalds/linux/blob/v6.18/Documentation/ABI/testing/sysfs-class-power)解释：`online=2` 用于从固定态切 programmable；`usb_type` 标识当前活动类型，不能以支持列表代替活动类型。原始串口长日志未归档。
+
+## SMB5 电压样本导致的停充/重开
+
+| 项 | 本轮证据 |
+| --- | --- |
+| 日期 / 操作者 | 2026-11-08，Codex；宿主 Darwin 25.6.0 / arm64 / zsh |
+| 用户报告 / 授权 | 用户报告新镜像下再次出现 2 W / 14 W 跳变，USB 已接并要求读取日志；之后明确要求修复已知问题、推送 PR 并收尾 |
+| 镜像 / 日志 | 分支 `codex/umi-pd-pps-fastcharge`，输入 `b1ca2f3`；ARM64 L2 镜像 SHA-256 `2752856882c0363f3259e4af66d42864df68f4ad7820102d7a3f8f75a1340dd3`，以 Fastboot `boot` RAM 启动。救援 charge timeline 376 条、覆盖数为 0，保存在本地忽略路径 `.work/umi-pps-tcpm-b1ca2f3/charge.log`，未进入仓库 |
+| 根因证据 | 时间线 5.824 s 的主充电 worker 记录 `enabled=0`、BMS `vbat_uv=4409656`、配置 `fv_uv=4400000`；下一秒左右样本 `vbat_uv=4251209` 后 worker 重新 `enabled=1`。约 9.874 s 再次 `vbat_uv=4407459` 后停充。观测到的快速电压跳变与软件的 `voltage >= max_fv_uv` 条件一致；这是驱动软件停充条件，不代表外部功率表每次跳变均由它单独造成。USB 输入在同一日志还有一次拔插，需与本项分开看待 |
+| LOS 对照 / 修复 | LOS Umi charger DT 配置为 `fv-max=4450000`、`non-fcc-fv-max=4400000` 并使用六点分段 FCC/FV 策略。MiSeed 保留的 4.400 V 硬件浮充配置已由 `smb5_limits_verified()` 每轮核验；重复地用 BMS 瞬时电压读数关停整个充电器会绕过硬件调节并造成恢复循环。修复删除该软件停充门槛，仍要求电压采样有效、温度/健康/SOC/在线检查通过，并保留寄存器 FV 上限核验、PMIC 过压硬件行为和原充电保护配置。此修复不等同于移植完整六点步进充电策略 |
+| 未覆盖 / PPS | 本次只读命令尝试未能再次打开救援 CDC 设备；已存在时间线不足以判断用户表头变化的所有因素。PPS APDO/source caps 与本次 PPS 请求仍无可核验日志，不能声称 PPS 已激活。GPIO8 VBUS-disable、泵保护与温控闭环仍开放 |
+| 验证 | `python3 -X utf8 -m unittest discover -s tests -v`：97 项通过，18 项因 macOS 缺 Linux 专用环境跳过；`python3 -X utf8 tools/check_repo.py` 通过；`git diff --check` 通过；`bash tools/build_kernel_l2_macos.sh` 退出码 0，ARM64 L2 镜像 SHA-256 `1e6d4c5a9c69fcd229b7b7891dc29c4c822585e863ed19044e58a761a23b3a23`。缓存源码校验不通过后保留原缓存，构建器按设计改用新源码/构建树完成构建。修复后无 L3；PR CI 待新 HEAD 触发 |

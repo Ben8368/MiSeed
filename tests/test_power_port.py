@@ -269,7 +269,10 @@ int main(void) {
  assert(D(1,1,1,450,4100000,60,1,1) == 1);
  assert(D(1,1,1,451,4100000,60,1,1) == 0);
  assert(D(1,1,1,-10000,4100000,60,1,1) == 0);
- assert(D(1,1,1,300,4400000,60,1,1) == 0);
+ /* The hardware FV regulator owns the boundary; a BMS sample at FV is not
+  * a global charge stop. Invalid telemetry remains fail-closed. */
+ assert(D(1,1,1,300,4400000,60,1,1) == 1);
+ assert(D(1,1,1,300,4500000,60,1,1) == 1);
  assert(D(1,1,1,300,-1,60,1,1) == 0);
  assert(D(1,1,1,300,4100000,-1,1,1) == 0);
  assert(D(1,1,1,300,4100000,101,1,1) == 0);
@@ -441,11 +444,12 @@ int main(void) {
   battery_error = usb_error = limit_error = 0; values[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
   tick(&c, 3000, 1); assert(!enabled);
  }
- /* Temperature/voltage/health gates remain effective during auto charging. */
+ /* Temperature/telemetry/health gates remain effective during auto charging. */
  arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 451; tick(&c, 2000, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 300;
- values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4400000; tick(&c, 3000, 1); assert(!enabled);
+ values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4400000; tick(&c, 3000, 1); assert(enabled);
+ values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 0; tick(&c, 3500, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4100000;
  health = 0; tick(&c, 4000, 1); assert(!enabled); health = 1;
  /* A failed stop uses input suspend and never feeds the watchdog. */
