@@ -29,4 +29,4 @@ PMI8994 的软/硬索引另外对照 Qualcomm 派生内核的 `FG_MEM_SOFT_COLD/
 
 此次工作树 L2 的 `boot.img` SHA-256 为 `4396142a6882685a9ab7f2f177064cf4c2b96e43327bba2c7f44e9b332b3ca6c`；编译对象 `qcom_fg.o` 为 `ad376378a3981f10d4e6b0a510372fea5564fea023067e444464e4d50860a6a0`，`qcom_pm8150b_charger.o` 为 `fe4314a15987f96f089f3a54f447e549a56dbb5c5b4a952490cce5560e1165ff`。这是构建证据，不代表真机行为。
 
-PR 远端 CI 的此前成功结果只适用于原发布 SHA，不覆盖本记录的修复。推送后查询 commit `6b40cf19874c4b91d58b954291ad06500184e7ef` 时尚未出现 PR workflow run；后续须确认最新 HEAD 的约定 CI，并完成开发者以外的独立专项复核。本轮没有新增 L3 证据，不得据本地 L2 结果推断设备安全或合并条件已满足。
+原发布 SHA 的 CI 成功不覆盖本记录的修复。更新后 PR HEAD `1c2fdefbe59639ab19e3fa427ac187e0bea25d29` 的 [CI run 42454735733](https://github.com/Ben8368/MiSeed/actions/runs/42454735733) 已完成且成功；该 HEAD 与 base 同步，GitHub 显示可合并。GitHub review 列表仅有 CodeRabbit 的意见，没有开发者以外的独立专项人工复核；按仓库高风险变更门禁，不在缺少该复核时合并。本轮没有新增 L3 证据，不得据本地 L2 结果推断设备安全。
