@@ -4,7 +4,7 @@
 
 既有 29 个参考 DTBO 隔离检查通过。TLMM 仅开放 GPIO34/35；PPS、Type-C/I2C15、VBUS 仍禁用，缺项拒绝 probe。**本轮没有 MiSeed 新拓扑或 PPS L3，不能声称快充可用。**
 
-本机 root 定点读取泵 ID `0x10`、0x2b=`0xd0`（2 mΩ 配置，非实物测量）；GPIO8/68、PM8150B 连接器 ADC 0x4f、user_space 热区和 16 档 battery cooling 已观测。常规温控配置非文本，尚未解析；不能只搬泵驱动。已恢复普通 adbd；充电器为用户报告绿联45W屏显，APDO 未测。身份/契约见[平台](platforms.md)。
+本机 root 定点读取泵 ID `0x10`、0x2b=`0xd0`（2 mΩ 配置，非实物测量）；GPIO8/68、PM8150B 连接器 ADC 0x4f、user_space 热区和 16 档 battery cooling 已观测。常规温控已离线解码且重加密逐字节一致，动作编码/实际生效链仍待核。已恢复普通 adbd；充电器为用户报告绿联45W屏显，APDO 未测。身份/契约见[平台](platforms.md)。
 
 ## 近期优先级
 

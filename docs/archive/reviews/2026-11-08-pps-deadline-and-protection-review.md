@@ -19,9 +19,17 @@
 | PM8150B VADC/ADC_TM `conn_therm@4f` | 实际 DT 为 channel 0x4f、pre-scaling `<1 1>`、ratiometric、settle 200；conn/quiet 热区 governor 为 `user_space`，并非 BQ TSBUS/TSBAT 引脚的接线证据 |
 | `thermald-devices.conf` | battery 动作通过 cooling_name `battery`；本机 cooling_device15 的 type=battery、cur_state=0、max_state=16，均退出 0；说明可追踪原系统执行链，不证明 MiSeed 已具备该链 |
 | 温度快照 | conn=37963、quiet=43935、cam=41706、xo=46469、battery=35500（Android 热区毫摄氏度）；只读单次观测，不作传感器精度/保护验收 |
-| vendor 配置 | `thermal-engine.conf` 是默认空配置（84 B）；`thermal-chg-only.conf` 为可读文本，含多传感器虚拟温度及 battery 动作；`thermal-normal.conf` 为非 UTF-8 数据（3104 B），未解出有效常规阈值，不把关机充电配置套为常规策略 |
+| vendor 配置 | `thermal-engine.conf` 是默认空配置（84 B）；`thermal-chg-only.conf` 为可读文本；`thermal-normal.conf` 为非 UTF-8 数据（3104 B），随后已离线解码并完成逐字节重加密一致性核对，不把关机充电配置套为常规策略 |
 
 四份 vendor 文件均 `cat` 退出 0。normal 原始字节 SHA-256 为 `436a49a83321a3f2bcca7c556031805801a548869fb91e1124d0baf448f3868e`；最初探索性读取使用替代解码，随后改为二进制读取并重新计算哈希，公开快照只采用后者。普通 shell 读取 DT 被拒后，用已授权 root 重读；权限错误不作空/零属性解释。缺失的 battery charge_control_limit/system_temp_level 等属性记 rc=1，不推断为未限流。
+
+### 常规温控离线解析
+
+继续公开资料检索找到 [mi-thermal-py-crypt 的格式实现](https://github.com/aufarakha/mi-thermal-py-crypt/blob/200dc81c8498a4013cba13fdbf6e01de27220f01/thermal-crypt.py)，固定 commit `200dc81c8498a4013cba13fdbf6e01de27220f01` / blob `a51c98ab2311c3bf87fad533bd7117ecde604e33`。只阅读其 AES-128-CBC/PKCS7 格式说明，没有下载执行该脚本或复制代码进入仓库；使用宿主 `/usr/bin/openssl enc` 对本地采集字节离线解码并反向编码，输出与原文件逐字节一致。明文为 3101 B、SHA-256 `f144b75723fea08d8a67184bae927fb09c97e35ca0b0dc2bb11bec10294523f5`，仅存忽略目录及归档副本，没有改写手机任何配置。
+
+常规 VIRTUAL-SENSOR 使用 battery/cam_therm1/conn_therm/quiet_therm/wireless_therm/xo_therm，权重 223/150/440/−143/115/149，weight_sum=1000，compensation=4541。MONITOR-BAT 轮询 2000 ms，trig 为 41000/43000/45000/46000/47000/48000/49000/50000/63000，clr 为 38000/41000/43000/45000/46000/47000/48000/49000/51000，target 为 803/1106/1206/1206/1209/1410/1512/1514/1515。上述是原配置数字，不能把虚拟温度当作单个电池温度，也不能把动作编码当作毫安。
+
+进一步读取固定 Lineage [smb5-lib.c](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/71b13e62f057a649b77fe4062feb73ee72ad609c/drivers/power/supply/qcom/smb5-lib.c)（blob `6372dab5db184e24251122e77a9dd15930e40024`）：系统 thermal level 在 PPS 下通过工作队列更新 `thermal_fcc_pps_cp`，随后进入 FCC/ICL 投票。守护进程如何拆解上述 target、运行时是否存在覆盖配置/有效守护进程尚未确认；第二次 ADB 列表为空时停止了这些后续读取。不能将解析成功扩大为当前 Android 或 MiSeed 完整保护链已验收。
 
 ADB 采集中途一次列表为空，身份检查失败即停止；用户接回后重新核实 umi 才继续。定点寄存器命令仅访问驱动用于识别的 0x13 和无读清除标志的配置 0x2b，未读取带清除语义的告警/故障寄存器。此方法需要人工核对绑定与目标，不加入通用自动采集器或默认命令。
 

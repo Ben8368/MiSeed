@@ -236,7 +236,95 @@
   "qualification": [
     "ID and sense configuration were read using only register 0x13 and register 0x2b at the preflight-verified I2C address; no scan or configuration write.",
     "Temperature and cooling-device snapshots are Android observations, not MiSeed runtime validation.",
-    "thermal-normal.conf is non-UTF8; no normal-mode trip or action thresholds have been decoded.",
     "Vendor configuration contents and binaries are not included in this public snapshot."
-  ]
+  ],
+  "normal_mode_decoding": {
+    "input_sha256": "436a49a83321a3f2bcca7c556031805801a548869fb91e1124d0baf448f3868e",
+    "plaintext_sha256": "f144b75723fea08d8a67184bae927fb09c97e35ca0b0dc2bb11bec10294523f5",
+    "plaintext_bytes": 3101,
+    "method": "AES-128-CBC with published vendor format, system OpenSSL; no external script executed",
+    "reencryption_matches_input": true,
+    "format_source": "https://github.com/aufarakha/mi-thermal-py-crypt/blob/200dc81c8498a4013cba13fdbf6e01de27220f01/thermal-crypt.py",
+    "format_source_blob": "a51c98ab2311c3bf87fad533bd7117ecde604e33",
+    "selected_numeric_configuration": {
+      "VIRTUAL-SENSOR": {
+        "algo_type": [
+          "virtual"
+        ],
+        "sensors": [
+          "battery",
+          "cam_therm1",
+          "conn_therm",
+          "quiet_therm",
+          "wireless_therm",
+          "xo_therm"
+        ],
+        "weight": [
+          223,
+          150,
+          440,
+          -143,
+          115,
+          149
+        ],
+        "polling": [
+          1000
+        ],
+        "weight_sum": [
+          1000
+        ],
+        "compensation": [
+          4541
+        ]
+      },
+      "MONITOR-BAT": {
+        "algo_type": [
+          "monitor"
+        ],
+        "sensor": [
+          "VIRTUAL-SENSOR"
+        ],
+        "device": [
+          "battery"
+        ],
+        "polling": [
+          2000
+        ],
+        "trig": [
+          41000,
+          43000,
+          45000,
+          46000,
+          47000,
+          48000,
+          49000,
+          50000,
+          63000
+        ],
+        "clr": [
+          38000,
+          41000,
+          43000,
+          45000,
+          46000,
+          47000,
+          48000,
+          49000,
+          51000
+        ],
+        "target": [
+          803,
+          1106,
+          1206,
+          1206,
+          1209,
+          1410,
+          1512,
+          1514,
+          1515
+        ]
+      }
+    },
+    "qualification": "Offline format and round-trip validation only; packed battery action semantics and effective live daemon/profile still require confirmation."
+  }
 }
