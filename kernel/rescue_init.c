@@ -594,7 +594,7 @@ static void report_power_supply_diagnostics(void) {
  * an explicit console command so routine status sampling does not consume it.
  */
 static void report_tcpm_logs(void) {
-    const char *root = "/sys/kernel/debug/usb/tcpm";
+    const char *root = "/sys/kernel/debug/usb";
     DIR *dir = opendir(root);
     struct dirent *entry;
     unsigned int ports = 0;
@@ -610,7 +610,7 @@ static void report_tcpm_logs(void) {
         int fd;
         unsigned int lines = 0;
 
-        if (entry->d_name[0] == '.') continue;
+        if (strncmp(entry->d_name, "tcpm-", 5)) continue;
         if (ports++ == 8) {
             puts("TCPM log listing truncated after 8 ports");
             break;
@@ -635,9 +635,9 @@ static void report_tcpm_logs(void) {
         printf("TCPM protocol log %s (read drains kernel ring):\n",
                entry->d_name);
         while (fgets(line, sizeof(line), file)) {
-            if (lines++ < 128) fputs(line, stdout);
+            if (lines++ < 1024) fputs(line, stdout);
         }
-        if (lines > 128) puts("TCPM log output truncated after 128 lines");
+        if (lines > 1024) puts("TCPM log output truncated after 1024 lines");
         if (!lines) puts("TCPM log empty");
         fclose(file);
     }

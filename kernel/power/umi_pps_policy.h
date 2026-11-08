@@ -96,7 +96,7 @@ struct umi_pps_caps {
 struct umi_pps_sample {
 	int online, present, good, temp, soc;
 	int vbat_mv, ibat_ma, vbus_mv, ibus_ma;
-	int pump_vbat_mv, pump_ibat_ma;
+	int pump_vbat_mv;
 	int thermal_bat_ma;
 	int fault, alarm, bus_low, bus_high, switching;
 };
@@ -152,20 +152,28 @@ static inline int umi_pps_current(const struct umi_pps_caps *c, int board_ma)
 	return ma / UMI_PPS_STEP_MA * UMI_PPS_STEP_MA;
 }
 
-/* Reject inconsistent ADCs, reverse current and any latched protection event. */
+/* Reject inconsistent voltage ADCs, reverse bus current and latched faults.
+ * LOS takes battery current from BMS: a negative NET battery current can mean
+ * system load exceeds pump output, and is not evidence of reverse pump flow.
+ */
+static inline int umi_pps_sample_limits(const struct umi_pps_sample *s,
+		int max_mv, int max_ma)
+{
+	return umi_pps_battery_ok(s, max_mv) && !s->fault &&
+		s->thermal_bat_ma > 0 && s->thermal_bat_ma <= UMI_PPS_BAT_MAX_MA &&
+		s->ibat_ma <= s->thermal_bat_ma &&
+		s->pump_vbat_mv >= UMI_PPS_MIN_BAT_MV && s->pump_vbat_mv < max_mv &&
+		s->ibus_ma >= 0 && s->ibus_ma <= max_ma &&
+		s->vbus_mv >= 2 * UMI_PPS_MIN_BAT_MV && s->vbus_mv <= UMI_PPS_MAX_MV;
+}
+
 static inline int umi_pps_sample_ok(const struct umi_pps_sample *s,
 		int max_mv, int max_ma, int requested_mv)
 {
 	int delta = s->pump_vbat_mv - s->vbat_mv;
 
-	return umi_pps_battery_ok(s, max_mv) && !s->fault &&
-		s->thermal_bat_ma > 0 && s->thermal_bat_ma <= UMI_PPS_BAT_MAX_MA &&
-		s->ibat_ma <= s->thermal_bat_ma &&
-		s->pump_vbat_mv >= UMI_PPS_MIN_BAT_MV && s->pump_vbat_mv < max_mv &&
+	return umi_pps_sample_limits(s, max_mv, max_ma) &&
 		delta >= -50 && delta <= 50 &&
-		s->pump_ibat_ma >= 0 && s->pump_ibat_ma <= s->thermal_bat_ma &&
-		s->ibus_ma >= 0 && s->ibus_ma <= max_ma &&
-		s->vbus_mv >= 2 * UMI_PPS_MIN_BAT_MV && s->vbus_mv <= UMI_PPS_MAX_MV &&
 		s->vbus_mv >= requested_mv - 200 && s->vbus_mv <= requested_mv + 200;
 }
 
@@ -178,7 +186,6 @@ static inline int umi_pps_next_mv(const struct umi_pps_sample *s,
 	if (!umi_pps_caps_ok(c))
 		return -1;
 	if (s->bus_high || s->alarm || s->vbat_mv >= max_bat_mv - 20 ||
-	    s->pump_ibat_ma >= s->thermal_bat_ma - 100 ||
 	    s->ibat_ma >= s->thermal_bat_ma - 100 || s->ibus_ma >= max_ma - 100)
 		step = -UMI_PPS_STEP_MV;
 	else if (s->bus_low || (s->vbat_mv < max_bat_mv - 30 &&

@@ -33,6 +33,10 @@ struct delayed_work { struct work_struct work; };
 #define msecs_to_jiffies(v) (v)
 #define mod_delayed_work(q,w,t) ((void)0)
 static u64 clock_ms;
+static int retry_sleeps;
+static void usleep_range(unsigned int low, unsigned int high) {
+ assert(low==20000 && high==25000);clock_ms+=low/1000;retry_sleeps++;
+}
 static u64 ktime_get_boottime(void) { return clock_ms; }
 static u64 ktime_to_ms(u64 v) { return v; }
 enum power_supply_property { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_PRESENT,
@@ -50,6 +54,8 @@ static unsigned int regs[0x30];
 static int io_count, fail_at, enable_count, fixed_count, release_count, wd_writes;
 static int fail_stop, fail_fixed, fail_claim, fail_sensor, fail_request, fail_caps;
 static int fail_pps_unsupported;
+static int busy_count, busy_delay_ms;
+static enum power_supply_property busy_prop;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
 static unsigned int delayed_reg;
 static u64 read_delay_ms, request_delay_ms;
@@ -79,9 +85,9 @@ static int regmap_write(struct regmap *map, unsigned int r, unsigned int v) {
   if (v & BIT(7)) {
    assert(claim_owned && suspended && pd.prop[POWER_SUPPLY_PROP_ONLINE] == 2);
    enable_count++; regs[0x0a] |= BIT(2);
-   adc(0,1000); adc(5,2000); bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = -2000000;
+   adc(0,1000); bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = -2000000;
   } else {
-   regs[0x0a] &= ~BIT(2); adc(0,0); adc(5,0);
+   regs[0x0a] &= ~BIT(2); adc(0,0);
    bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
   }
  }
@@ -108,6 +114,9 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
  assert(p == &pd);
  if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) voltage_requests++;
  if (prop == POWER_SUPPLY_PROP_CURRENT_NOW) current_requests++;
+ if (busy_count && prop == busy_prop) {
+  busy_count--;clock_ms+=busy_delay_ms;return -EAGAIN;
+ }
  if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 1) {
   fixed_count++; if(fail_fixed) return -EIO;
   if(!stale_contract) {
@@ -165,6 +174,7 @@ static void reset(void) {
  clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
  fail_pps_unsupported=0;
+ busy_count=busy_delay_ms=retry_sleeps=0;busy_prop=POWER_SUPPLY_PROP_ONLINE;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
  missing_property=NULL;hot_during_request=0;
  delayed_reg=0;read_delay_ms=request_delay_ms=0;voltage_requests=current_requests=pps_activations=0;
@@ -226,6 +236,60 @@ int main(void) {
  reset();run();clock_ms+=200;tick();assert(c.state==PPS_RUN);
  pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();
  assert(c.state==PPS_WAIT_PLUG && !claim_owned && !(regs[0x0c]&BIT(7)));
+ /* A source AMS / discarded transmission is transient; unrelated I/O errors
+  * are still fatal. Reproduce the actual 3A activation without a duplicate AMS.
+  */
+ for(int prop=0;prop<3;prop++) {
+  reset();busy_prop=prop==0 ? POWER_SUPPLY_PROP_ONLINE :
+   prop==1 ? POWER_SUPPLY_PROP_VOLTAGE_NOW : POWER_SUPPLY_PROP_CURRENT_NOW;
+  busy_count=2;run();assert(retry_sleeps==2 && !busy_count);
+ }
+ reset();pd.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3000000;run();
+ assert(current_requests==0);
+ clock_ms+=200;tick();assert(c.state==PPS_RUN && current_requests==0 && voltage_requests>=2);
+ reset();busy_prop=POWER_SUPPLY_PROP_VOLTAGE_NOW;busy_count=100;begin();
+ assert(c.state==PPS_FAULT && !enable_count && !claim_owned && voltage_requests==4 && retry_sleeps==3);
+ reset();busy_prop=POWER_SUPPLY_PROP_VOLTAGE_NOW;busy_count=100;busy_delay_ms=10000;begin();
+ assert(c.state==PPS_FAULT && c.last_error==-ETIME && voltage_requests==1 && !retry_sleeps && !enable_count);
+ reset();run();busy_prop=POWER_SUPPLY_PROP_VOLTAGE_NOW;busy_count=2;
+ clock_ms+=200;tick();assert(c.state==PPS_RUN && retry_sleeps==2);
+ /* PS_RDY may precede a fresh pump ADC sample. Wait without enabling or
+  * requesting more voltage; no relaxation for other faults or RUN samples.
+  */
+ reset();begin();adc(1,c.request_mv-282);int old_requests=voltage_requests;
+ clock_ms+=200;tick();assert(c.state==PPS_SETTLE && !enable_count && voltage_requests==old_requests);
+ adc(1,c.request_mv);clock_ms+=200;tick();assert(c.state==PPS_RUN && enable_count==1);
+ reset();begin();adc(1,c.request_mv-282);clock_ms=c.start_deadline;tick();
+ assert(c.state==PPS_FAULT && c.last_error==-ETIMEDOUT && !enable_count && !claim_owned);
+ reset();begin();adc(1,c.request_mv-282);regs[0x10]=0x80;clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
+ reset();begin();adc(1,c.request_mv+201);clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
+ reset();run();adc(1,c.request_mv-282);clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !claim_owned);
+ /* Actual L3: first BMS/pump voltages differed by 54mV after SMB5 pause.
+  * Both polarities wait with the pump OFF, then require the original 50mV.
+  */
+ for(int delta=-54;delta<=54;delta+=108) {
+  reset();begin();adc(4,4000+delta);old_requests=voltage_requests;
+  clock_ms+=200;tick();assert(c.state==PPS_SETTLE && !enable_count && voltage_requests==old_requests);
+  adc(4,4000);clock_ms+=200;tick();assert(c.state==PPS_RUN && enable_count==1);
+ }
+ reset();begin();adc(4,3946);clock_ms=c.start_deadline;tick();
+ assert(c.state==PPS_FAULT && c.last_error==-ETIMEDOUT && !enable_count && !claim_owned);
+ reset();begin();adc(4,3946);adc(0,-1);clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
+ reset();begin();adc(4,4450);clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
+ reset();begin();adc(4,3946);regs[0x10]=0x80;clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
+ reset();run();adc(4,3946);clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && !claim_owned);
+ /* Match LOS ADC selection and BMS current semantics. An unused IBAT ADC
+  * value cannot become a guessed sense-resistor safety threshold. */
+ reset();run();assert(regs[0x15]==0x2f);adc(5,-7);
+ bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=386000;clock_ms+=200;tick();
+ assert(c.state==PPS_RUN && claim_owned);
 	reset();run();clock_ms+=600000;tick();assert(c.state==PPS_RUN);
 	bms.prop[POWER_SUPPLY_PROP_CAPACITY]=95;clock_ms+=200;tick();
 	assert(c.state==PPS_DONE && release_count==1 && !claim_owned);
@@ -255,7 +319,7 @@ int main(void) {
    case 13: suspended=0;break;
    case 14: regs[0x01]&=~0x80;break;
    case 15: regs[0x0c]&=~BIT(7);break;
-   case 16: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=100000;break;
+   case 16: adc(0,-1);break; /* actual reverse BUS current still stops */
    case 17: regs[0x05]|=BIT(7);break;
    case 18: regs[0x0a]|=BIT(1);break;
    case 19: regs[0x0a]|=BIT(0);break;

@@ -1,6 +1,6 @@
 # Umi PPS 充电路径与准入
 
-此目录实现主线 TCPM → 自动 PPS 策略 → BQ25970；软件策略已按 LOS 接入自动 attach/退出，但仍是测试路径而非已验收产品。Umi sink-only 测试镜像已启用 Type-C、I2C15、充电泵和 VBUS 节点；实际启动后 PPS 控制器尚未绑定。
+此目录实现主线 TCPM → 自动 PPS 策略 → BQ25970；软件策略已按 LOS 接入自动 attach/退出，但仍是测试路径而非已验收产品。Umi sink-only 测试镜像已启用 Type-C、I2C15、充电泵和 VBUS 节点；真机已确认控制器绑定及短暂 PPS 合约，持续泵充电仍未验收。
 
 ## 输入与支持范围
 
@@ -10,12 +10,12 @@
 
 | 项目 | 固定 LOS Umi | MiSeed 主线适配 |
 | --- | --- | --- |
-| 入口 | SE15 I2C、0x66 BQ25970、GPIO68；`usbpd_pm` 自动管理 PPS | 主线 TCPM + 本控制器；测试镜像节点 enabled，真机绑定未成功 |
+| 入口 | SE15 I2C、0x66 BQ25970、GPIO68；`usbpd_pm` 自动管理 PPS | 主线 TCPM + 本控制器；测试镜像 enabled，RPMh/I2C15/BQ 绑定已 L3 |
 | BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 关闭 | 按 LOS 保留明确数值，准确复现其禁用位；外部温控/FCC 路径承担软件限流。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
 | 热控与电量 | `mi_thermald` 通过 SMB5 thermal FCC 投票；常规 Umi PPS 上限表为 16 档；PD 策略在 95% SOC 退出 charge pump | 已移植同一六路虚拟温度及 FCC 表；PPS 在 LOS 的 95% SOC 门槛退出，普通充电不再额外卡 70% |
 | 运行方式 | USB/PD 事件驱动，符合条件即进入持续策略，拔线/故障/高电量时退出 | 驱动 probe 后轮询 PD attach 并自动尝试 PPS；拔线回到等待态，故障回固定 PDO 并恢复 SMB5 策略 |
 
-来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；主线设备树拓扑仍未通过真机验收。
+来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；节点绑定与短暂合约已有 L3，完整保护及持续运行仍待验收。
 
 仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。固定 PDO 为 5 V / 3 A，PPS APDO 为 3.3–11 V / 3 A；策略限制到 9.5 V、3 A 总线和 6 A 电池，SMB5 与 LOS 相同设为 3 A USB ICL、6 A FCC、4.45 V FV。这些是 LOS 配置，不是实测充电功率。
 
@@ -23,7 +23,7 @@
 
 `WAIT_PLUG → SETTLE → RUN → DONE/FAULT`。驱动自动检测 USB-PD attach；合格后独占 SMB5、请求 APDO 并运行持续调节循环。SOC 上限为 LOS Umi `CAPACITY_TOO_HIGH_THR=95`。每个 PD/泵操作有 10 秒完成检查，SETTLE 仍有 5 秒窗口；这些是 I/O/启动超时，不是会话时长。
 
-先独占 SMB5、停主充并暂停其 USB 输入，再配置并逐项读回保护；激活 TCPM 的 `ONLINE=2` 后读取 APDO 能力。电压/电流请求使用微伏/微安接口，读取实际协商结果，再检查电池和泵 ADC。初始目标为 `2 × VBAT + 400 mV`，之后按 20 mV 调节；电压、电池电流、总线电流三个限制取最严格方向。控制器采用额外的保守 ADC 一致性/偏差门控，这些属于本项目策略，尚待 L3 确认。
+先独占 SMB5、停主充并暂停其 USB 输入，再配置并逐项读回保护；激活 TCPM 的 `ONLINE=2` 后读取 APDO 能力。电压/电流请求使用微伏/微安接口，读取实际协商结果，再检查电池和泵 ADC。初始目标为 `2 × VBAT + 400 mV`，之后按 20 mV 调节；电压、电池电流、总线电流三个限制取最严格方向。ADC 通道对齐固定 LOS：IBUS/VBUS/VAC/VBAT 启用，泵 IBAT 禁用（0x15=0x2f）；电池电流取 BMS 净值，不把净放电直接视为泵反向，总线负电流仍停止。电压请求保留作 PPS 刷新；当前电流与目标一致时跳过重复写入。激活、电压和降额电流请求仅对 `-EAGAIN` 追加最多三次重试，间隔 20–25 ms，仍检查原期限。控制器保留额外 ADC 一致性门控；SETTLE 在泵关闭、绝对采样限值与故障检查通过、VBUS 不超过目标 +200 mV 时于原 5 秒窗口内等待两路转换收敛；启泵仍须满足 VBAT 差 ±50 mV 和 VBUS 目标 ±200 mV，RUN 不容许该失配。
 
 任何活动期间遥测错误、合约不匹配、保护读回不符、温控/过压/过流或硬件锁存故障都会停泵。退出读回 CHG_EN 与 switching 状态，返回固定合约并确认 5 V / ≤3 A，最后释放 SMB5 并恢复 LOS 普通主充策略。无法停止时保留独占、记录错误并重试，不发送独立 watchdog 保活。硬件失效无法被软件保证消除，必须断开充电器。
 
@@ -49,11 +49,13 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。镜像 `9e065431…acfcea` RAM 启动已确认 RPMh RSC 与 power-domain provider 绑定、I2C15 枚举、`15-0066` 绑定 `umi-bq25970-pps`，此前 provider `-95` 和 I2C deferred 阻塞已解除。只读诊断镜像 `8f01d739…1955c8` 发现 PPS 激活及固定回退均 `-95` 并留住 SMB5；修复后新镜像 `50a2ce9c…1987e23` 的 L3 日志确认 PPS 仍 `-95`，但 `owned=0`、SMB5 `enabled=1`，用户报告表头恢复稳定约 14 W，TCPM 当前合同仍为固定 PD 5 V / 3 A。活动类型字符串支持列表含 `PD_PPS` 不等同于 APDO 被源宣告或合同已选。为从真实 TCPM Source_Capabilities 定位拒绝原因，增加显式 `tcpm-log` 只读诊断；读取时会消费 TCPM 自身 debugfs 环形日志，故仅用户手动调用，不自动并入 `status`。最新 L2 及其真机结果见[真机续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。保护/温控、停止恢复、RISK-010 overlay 隔离、Type-C VBUS provider、LOS 外部温控/电池电流路径仍待独立审查与真机验证；不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 未接入 LOS 的 VBUS-disable 行为。`9e065431…acfcea` 已证实 RPMh provider、I2C15 和 `umi-bq25970-pps` 绑定。四轮 RAM 测试取得 Source_Capabilities 中 5–11 V / 5 A APDO、8.8 V / 3 A PPS 合约；`50be50c1…f9aaf465` 曾启泵并读到 switching=1，之后被额外电流门控退出并恢复固定 PD/SMB5。第四版 `464f8c1b…b8cd0b89` 已在 SOC 90% RAM 测试，因两路 VBAT 差 54 mV 未启泵并恢复主充。最新采样等待修复按用户要求先交草稿 PR，完整 L2/L3 尚未完成；详见[本轮证据](../../docs/archive/hardware/2026-11-08-umi-pps-ams-retry.md)。
+
+活动类型支持列表不证明合约；Source_Capabilities、APDO Request、Accept/PS_RDY、ADC、switching 与净充电分别核实。`tcpm-log` 显式读取 `/sys/kernel/debug/usb/tcpm-*/log`，会消费协议环，最多显示内核环的 1024 条；不自动并入 `status`。旧 `-95` 可来自接回 Mac 后仅固定 PDO 的会话，不能代替充电器会话的错误。共享 VBUS 仍 sink/device-only。持续充电、完整保护/温控/恢复、GPIO8、RISK-010 及标度仍待独立专项复核和 L3。
 
 ## 诊断接口
 
-控制状态位于唯一绑定 I2C 设备的 `fastcharge_test`。USB 诊断支持 `pps-status`、`pps-stop`；合格板级节点启用后，PPS 会在 USB-PD attach 自动进入；`charge-stop` 会先尝试停止已绑定 PPS，再停普通充电。当前测试镜像已启用相关节点；2026-11-08 `pps-status` 返回控制器不可用，命令不会猜 I2C 总线编号。
+控制状态位于唯一绑定 I2C 设备的 `fastcharge_test`。USB 诊断支持 `pps-status`、`pps-stop`；合格板级节点启用后，PPS 会在 USB-PD attach 自动进入；`charge-stop` 会先尝试停止已绑定 PPS，再停普通充电。当前测试镜像已启用相关节点，控制器已绑定；命令不会猜 I2C 总线编号。
 
 `miseed-pps` 状态、请求和错误进入已有断线 RAM 日志。SMB5 配置沿用 LOS 3 A ICL、6 A FCC、4.45 V FV；PPS 占用期间拒绝并发普通充电命令，PPS 正常退出后恢复 SMB5 worker。挂起/关机/移除停止循环；无法安全停止时拒绝挂起。
 
@@ -61,6 +63,6 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
-- 本机 L3：诊断镜像 SHA-256 `f13d367585f96486e665219fd956d35447cc20e7a1df8ace167e87241c34c313` RAM 启动后，`status` 显示 Type-C `port0`/partner 存在但 I2C 列表为空，`pps-status` 无控制器；USB supply 为 `Unknown [SDP] DCP CDP`、约 4.52 V / 0.55 A，内核有 PMIC Type-C hard-reset 记录。根因确认为编译 DTB 的 QUP2 父 wrapper disabled，PPS profile 已修正；新镜像 SHA-256 `e2ac23c4aefe85aa4a612a18fdc75873a1211f34103f0833d87df8832f88c377` 已 L2、未 RAM 启动。用户照片仅显示充电器端 PD 5.2 V / 2.8 A。准确命令与范围见[诊断镜像 L3 记录](../../docs/archive/hardware/2026-11-08-umi-pps-diagnostic-ramboot.md)。下一步真机验证 QUP2/I2C15/BQ 绑定，再测 PD/PPS、保护、温度标度、停止恢复与拔插。
+- 本机 L3：最新协议、启泵和回退证据见[本轮记录](../../docs/archive/hardware/2026-11-08-umi-pps-ams-retry.md)；旧 QUP/RPMh、SMB5 回退和电压样本问题见[续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。本版源码须新镜像哈希对应的新 L3，不沿用旧版 switching 证据声明稳定 PPS。
 
-来源、PMIC 隔离、最小 GPIO 配置与 PD PHY 电源补齐见[续查记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可在后续授权采集时补充已有启动日志中的芯片 ID 与缓存 PDO，不把 standalone 名称当成芯片型号。软件侧自动策略已对齐；sink-only 硬件节点已启用；设备侧 PD/PPS 控制器绑定及保护/回退 L3 仍待完成。
+来源、PMIC 隔离与接线见[拓扑记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可只读补充启动日志中的 ID 与缓存 PDO，不把 standalone 名称当芯片型号。不得把构建通过、短暂 PPS 合约和真机持续充电混同。

@@ -71,8 +71,8 @@ static int test_stat(const char *path, struct stat *st) {
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
         return stat(mapped, st);
     }
-    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb/tcpm", 26)) {
-        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 26);
+    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb", 21)) {
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 21);
         return stat(mapped, st);
     }
     return stat(path, st);
@@ -108,9 +108,9 @@ static int test_open(const char *path, int flags, ...) {
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
         return open(mapped, flags, mode);
     }
-    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb/tcpm", 26)) {
+    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb", 21)) {
         char mapped[1024];
-        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 26);
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 21);
         return open(mapped, flags, mode);
     }
     return open(path, flags, mode);
@@ -128,7 +128,7 @@ static DIR *test_opendir(const char *path) {
     if (getenv("TEST_I2C_ROOT") && !strcmp(path, "/sys/bus/i2c/devices"))
         path = getenv("TEST_I2C_ROOT");
     if (getenv("TEST_PPS_ROOT") && !strcmp(path, pps_prefix)) path = getenv("TEST_PPS_ROOT");
-    if (getenv("TEST_TCPM_ROOT") && !strcmp(path, "/sys/kernel/debug/usb/tcpm"))
+    if (getenv("TEST_TCPM_ROOT") && !strcmp(path, "/sys/kernel/debug/usb"))
         path = getenv("TEST_TCPM_ROOT");
     return opendir(path);
 }
@@ -326,9 +326,11 @@ class RescueInitTests(unittest.TestCase):
     def test_tcpm_log_reports_advertised_pdos_only_on_explicit_command(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "unrelated").mkdir()
             port = root / "tcpm-c440000.typec"
             port.mkdir()
             (port / "log").write_text(
+                "[  0.000000] older record\n" * 150 +
                 "[  1.000000] PD state change SNK_READY -> SNK_WAIT_CAPABILITIES\n"
                 "[  1.100000] PDO 0: type 3, 5000 mV, 3000 mA [U]\n"
                 "[  1.200000] PDO 1: type 3, 3300-11000 mV, 3000 mA\n"
@@ -338,6 +340,8 @@ class RescueInitTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("read drains kernel ring", result.stdout)
+            self.assertNotIn("unrelated", result.stdout)
+            self.assertNotIn("truncated", result.stdout)
             self.assertIn("PDO 1: type 3, 3300-11000 mV, 3000 mA", result.stdout)
 
     def test_unbound_pon_refuses_without_reboot_syscall(self):

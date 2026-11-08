@@ -94,6 +94,29 @@ static int umi_pps_set(struct power_supply *psy, enum power_supply_property p, i
 	return power_supply_set_property(psy, p, &val);
 }
 
+/* TCPM may be servicing a source AMS or discard a colliding request. Retry
+ * only that transient result, within the existing operation/startup windows.
+ * Transport errors/timeouts still go straight to the stop/recovery path.
+ */
+static int umi_pps_negotiate(struct umi_pps *c, enum power_supply_property p, int v)
+{
+	int ret, attempt;
+
+	for (attempt = 0; attempt < 4; attempt++) {
+		ret = umi_pps_check_deadline(c);
+		if (ret)
+			return ret;
+		ret = umi_pps_set(c->pd, p, v);
+		if (ret != -EAGAIN || attempt == 3)
+			return ret;
+		ret = umi_pps_check_deadline(c);
+		if (ret)
+			return ret;
+		usleep_range(20000, 25000);
+	}
+	return -EAGAIN;
+}
+
 static int umi_pps_update(struct umi_pps *c, unsigned int reg,
 		unsigned int mask, unsigned int value)
 {
@@ -231,9 +254,11 @@ static int umi_pps_parse(struct umi_pps *c)
 	/* Keep the exact register configuration observed on this LOS device. */
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2b, 0xf7, 0xd0};
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2c, 0xf0, 0};
-	/* Continuous ADC, averaging, 13 bits, every channel enabled. */
+	/* LOS init_adc: continuous/averaging/13 bits; IBUS, VBUS, VAC, VBAT.
+	 * IBAT is supplied by BMS, not the unqualified pump sense-resistor ADC.
+	 */
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x14, 0xed, 0xa8};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x15, 0xff, 0};
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x15, 0xff, 0x2f};
 	/* Match fixed LOS init_device: enable_wdt(false). Do not change timing. */
 	c->protection[c->nprotection++] = (struct umi_pps_reg){BQ_WATCHDOG,
 		BQ_WD_DISABLED, BQ_WD_DISABLED};
@@ -371,8 +396,6 @@ static int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 		ret = umi_pps_adc(c, 1, &s->vbus_mv);
 	if (!ret)
 		ret = umi_pps_adc(c, 4, &s->pump_vbat_mv);
-	if (!ret)
-		ret = umi_pps_adc(c, 5, &s->pump_ibat_ma);
 	return ret;
 }
 
@@ -417,18 +440,23 @@ static int umi_pps_contract(struct umi_pps *c)
 
 static int umi_pps_request(struct umi_pps *c, int mv)
 {
-	int ret;
+	int ret, ma;
 
 	if (mv < c->caps.min_mv || mv > min(c->caps.max_mv, UMI_PPS_MAX_MV) ||
 	    mv % UMI_PPS_STEP_MV || c->request_ma > c->caps.max_ma)
 		return -ERANGE;
 	ret = umi_pps_check_deadline(c);
 	if (!ret)
-		ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_VOLTAGE_NOW, mv * 1000);
+		ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_VOLTAGE_NOW, mv * 1000);
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
 	if (!ret)
-		ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, c->request_ma * 1000);
+		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, &ma);
+	/* A voltage request already carries the negotiated current. Do not start
+	 * another AMS for an identical value; keep the voltage write as PPS refresh.
+	 */
+	if (!ret && ma != c->request_ma * 1000)
+		ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_CURRENT_NOW, c->request_ma * 1000);
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
 	if (!ret) {
@@ -464,7 +492,7 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 		return ret;
 	/* A failed negotiation may still have changed the source. Always unwind. */
 	c->pps = true;
-	ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_ONLINE, PPS_PROGRAMMABLE);
+	ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_ONLINE, PPS_PROGRAMMABLE);
 	/* TCPM returns -EOPNOTSUPP before changing the contract when no PPS APDO
 	 * was advertised. In that case there is no PPS contract to unwind, and a
 	 * second ONLINE write can itself fail and strand SMB5 ownership.
@@ -486,6 +514,8 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	if (!ret) {
 		c->start_deadline = umi_pps_now() + UMI_PPS_START_MS;
 		c->state = PPS_SETTLE;
+		dev_info(c->dev, "miseed-pps settle request_mv=%d request_ma=%d apdo_min_mv=%d apdo_max_mv=%d apdo_max_ma=%d\n",
+			 c->request_mv, c->request_ma, c->caps.min_mv, c->caps.max_mv, c->caps.max_ma);
 	}
 	return ret;
 }
@@ -581,6 +611,20 @@ static void umi_pps_work(struct work_struct *work)
 		goto out;
 	}
 	if (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma, c->request_mv)) {
+		/* Independent BMS/pump conversions may still reflect the previous
+		 * charging path. Wait with the pump OFF for voltage agreement.
+		 * Absolute limits, faults and the original 5s deadline still apply;
+		 * never accept a mismatch for enable, overvoltage or a running pump.
+		 */
+		if (c->state == PPS_SETTLE && s.vbus_mv <= c->request_mv + 200 &&
+		    umi_pps_sample_limits(&s, c->max_bat_mv, c->request_ma)) {
+			ret = umi_pps_check_deadline(c);
+			if (ret)
+				goto fail;
+			dev_info(c->dev, "miseed-pps waiting for ADC vbus_mv=%d request_mv=%d vbat_mv=%d pump_vbat_mv=%d\n",
+				 s.vbus_mv, c->request_mv, s.vbat_mv, s.pump_vbat_mv);
+			goto out;
+		}
 		ret = -ERANGE;
 		goto fail;
 	}
@@ -595,7 +639,7 @@ static void umi_pps_work(struct work_struct *work)
 	if (next < c->request_ma) {
 		ret = umi_pps_check_deadline(c);
 		if (!ret)
-			ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, next * 1000);
+			ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_CURRENT_NOW, next * 1000);
 		if (!ret) {
 			c->request_ma = next;
 			ret = umi_pps_contract(c);
@@ -622,10 +666,12 @@ static void umi_pps_work(struct work_struct *work)
 			if (ret)
 				goto fail;
 			c->state = PPS_RUN;
+			dev_info(c->dev, "miseed-pps pump enabled request_mv=%d request_ma=%d\n",
+				 c->request_mv, c->request_ma);
 			goto out;
 		}
 	} else {
-		if (!s.switching || s.bus_high || s.bus_low || s.ibat_ma < 0) {
+		if (!s.switching || s.bus_high || s.bus_low) {
 			ret = -EIO;
 			goto fail;
 		}
@@ -652,7 +698,7 @@ static void umi_pps_work(struct work_struct *work)
 	if (!ret)
 		ret = umi_pps_sample(c, &s);
 	if (!ret && (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma, c->request_mv) ||
-		     (c->state == PPS_RUN && (!s.switching || s.bus_low || s.bus_high || s.ibat_ma < 0))))
+		     (c->state == PPS_RUN && (!s.switching || s.bus_low || s.bus_high))))
 		ret = -ERANGE;
 	if (!ret)
 		ret = umi_pps_validate_cycle(c);
@@ -663,6 +709,9 @@ static void umi_pps_work(struct work_struct *work)
 		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
 	goto out;
 fail:
+	dev_info(c->dev, "miseed-pps failure state=%u error=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d\n",
+		 c->state, ret, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
+		 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high, s.switching);
 	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {
 		/* Pre-negotiation telemetry faults are transient; keep polling without
 		 * taking ownership from the main charger.
