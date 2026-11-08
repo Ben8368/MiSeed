@@ -1,0 +1,309 @@
+{
+  "schema_version": 1,
+  "scope": "android_read_only_power_observations",
+  "repository_head": "c7b6b487e3147b0054c02084b828f05ea26c36c2",
+  "collected_at_utc": "2026-11-08T09:31:46.258349+00:00",
+  "collection_status": "partial",
+  "evidence_level": "device_observed_android_metadata_only",
+  "identity_and_cached_pd": {
+    "ro.product.device": {
+      "status": "ok",
+      "value": "umi"
+    },
+    "ro.product.model": {
+      "status": "ok",
+      "value": "Mi 10"
+    },
+    "ro.board.platform": {
+      "status": "ok",
+      "value": "kona"
+    },
+    "ro.build.version.release": {
+      "status": "ok",
+      "value": "16"
+    },
+    "ro.lineage.version": {
+      "status": "ok",
+      "value": "23.2-20261101-NIGHTLY-umi"
+    },
+    "ro.boot.hwversion": {
+      "status": "ok",
+      "value": "2.9.1"
+    },
+    "ro.boot.hardware.sku": {
+      "status": "unavailable",
+      "value": null
+    },
+    "ro.product.board": {
+      "status": "ok",
+      "value": "kona"
+    },
+    "kernel_release": {
+      "status": "ok",
+      "value": "4.19.325-cip131-st15-perf-g71b13e62f057"
+    },
+    "pump_ids": {
+      "status": "unavailable",
+      "value": null,
+      "evidence": "boot_log_register_0x13_decimal",
+      "qualification": "observation_only_not_board_calibration"
+    },
+    "source_cap_id_before": {
+      "status": "ok",
+      "value": "2"
+    },
+    "source_cap_id_after": {
+      "status": "ok",
+      "value": "2"
+    },
+    "source_pdos": {
+      "status": "ok",
+      "value": "PDO 1\n\tFixed supply\n\tDual-Role Power:1\n\tUSB Suspend Supported:0\n\tExternally Powered:0\n\tUSB Communications Capable:1\n\tData Role Swap:1\n\tPeak Current:0\n\tVoltage:5000 (mV)\n\tMax Current:3000 (mA)"
+    }
+  },
+  "i2c_binding": {
+    "rc": 0,
+    "value": "/sys/bus/i2c/devices/4-0066\nbq2597x-standalone\n../../../../../../bus/i2c/drivers/bq2597x-charger\n/sys/firmware/devicetree/base/soc/i2c@884000/bq25970-standalone@66",
+    "error": ""
+  },
+  "pump_dt_node": "/sys/firmware/devicetree/base/soc/i2c@884000/bq25970-standalone@66",
+  "pump_dt_properties": {
+    "compatible": {
+      "rc": 0,
+      "hex": "74692c627132353937782d7374616e64616c6f6e6500",
+      "strings": [
+        "ti,bq2597x-standalone"
+      ]
+    },
+    "interrupt-parent": {
+      "rc": 0,
+      "hex": "00000065",
+      "cells": [
+        101
+      ]
+    },
+    "interrupts": {
+      "rc": 0,
+      "hex": "0000004400002002",
+      "cells": [
+        68,
+        8194
+      ]
+    },
+    "name": {
+      "rc": 0,
+      "hex": "627132353937302d7374616e64616c6f6e6500",
+      "strings": [
+        "bq25970-standalone"
+      ]
+    },
+    "pinctrl-0": {
+      "rc": 0,
+      "hex": "000005cb",
+      "cells": [
+        1483
+      ]
+    },
+    "pinctrl-names": {
+      "rc": 0,
+      "hex": "64656661756c7400",
+      "cells": [
+        1684366945,
+        1970041856
+      ]
+    },
+    "reg": {
+      "rc": 0,
+      "hex": "00000066",
+      "cells": [
+        102
+      ]
+    },
+    "ti,bq2597x,ac-ovp-threshold": {
+      "rc": 0,
+      "hex": "0000000e",
+      "cells": [
+        14
+      ]
+    },
+    "ti,bq2597x,bat-ocp-alarm-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bat-ocp-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bat-ovp-alarm-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bat-ovp-alarm-threshold": {
+      "rc": 0,
+      "hex": "000011ad",
+      "cells": [
+        4525
+      ]
+    },
+    "ti,bq2597x,bat-ovp-threshold": {
+      "rc": 0,
+      "hex": "000011c6",
+      "cells": [
+        4550
+      ]
+    },
+    "ti,bq2597x,bat-therm-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bat-therm-threshold": {
+      "rc": 0,
+      "hex": "00000015",
+      "cells": [
+        21
+      ]
+    },
+    "ti,bq2597x,bat-ucp-alarm-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bat-ucp-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bus-ocp-alarm-threshold": {
+      "rc": 0,
+      "hex": "00000dac",
+      "cells": [
+        3500
+      ]
+    },
+    "ti,bq2597x,bus-ocp-threshold": {
+      "rc": 0,
+      "hex": "00000ea6",
+      "cells": [
+        3750
+      ]
+    },
+    "ti,bq2597x,bus-ovp-alarm-threshold": {
+      "rc": 0,
+      "hex": "00002af8",
+      "cells": [
+        11000
+      ]
+    },
+    "ti,bq2597x,bus-ovp-threshold": {
+      "rc": 0,
+      "hex": "00002ee0",
+      "cells": [
+        12000
+      ]
+    },
+    "ti,bq2597x,bus-therm-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,bus-therm-threshold": {
+      "rc": 0,
+      "hex": "00000015",
+      "cells": [
+        21
+      ]
+    },
+    "ti,bq2597x,die-therm-disable": {
+      "rc": 0,
+      "hex": "",
+      "cells": []
+    },
+    "ti,bq2597x,die-therm-threshold": {
+      "rc": 0,
+      "hex": "00000091",
+      "cells": [
+        145
+      ]
+    }
+  },
+  "board_id": {
+    "rc": 0,
+    "hex": "0000002b00000000",
+    "cells": [
+      43,
+      0
+    ]
+  },
+  "msm_id": {
+    "rc": 0,
+    "hex": "0000016400020001",
+    "cells": [
+      356,
+      131073
+    ]
+  },
+  "gpio_properties": {
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/qcom,qpnp-smb5/vbus-disable-gpio": {
+      "rc": 0,
+      "hex": "000000650000000800000000"
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/mux/function": {
+      "rc": 0,
+      "hex": "6770696f00"
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/mux/pins": {
+      "rc": 0,
+      "hex": "6770696f363800"
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/phandle": {
+      "rc": 0,
+      "hex": "000005cb"
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/config/pins": {
+      "rc": 0,
+      "hex": "6770696f363800"
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/config/drive-strength": {
+      "rc": 0,
+      "hex": "00000002"
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/config/bias-pull-up": {
+      "rc": 0,
+      "hex": ""
+    },
+    "/sys/firmware/devicetree/base/soc/pinctrl@f000000/bq2597x/bq2597x_master_int_default/config/input-enable": {
+      "rc": 0,
+      "hex": ""
+    }
+  },
+  "android_charge_snapshot": {
+    "rc": 1,
+    "value": "battery/status\nCharging\nbattery/health\nGood\nbattery/capacity\n48\nbattery/temp\n340\nusb/real_type\nUSB_PD\nusb/voltage_now\n4597314\nusb/current_now",
+    "error": "cat: /sys/class/power_supply/usb/current_now: No such file or directory"
+  },
+  "kernel_log_identity": {
+    "rc": 0,
+    "lines_examined": 10828,
+    "identity_lines": [],
+    "error": ""
+  },
+  "unresolved": [
+    "pump_register_0x13_identity",
+    "qualified_sense_resistor",
+    "battery_ocp_limits",
+    "thermistor_network_and_calibration",
+    "watchdog_refresh_and_expiry_semantics",
+    "vout_ovp_semantics",
+    "miseed_new_topology_and_pps_runtime"
+  ],
+  "qualification": [
+    "Device-tree values describe Android configuration, not verified electrical calibration.",
+    "Disabled protections are not adopted by MiSeed.",
+    "Cached PDOs belong only to the connected source; no PD request was sent.",
+    "No raw register dumps, partition contents, full logs or personal identifiers are included."
+  ]
+}
