@@ -11,9 +11,13 @@
 #define EXPORT_SYMBOL_GPL(x)
 #define mutex_lock(x) ((void)0)
 #define mutex_unlock(x) ((void)0)
+#define system_wq NULL
+#define mod_delayed_work(q,w,t) ((void)0)
+struct delayed_work { int unused; };
 struct smb5_chip {
  bool stopping, pps_owned, test_armed, inhibit, enabled;
  int max_fv_uv, lock; unsigned int base; void *regmap;
+ struct delayed_work status_change_work;
 };
 struct power_supply;
 enum power_supply_property { PROP };
@@ -56,7 +60,7 @@ int main(void) {
  read_error=1;assert(umi_smb5_check(&p)==-EIO);read_error=0;
  stop_error=1;assert(umi_smb5_release(&p)==-EIO && c.pps_owned);
  stop_error=0;write_error=1;assert(umi_smb5_release(&p)==-EIO && c.pps_owned);
- write_error=0;assert(!umi_smb5_release(&p) && !c.pps_owned && c.inhibit && input==0);
+ write_error=0;assert(!umi_smb5_release(&p) && !c.pps_owned && !c.inhibit && input==0);
  assert(umi_smb5_check(&p)==-EPERM);
  stop_error=1;assert(umi_smb5_claim(&p)==-EIO && c.pps_owned && c.inhibit);
  stop_error=0;assert(!umi_smb5_release(&p));

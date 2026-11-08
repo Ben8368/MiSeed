@@ -180,7 +180,7 @@ int main(int argc, char **argv) {
         char path[512];
         int ret = pps_control_path(path, sizeof(path));
         printf("discovery=%d errno=%d\n", ret, errno);
-        if (!ret && pps_control("arm")) return 23;
+        if (!ret && pps_control(NULL)) return 23;
     } else if (!strcmp(argv[1], "console")) usb_console();
     else if (!strcmp(argv[1], "console-record")) {
         pid_t child;
@@ -402,7 +402,7 @@ class RescueInitTests(unittest.TestCase):
             control = first / "fastcharge_test"
             control.touch()
             self.assertIn("discovery=0", self.run_log("pps-discovery", env))
-            self.assertEqual(control.read_text(), "arm")
+            self.assertEqual(control.read_text(), "")
             second = root / "16-0066"
             second.mkdir()
             (second / "fastcharge_test").touch()
@@ -410,7 +410,7 @@ class RescueInitTests(unittest.TestCase):
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
             self.assertEqual(control.read_text(), "keep")
 
-    def test_pps_console_duration_and_unified_stop(self):
+    def test_pps_console_automatic_status_and_unified_stop(self):
         import pty
 
         with tempfile.TemporaryDirectory() as directory:
@@ -433,9 +433,8 @@ class RescueInitTests(unittest.TestCase):
             try:
                 self.read_until(master, b"miseed> ")
                 for command, value, message in (
-                    (b"pps-test\n", "arm", b"PPS test armed"),
-                    (b"pps-test-10min\n", "arm-10min", b"PPS test armed"),
-                    (b"pps-stop\n", "stop", b"PPS test stopped"),
+                    (b"pps-status\n", "", b"miseed> "),
+                    (b"pps-stop\n", "stop", b"PPS stopped; SMB5 fallback policy resumed."),
                     (b"charge-stop\n", "stop", b"test cancelled"),
                 ):
                     control.write_text("")

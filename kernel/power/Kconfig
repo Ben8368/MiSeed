@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-# Umi runtime integration. Charging starts inhibited pending telemetry review.
+# Umi runtime integration. SMB5 follows the LOS policy after telemetry checks.
 config BATTERY_MISEED_QCOM_FG
 	tristate "MiSeed Qualcomm FG port (Umi runtime)"
 	depends on SPMI && POWER_SUPPLY && OF
@@ -11,9 +11,9 @@ config CHARGER_MISEED_PM8150B
 	tristate "MiSeed PM8150B charger port (Umi runtime)"
 	depends on SPMI && POWER_SUPPLY && IIO && OF
 	help
-	  SMB5 driver from colorgarden/umi-mainline with Umi safety gates.
-	  Charge starts inhibited, with a bounded insertion test and
-	  misaka-derived SOC hysteresis. No fast-charge pump is enabled.
+	  SMB5 driver from colorgarden/umi-mainline with the fixed LOS Umi
+	  current/voltage profile and automatic attach policy. The optional
+	  bounded insertion command is diagnostic only.
 
 config CHARGER_MISEED_UMI_PPS
 	tristate "MiSeed Umi guarded BQ25970 PPS controller"
@@ -21,8 +21,6 @@ config CHARGER_MISEED_UMI_PPS
 	depends on CHARGER_MISEED_PM8150B && BATTERY_MISEED_QCOM_FG
 	select REGMAP_I2C
 	help
-	  Bounded, explicitly armed PPS charge-pump testing using mainline TCPM.
-	  Requires a qualified standalone BQ25970, fault IRQ, sense resistor
-	  and a complete enabled protection profile. Board nodes remain disabled
-	  until GPIO, PMIC ownership and board calibration are independently
-	  reviewed. Probe never enables the pump or requests a PPS contract.
+	  Automatic LOS-style PPS policy using mainline TCPM and a standalone
+	  BQ25970. The Umi board profile is sink-only and is exercised on the
+	  maintainer's Umi device through temporary RAM boot.

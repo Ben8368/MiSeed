@@ -157,10 +157,10 @@ readonly dtb="$output_root/umi-csot.dtb"
 # Work on a copy: every build starts with dtc's original symbol identities.
 install -m 0644 "$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb" "$dtb"
 python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb"
-# A compile-only PPS port must never silently become an active power profile.
+# The Umi L3 test image intentionally enables the sink-only PD/PPS profile.
 for label in umi_pps pm8150b_typec i2c15 pm8150b_vbus; do
     node="$(fdtget "$dtb" /__symbols__ "$label")"
-    [[ "$(fdtget "$dtb" "$node" status)" == disabled ]] || fail "unqualified power node enabled: ${label}"
+    [[ "$(fdtget "$dtb" "$node" status)" == okay ]] || fail "Umi PD/PPS test node is not enabled: ${label}"
 done
 # Verify both Type-C supplies by phandle, not by similarly named nodes.
 typec_node="$(fdtget "$dtb" /__symbols__ pm8150b_typec)"

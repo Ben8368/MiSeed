@@ -41,6 +41,7 @@ enum power_supply_property { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_PRESENT
  POWER_SUPPLY_PROP_VOLTAGE_MIN, POWER_SUPPLY_PROP_VOLTAGE_MAX, POWER_SUPPLY_PROP_CURRENT_MAX,
  PROP_COUNT };
 #define POWER_SUPPLY_HEALTH_GOOD 1
+#define POWER_SUPPLY_USB_TYPE_PD 6
 #define POWER_SUPPLY_USB_TYPE_PD_PPS 7
 union power_supply_propval { int intval; };
 struct power_supply { int id; int prop[PROP_COUNT]; };
@@ -158,7 +159,7 @@ static struct umi_pps c;
 static void reset(void) {
  memset(&c,0,sizeof(c));memset(regs,0,sizeof(regs));
  memset(&pd,0,sizeof(pd));memset(&bms,0,sizeof(bms));memset(&sw,0,sizeof(sw));
- c.pd=&pd;c.bms=&bms;c.sw=&sw;c.seconds=60;
+ c.pd=&pd;c.bms=&bms;c.sw=&sw;
  clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
@@ -176,13 +177,13 @@ static void reset(void) {
  bms.prop[POWER_SUPPLY_PROP_CAPACITY]=50;bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4000000;
  sw.prop[POWER_SUPPLY_PROP_HEALTH]=POWER_SUPPLY_HEALTH_GOOD;
  regs[0x0d]=6;adc(4,4000);adc(8,60);
- assert(!umi_pps_parse(&c));assert(c.nprotection==18);
- c.state=PPS_WAIT_UNPLUG;
+ assert(!umi_pps_parse(&c));assert(c.nprotection==19);
+ c.state=PPS_WAIT_PLUG;
 }
 static void tick(void) { umi_pps_work(&c.work.work); }
 static void begin(void) {
- tick();if(c.state==PPS_FAULT)return;assert(c.state==PPS_WAIT_PLUG);
- pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;tick();
+	pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;
+	tick();
 }
 static void run(void) {
  begin(); assert(c.state==PPS_SETTLE && !enable_count);
@@ -215,17 +216,16 @@ int main(void) {
  assert(umi_pps_encode(4550,3475,25,63)==43);
  assert(umi_pps_encode(4551,3475,25,63)<0);
  assert(umi_pps_encode(INT_MAX,3475,25,63)<0);
- reset();missing_property="ti,sense-resistor-micro-ohms";c.nprotection=0;
- assert(umi_pps_parse(&c)==-EINVAL && !enable_count);
+	reset();missing_property="ti,sense-resistor-micro-ohms";c.nprotection=0;
+	assert(!umi_pps_parse(&c) && c.nprotection==19 && !enable_count);
  reset();pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;tick();
- assert(c.state==PPS_WAIT_UNPLUG && !claim_owned && !enable_count);
+ assert(c.state==PPS_SETTLE && claim_owned && !enable_count);
  reset();run();clock_ms+=200;tick();assert(c.state==PPS_RUN);
  pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();
- assert(c.state==PPS_DONE && !claim_owned && !(regs[0x0c]&BIT(7)));
- tick();assert(enable_count==1); /* unplug cannot auto-rearm */
- reset();run();clock_ms=c.deadline;tick();assert(c.state==PPS_DONE && release_count==1);
- reset();c.seconds=600;run();clock_ms=c.deadline-200;tick();assert(c.state==PPS_RUN);
- clock_ms=c.deadline;tick();assert(c.state==PPS_DONE);
+ assert(c.state==PPS_WAIT_PLUG && !claim_owned && !(regs[0x0c]&BIT(7)));
+	reset();run();clock_ms+=600000;tick();assert(c.state==PPS_RUN);
+	bms.prop[POWER_SUPPLY_PROP_CAPACITY]=95;clock_ms+=200;tick();
+	assert(c.state==PPS_DONE && release_count==1 && !claim_owned);
  /* Match LOS: disable only bit 2, preserve frequency/timing and do not feed.
   * A historical timeout flag is not an active watchdog with DIS set.
   */
@@ -239,7 +239,7 @@ int main(void) {
    case 0: fail_sensor=1;break;
    case 1: bms.prop[POWER_SUPPLY_PROP_TEMP]=451;break;
    case 2: bms.prop[POWER_SUPPLY_PROP_TEMP]=150;break;
-   case 3: bms.prop[POWER_SUPPLY_PROP_CAPACITY]=70;break;
+   case 3: bms.prop[POWER_SUPPLY_PROP_CAPACITY]=95;break;
    case 4: bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4450000;break;
    case 5: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-6001000;break;
    case 6: regs[0x10]=0x80;break;
@@ -250,7 +250,7 @@ int main(void) {
    case 11: adc(4,4100);break;
    case 12: pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=9000000;break;
    case 13: suspended=0;break;
-   case 14: adc(8,160);break;
+   case 14: regs[0x01]&=~0x80;break;
    case 15: regs[0x0c]&=~BIT(7);break;
    case 16: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=100000;break;
    case 17: regs[0x05]|=BIT(7);break;
@@ -260,7 +260,11 @@ int main(void) {
    case 21: pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=2000000;break;
    case 22: regs[0x2b]|=BIT(3);break;
   }
-  clock_ms+=200;tick();assert(c.state==PPS_FAULT);
+  clock_ms+=200;tick();
+  if(fault==3 || fault==4)
+   assert(c.state==PPS_DONE && !claim_owned && !(regs[0x0c]&BIT(7)));
+  else
+   assert(c.state==PPS_FAULT);
   assert(!(regs[0x0c]&BIT(7)) && !claim_owned && wd_writes==prior_wd_writes);
  }
  /* No enable after failed negotiation, missing APDO, or exclusive claim. */
@@ -271,14 +275,18 @@ int main(void) {
   if(f==2) stale_contract=1;
   if(f==3) fail_claim=1;
   if(f==4) pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=1900000;
-  begin();assert(c.state==PPS_FAULT && !enable_count);
+  begin();
+  if(f==3)
+   assert(c.state==PPS_WAIT_PLUG && !claim_owned && !enable_count);
+  else
+   assert(c.state==PPS_FAULT && !enable_count);
  }
  reset();expired_negotiation=1;begin();clock_ms+=200;tick();
  assert((c.state==PPS_DONE || c.state==PPS_FAULT) && !enable_count && !claim_owned);
- /* Slow protection setup must not activate PPS after the session deadline. */
+ /* Slow protection setup must not activate PPS after its operation window. */
  reset();delayed_reg=0x02;read_delay_ms=60001;begin();
  assert(c.state==PPS_FAULT && c.last_error==-ETIME && !pps_activations && !enable_count);
- /* A blocking read may cross either deadline after the worker's first check. */
+ /* A blocking read may cross an operation or startup window after first check. */
  reset();begin();clock_ms=c.start_deadline-1;delayed_reg=0x0d;read_delay_ms=2;
  int pre_enable_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && c.last_error==-ETIMEDOUT && !enable_count && !claim_owned);
@@ -286,12 +294,12 @@ int main(void) {
  reset();begin();clock_ms=c.start_deadline-1;delayed_reg=0x0b;read_delay_ms=2;
  pre_enable_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && !enable_count && wd_writes==pre_enable_wd_writes);
- reset();run();clock_ms=c.deadline-1;delayed_reg=0x0d;read_delay_ms=2;
+ reset();run();delayed_reg=0x0d;read_delay_ms=10001;
  int old_voltage=voltage_requests,old_current=current_requests,old_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && c.last_error==-ETIME && !claim_owned);
  assert(voltage_requests==old_voltage && current_requests==old_current && wd_writes==old_wd_writes);
  /* An expired voltage request must not be followed by a current request. */
- reset();run();clock_ms=c.deadline-1;request_delay_ms=2;
+ reset();run();request_delay_ms=10001;
  old_current=current_requests;old_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && current_requests==old_current && wd_writes==old_wd_writes);
  /* Protection verification may itself consume the remaining control window. */
@@ -304,7 +312,7 @@ int main(void) {
   reset();run();thermal_fail=i;int previous=wd_writes;tick();
   assert(c.state==PPS_FAULT && !claim_owned && wd_writes==previous);
  }
- reset();thermal_delay_ms=41;begin();assert(c.state==PPS_FAULT && !enable_count);
+ reset();thermal_delay_ms=41;begin();assert(c.state==PPS_WAIT_PLUG && !enable_count);
  reset();run();thermal_mc[1]=125000;pre_fault_wd_writes=wd_writes;tick();
  assert(c.state==PPS_FAULT && wd_writes==pre_fault_wd_writes);
  /* Thermal reduction is applied to PD current, and cannot auto-increase. */

@@ -19,6 +19,8 @@
 #define UMI_PPS_TAPER_MS 10000
 #define UMI_PPS_PERIOD_MS 200
 #define UMI_PPS_START_MS 5000
+#define UMI_PPS_OPERATION_MS 10000
+#define UMI_PPS_MAX_SOC 95 /* LineageOS CAPACITY_TOO_HIGH_THR for Umi. */
 
 /* Normal-profile facts observed on this Umi. The opaque Android daemon is
  * not redistributed. Its generic_set_level selects target / 100 while the
@@ -114,7 +116,7 @@ static inline int umi_pps_battery_ok(const struct umi_pps_sample *s, int max_mv)
 {
 	return s->online && s->present && s->good &&
 		s->temp > UMI_CHARGE_COOL_DECIC && s->temp <= UMI_CHARGE_WARM_DECIC &&
-		s->soc >= 0 && s->soc < UMI_CHARGE_UPPER_SOC &&
+		s->soc >= 0 && s->soc < UMI_PPS_MAX_SOC &&
 		s->vbat_mv >= UMI_PPS_MIN_BAT_MV && s->vbat_mv < max_mv &&
 		max_mv > UMI_PPS_MIN_BAT_MV && max_mv <= UMI_CHARGE_MAX_UV / 1000 &&
 		s->ibat_ma >= -UMI_PPS_BAT_MAX_MA && s->ibat_ma <= UMI_PPS_BAT_MAX_MA;

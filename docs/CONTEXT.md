@@ -1,13 +1,11 @@
 # 当前状态
 
-日期：2026-11-08。分支 `codex/umi-pd-pps-fastcharge` / [草稿 PR #3](https://github.com/Ben8368/MiSeed/pull/3)。LOS 六路温控已 L1/L2；本轮按用户要求将 BQ watchdog 与 LOS 对齐为关闭，删除周期刷新，Linux 95/95、macOS 79 通过/16 跳过、ARM64 L2 成功；新 boot `97a5b9f9…e26498` 尚未上机，CI 另查。见[对齐与真机记录](archive/reviews/2026-11-08-los-watchdog-alignment.md)。
+日期：2026-11-08。分支 `codex/umi-pd-pps-fastcharge`，草稿 PR #3。Umi sink-only PD/PPS 测试节点已启用；新镜像 `9ffbb5794bc0988356d247f63a1b8259e7f9c90da5440eca60592c15fc8d3b29` 已通过 `fastboot boot` RAM 启动。用户照片中的充电器显示 PD、5.2 V / 2.7 A；同次救援台日志显示 USB supply 类型为 `Unknown [SDP] DCP CDP`、输入约 4.46 V / 0.60 A，`pps-status` 报控制器不可用。故照片证明充电器端 PD 状态，不证明 MiSeed 内核已协商 PPS；泵和自动 PPS 尚未验收。
 
-用户已授权 RAM 启动：旧 boot `6789b4e7…c9a882` 已在本机启动 Linux 6.18.60，ACM、PDC/SPMI/PON、只读遥测正常，导出 734 条连续日志。手机仍在该 RAM 镜像、充电抑制；未做插拔、回退往返或 PPS L3。29 个参考 DTBO 隔离检查不替代本机全部拓扑验收。Type-C/I2C15/泵/VBUS 仍禁用，GPIO 仅开放34/35。
-
-本机泵 ID `0x10`、0x2b=`0xd0`（2 mΩ 配置，非实物测量）；LOS 动作映射/FCC 已查清。TS 阈值在源码中存在但片内保护关闭，不能统称资料不存在；不再以新增 watchdog 的刷新/到期证明阻断 LOS 复用。绿联45W屏显充电器 APDO 未测。身份见[平台](platforms.md)。
+固定 LOS Umi 参考仍为泵 ID `0x10`、sense 配置 `0xd0`、六路 thermal-FCC。当前工作树已移植 LOS 自动 SMB5/PPS、3 A / 6 A / 4.45 V、95% 退出与主充回退；BQ watchdog/OCP/TS comparator 按 LOS 配置。ARM64 L2 成功；完整 L3 保护与 PPS 结果仍在适配。
 
 ## 近期优先级
 
-1. 核对原 LOS 的板级有效配置和温控/限流完整依赖，避免把原系统未启用的额外机制设为必备条件；RISK-004 保留实际未验证范围。
-2. 继续主线温度标度、PD/泵/主充协调与 GPIO8/68、PMIC/TLMM 验证；新镜像回退往返未测，RISK-010 / TD-002 未关闭。
-3. 用户仍要求 PD/PPS 快充落地及插拔取日志；当前仅源码/编译与上述诊断启动，不能宣布快充已启用。
+1. 查明真机 Type-C/TCPM 与 I2C15/泵控制器未绑定的原因，读取运行时 DT 和驱动探测错误。
+2. 让 sink-only PD 路径在设备侧正确识别，再继续 PPS APDO、保护/温控、停止/恢复与拔插验证。
+3. L2 和 RAM 启动完成；不刷写分区。状态及风险见 [PPS](../kernel/power/PPS.md)、[RISK-004](RISK_REGISTER.md#risk-004-p0-供电发布) 与[审查记录](archive/reviews/2026-11-08-los-automatic-pps-port.md)。

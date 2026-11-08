@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Umi wiring/limits: LineageOS 71b13e62f057a649b77fe4062feb73ee72ad609c,
- * umi-sm8250.dtsi / umi-pinctrl.dtsi. Disabled integration description only.
+ * umi-sm8250.dtsi / umi-pinctrl.dtsi. Sink-only PPS test profile.
  * See PPS.md: missing calibrated properties deliberately have NO defaults.
- * UART-only TLMM deliberately reserves GPIO68; PPS needs separate qualification.
+ * GPIO68 is the LOS BQ fault IRQ. UART console uses GPIO34/35.
  */
 #include <dt-bindings/usb/pd.h>
 
@@ -17,12 +17,12 @@
 };
 
 &i2c15 {
-	status = "disabled";
+	status = "okay";
 
 	umi_pps: charger@66 {
 		compatible = "miseed,umi-bq25970-pps";
 		reg = <0x66>;
-		status = "disabled";
+		status = "okay";
 		interrupt-parent = <&tlmm>;
 		interrupts = <68 IRQ_TYPE_EDGE_FALLING>;
 		pinctrl-names = "default";
@@ -49,9 +49,7 @@
 	};
 };
 
-/* Fixed LOS Umi ADC wiring. Conversion/scale agreement still needs L3.
- * These consumers do not turn on Type-C/I2C15/the pump or any power GPIO.
- */
+/* Fixed LOS Umi ADC wiring. Conversion/scale is recorded during device L3. */
 &pm8150_adc {
 	channel@4d {
 		reg = <ADC5_AMUX_THM1_100K_PU>;
@@ -99,29 +97,29 @@
 &pm8150b_typec {
 	/* Both pinned Umi mainline trees use PM8150 L2 for the PD PHY. */
 	vdd-pdphy-supply = <&vreg_l2a_3p1>;
-	status = "disabled";
+	status = "okay";
 
 	connector {
 		compatible = "usb-c-connector";
 		label = "USB-C";
 		power-role = "sink";
 		data-role = "device";
-		/* No high-voltage fixed PDO; fixed fallback stays at 5 V / 0.5 A.
+		/* Fixed fallback and LOS Umi USB input ceiling are 5 V / 3 A.
 		 * PPS ceiling follows the source policy; runtime caps at 9.5 V.
 		 */
-		sink-pdos = <PDO_FIXED(5000, 500, PDO_FIXED_USB_COMM)
+		sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
 			     PDO_PPS_APDO(3300, 11000, 3000)>;
-		op-sink-microwatt = <2500000>;
+		op-sink-microwatt = <15000000>;
 	};
 };
 
 /* TCPM's required VBUS provider. This is the SOURCE/OTG boost regulator,
- * not the incoming USB path or a PPS voltage request. Keep it disabled until
- * a reviewed Type-C profile is selected; never mark it boot-on/always-on.
+ * not the incoming USB path or a PPS voltage request. Type-C remains sink-only;
+ * never mark this regulator boot-on/always-on.
  * Limits agree in both pinned Umi mainline trees (see NOTICE.md).
  */
 &pm8150b_vbus {
 	regulator-min-microamp = <500000>;
 	regulator-max-microamp = <3000000>;
-	status = "disabled";
+	status = "okay";
 };

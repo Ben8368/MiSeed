@@ -36,7 +36,7 @@
 #define PPS_FIXED 1
 #define PPS_PROGRAMMABLE 2
 
-enum umi_pps_state { PPS_OFF, PPS_WAIT_UNPLUG, PPS_WAIT_PLUG,
+enum umi_pps_state { PPS_OFF, PPS_WAIT_PLUG,
 	PPS_SETTLE, PPS_RUN, PPS_DONE, PPS_FAULT };
 
 /* Expected writable protection image, checked during every control cycle. */
@@ -51,20 +51,20 @@ struct umi_pps {
 	struct iio_channel *thermal_channels[UMI_PPS_THERMAL_SENSORS - 1];
 	struct umi_pps_thermal thermal;
 	int thermal_comp_mc;
-	struct umi_pps_reg protection[18];
+	struct umi_pps_reg protection[20];
 	unsigned int nprotection;
 	enum umi_pps_state state;
-	bool claimed, configured, pps, removing, stop_pending;
+	bool claimed, configured, pps, removing, stop_pending, manual_stop;
 	u64 deadline, start_deadline, taper_start;
-	int request_mv, request_ma, max_bat_mv, die_max_decic;
-	int last_error, seconds;
+	int request_mv, request_ma, max_bat_mv;
+	int last_error;
 };
 
 static u64 umi_pps_now(void) { return ktime_to_ms(ktime_get_boottime()); }
 
-/* I/O may sleep past a worker's earlier timestamp. Check at each active
- * operation boundary; stopping/fixed-contract recovery remains unrestricted.
- * This does not bound a hung bus transaction or replace hardware protection.
+/* I/O may sleep past a worker's operation window. Check at each active
+	* operation boundary; stopping/fixed-contract recovery remains unrestricted.
+	* This does not bound a hung bus transaction or replace hardware protection.
  */
 static int umi_pps_check_deadline(struct umi_pps *c)
 {
@@ -140,7 +140,7 @@ static int umi_pps_stop(struct umi_pps *c, enum umi_pps_state state, int reason)
 			if (!pd_ret)
 				pd_ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, &ma);
 			if (!pd_ret && (online != PPS_FIXED || mv != 5000000 ||
-					ma < 0 || ma > UMI_DIAGNOSTIC_CURRENT_UA))
+					ma < 0 || ma > UMI_CHARGE_USB_ICL_UA))
 				pd_ret = -EPROTO;
 		}
 		if (!pd_ret)
@@ -191,7 +191,7 @@ static int umi_pps_add_limit(struct umi_pps *c, const char *property,
 
 static int umi_pps_parse(struct umi_pps *c)
 {
-	int ret, sense, bat_ts, bus_ts, die_alarm;
+	int ret;
 
 	ret = umi_pps_property(c, "miseed,thermal-board-compensation-millicelsius",
 			       &c->thermal_comp_mc);
@@ -199,49 +199,37 @@ static int umi_pps_parse(struct umi_pps *c)
 		return ret;
 	if (c->thermal_comp_mc != 0)
 		return -EINVAL;
-	/* All current and thermistor calibration is mandatory, with no fallback. */
-	ret = umi_pps_property(c, "ti,sense-resistor-micro-ohms", &sense);
-	if (ret)
-		return ret;
-	if (sense != 2000 && sense != 5000)
-		return -ERANGE;
-	ret = umi_pps_property(c, "ti,tsbat-threshold-code", &bat_ts);
-	if (!ret)
-		ret = umi_pps_property(c, "ti,tsbus-threshold-code", &bus_ts);
-	if (!ret)
-		ret = umi_pps_property(c, "ti,die-alarm-decicelsius", &die_alarm);
-	if (!ret)
-		ret = umi_pps_property(c, "miseed,die-max-decicelsius", &c->die_max_decic);
-	if (ret)
-		return ret;
-	if (bat_ts < 1 || bat_ts > 255 || bus_ts < 1 || bus_ts > 255 ||
-	    die_alarm < 300 || die_alarm > 1450 || die_alarm % 5 ||
-	    c->die_max_decic <= 0 || c->die_max_decic >= die_alarm)
-		return -ERANGE;
+	/* Match active LOS Umi configuration: battery OCP and the three BQ TS
+	 * comparators are disabled. Thermal/FCC control is supplied by the same
+	 * external LOS Umi temperature policy, ported above to mainline APIs.
+	 * Do not make parameters mandatory when the reference tree omits them.
+	 */
 #define LIMIT(name, reg, mask, base, step, min, max) do { \
 	ret = umi_pps_add_limit(c, name, reg, mask, base, step, min, max); \
 	if (ret) return ret; \
 } while (0)
 	LIMIT("ti,bat-ovp-millivolt", 0x00, 0xbf, 3475, 25, 4550, 4550);
-	LIMIT("ti,bat-ovp-alarm-millivolt", 0x01, 0xbf, 3500, 25, 4525, 4525);
-	LIMIT("ti,bat-ocp-milliamp", 0x02, 0xff, 2000, 100, 6200, 8000);
-	LIMIT("ti,bat-ocp-alarm-milliamp", 0x03, 0xff, 2000, 100, 6100, 7900);
+	LIMIT("ti,bat-ovp-alarm-millivolt", 0x01, 0xff, 3500, 25, 4525, 4525);
+	/* LOS explicitly disables the battery OVP alarm while retaining threshold. */
+	c->protection[1].value |= 0x80;
 	LIMIT("ti,bus-ovp-millivolt", 0x06, 0x7f, 5950, 50, 12000, 12000);
 	LIMIT("ti,bus-ovp-alarm-millivolt", 0x07, 0xff, 6000, 50, 11000, 11000);
 	LIMIT("ti,bus-ocp-milliamp", 0x08, 0x8f, 1000, 250, 3750, 3750);
 	LIMIT("ti,bus-ocp-alarm-milliamp", 0x09, 0xff, 0, 50, 3500, 3500);
 	LIMIT("ti,ac-ovp-volt", 0x05, 0x07, 11, 1, 14, 14);
 #undef LIMIT
-	if (c->protection[3].value >= c->protection[2].value)
-		return -ERANGE;
-	/* Standalone, all three temperature protections enabled, charge off. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x0c, 0x67, 0};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x28, 0xff, bus_ts};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x29, 0xff, bat_ts};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2a, 0xff, (die_alarm - 300) / 5};
-	/* 1500 ms soft-start, regulation enabled, sense selection; no VAC discharge. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2b, 0xf7,
-		0xd0 | (sense == 5000 ? BIT(1) : 0)};
+	/* LOS DTS disables battery OCP/OCP alarm and BQ TSBAT/TSBUS/TDIE. */
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x02, 0x80, 0x80};
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x03, 0x80, 0x80};
+	/* LOS DTS also disables the battery UCP alarm. */
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x04, 0x80, 0x80};
+	/* Standalone mode, charge off, BQ therm comparators disabled per LOS. */
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x0c, 0x67, 0x07};
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x28, 0xff, 0x15};
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x29, 0xff, 0x15};
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2a, 0xff, (1450 - 300) / 5};
+	/* Keep the exact register configuration observed on this LOS device. */
+	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2b, 0xf7, 0xd0};
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2c, 0xf0, 0};
 	/* Continuous ADC, averaging, 13 bits, every channel enabled. */
 	c->protection[c->nprotection++] = (struct umi_pps_reg){0x14, 0xed, 0xa8};
@@ -354,7 +342,7 @@ static int umi_pps_adc(struct umi_pps *c, int channel, int *value)
 static int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 {
 	unsigned int fault, latched, alarm, state, wd, control;
-	int ret, die;
+	int ret;
 
 	ret = umi_pps_verify(c);
 	if (!ret)
@@ -385,10 +373,6 @@ static int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 		ret = umi_pps_adc(c, 4, &s->pump_vbat_mv);
 	if (!ret)
 		ret = umi_pps_adc(c, 5, &s->pump_ibat_ma);
-	if (!ret)
-		ret = umi_pps_adc(c, 8, &die);
-	if (!ret && (die < 0 || die * 5 >= c->die_max_decic))
-		ret = -ERANGE;
 	return ret;
 }
 
@@ -526,38 +510,49 @@ static void umi_pps_work(struct work_struct *work)
 		umi_pps_stop(c, PPS_FAULT, c->last_error);
 		goto out;
 	}
-	if (c->state == PPS_OFF || c->state == PPS_DONE || c->state == PPS_FAULT)
-		goto out;
 	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &online);
 	if (ret)
 		goto fail;
-	if (c->state == PPS_WAIT_UNPLUG) {
-		if (!online)
+	if (!online) {
+		if (c->state == PPS_SETTLE || c->state == PPS_RUN || c->pps || c->claimed)
+			umi_pps_stop(c, PPS_WAIT_PLUG, 0);
+		else {
 			c->state = PPS_WAIT_PLUG;
+			c->manual_stop = false;
+		}
 		goto out;
 	}
-	if (c->state == PPS_WAIT_PLUG && !online)
+	if (c->manual_stop || c->state == PPS_DONE || c->state == PPS_FAULT ||
+	    c->state == PPS_OFF)
 		goto out;
-	if (!online) {
-		umi_pps_stop(c, PPS_DONE, 0);
-		goto out;
+	if (c->state == PPS_WAIT_PLUG) {
+		int usb_type;
+
+		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_USB_TYPE, &usb_type);
+		if (ret)
+			goto fail;
+		/* Ordinary USB/PDO stays on SMB5; only a PD source may be probed for
+		 * an APDO. TCPM returns to its fixed contract on every failed start.
+		 */
+		if (usb_type != POWER_SUPPLY_USB_TYPE_PD &&
+		    usb_type != POWER_SUPPLY_USB_TYPE_PD_PPS)
+			goto out;
 	}
 	ret = umi_pps_battery(c, &s);
 	if (ret)
 		goto fail;
 	if (c->state == PPS_WAIT_PLUG) {
-		/* Deadline includes PD negotiation time and is never extended. */
-		c->deadline = umi_pps_now() + c->seconds * 1000;
+		/* Wait without claiming SMB5 until the LOS PPS entry conditions hold. */
+		if (!umi_pps_battery_ok(&s, UMI_CHARGE_MAX_UV / 1000))
+			goto out;
+		c->deadline = umi_pps_now() + UMI_PPS_OPERATION_MS;
 		ret = umi_pps_begin(c, &s);
 		if (ret)
 			goto fail;
 		goto out;
 	}
 	now = umi_pps_now();
-	if (now >= c->deadline) {
-		umi_pps_stop(c, PPS_DONE, 0);
-		goto out;
-	}
+	c->deadline = now + UMI_PPS_OPERATION_MS;
 	ret = umi_smb5_check(c->sw);
 	if (ret < 0)
 		goto fail;
@@ -575,6 +570,10 @@ static void umi_pps_work(struct work_struct *work)
 		ret = umi_pps_sample(c, &s);
 	if (ret)
 		goto fail;
+	if (s.soc >= UMI_PPS_MAX_SOC || s.vbat_mv >= c->max_bat_mv) {
+		umi_pps_stop(c, PPS_DONE, 0);
+		goto out;
+	}
 	if (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma, c->request_mv)) {
 		ret = -ERANGE;
 		goto fail;
@@ -649,8 +648,6 @@ static void umi_pps_work(struct work_struct *work)
 	if (!ret && (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma, c->request_mv) ||
 		     (c->state == PPS_RUN && (!s.switching || s.bus_low || s.bus_high || s.ibat_ma < 0))))
 		ret = -ERANGE;
-	if (!ret && umi_pps_now() >= c->deadline)
-		ret = -ETIME;
 	if (!ret)
 		ret = umi_pps_validate_cycle(c);
 	if (ret)
@@ -660,9 +657,16 @@ static void umi_pps_work(struct work_struct *work)
 		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
 	goto out;
 fail:
+	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {
+		/* Pre-negotiation telemetry faults are transient; keep polling without
+		 * taking ownership from the main charger.
+		 */
+		c->last_error = ret;
+		goto out;
+	}
 	umi_pps_stop(c, PPS_FAULT, ret);
 out:
-	if (!c->removing && (c->stop_pending || (c->state >= PPS_WAIT_UNPLUG && c->state <= PPS_RUN)))
+	if (!c->removing && (c->stop_pending || !c->manual_stop))
 		mod_delayed_work(system_wq, &c->work, msecs_to_jiffies(UMI_PPS_PERIOD_MS));
 	mutex_unlock(&c->lock);
 }
@@ -685,8 +689,8 @@ static ssize_t fastcharge_test_show(struct device *dev, struct device_attribute 
 	ssize_t ret;
 
 	mutex_lock(&c->lock);
-	ret = sysfs_emit(buf, "state=%u error=%d seconds=%d requested_mv=%d requested_ma=%d stop_pending=%u\n",
-		c->state, c->last_error, c->seconds, c->request_mv, c->request_ma, c->stop_pending);
+	ret = sysfs_emit(buf, "state=%u error=%d requested_mv=%d requested_ma=%d stop_pending=%u\n",
+		c->state, c->last_error, c->request_mv, c->request_ma, c->stop_pending);
 	mutex_unlock(&c->lock);
 	return ret;
 }
@@ -697,20 +701,15 @@ static ssize_t fastcharge_test_store(struct device *dev, struct device_attribute
 	struct umi_pps *c = dev_get_drvdata(dev);
 	int ret;
 
-	if (!sysfs_streq(buf, "arm") && !sysfs_streq(buf, "arm-10min") && !sysfs_streq(buf, "stop"))
+	if (!sysfs_streq(buf, "stop"))
 		return -EINVAL;
 	mutex_lock(&c->lock);
 	if (c->removing) {
 		ret = -ENODEV;
 		goto out;
 	}
-	/* A new arm first proves the previous session has completely stopped. */
 	ret = umi_pps_stop(c, PPS_OFF, 0);
-	if (!ret && !sysfs_streq(buf, "stop")) {
-		c->seconds = sysfs_streq(buf, "arm-10min") ? 600 : 60;
-		c->state = PPS_WAIT_UNPLUG;
-		c->last_error = 0;
-	}
+	c->manual_stop = true;
 	mod_delayed_work(system_wq, &c->work, 0);
 out:
 	mutex_unlock(&c->lock);
@@ -831,8 +830,11 @@ static int umi_pps_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 	ret = devm_device_add_group(dev, &umi_pps_group);
-	if (!ret)
-		dev_info(dev, "PPS controller inhibited; explicit bounded test required\n");
+	if (!ret) {
+		c->state = PPS_WAIT_PLUG;
+		dev_info(dev, "automatic PPS policy active; waiting for USB-PD attach\n");
+		mod_delayed_work(system_wq, &c->work, 0);
+	}
 	return ret;
 }
 

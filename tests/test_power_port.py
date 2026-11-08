@@ -239,18 +239,18 @@ int main(void) {
         subprocess.run([str(binary)], check=True, timeout=10)
 
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
-    def test_test_mode_bypasses_soc_only_and_preserves_all_safety_boundaries(self):
+    def test_los_policy_has_no_artificial_soc_cap_and_preserves_safety_boundaries(self):
         harness = r'''
 #include <assert.h>
 #include "umi_charge_policy.h"
 #define D(on,p,h,t,v,s,old,test) umi_charge_policy(on,p,h,t,v,s,4400000,old,test)
 int main(void) {
  assert(D(1,1,1,300,4100000,65,0,0) == 1);
- assert(D(1,1,1,300,4100000,70,1,0) == 0);
- assert(D(1,1,1,300,4100000,68,0,0) == 0);
+ assert(D(1,1,1,300,4100000,70,1,0) == 1);
+ assert(D(1,1,1,300,4100000,68,0,0) == 1);
  assert(D(1,1,1,300,4100000,68,1,0) == 1);
  assert(D(1,1,1,300,4100000,78,0,1) == 1);
- assert(D(1,1,1,300,4100000,100,0,1) == 0);
+ assert(D(1,1,1,300,4100000,100,0,1) == 1);
  assert(D(0,1,1,300,4100000,60,1,1) == 0);
  assert(D(1,0,1,300,4100000,60,1,1) == 0);
  assert(D(1,1,0,300,4100000,60,1,1) == 0);
@@ -389,8 +389,8 @@ int main(void) {
  tick(&c, 602999, 1); assert(enabled && c.test_active);
  tick(&c, 603000, 1); assert(!enabled && !c.test_active && !c.test_armed);
  tick(&c, 604000, 1); assert(!enabled); /* 78% restores normal inhibition */
- assert(smb5_get_charge_control_threshold(&c, true) == UMI_CHARGE_UPPER_SOC);
- assert(smb5_get_charge_control_threshold(&c, false) == UMI_CHARGE_LOWER_SOC);
+ assert(smb5_get_charge_control_threshold(&c, true) == UMI_CHARGE_END_SOC);
+ assert(smb5_get_charge_control_threshold(&c, false) == UMI_CHARGE_START_SOC);
  arm(&c, "arm"); assert(c.test_seconds == 60);
  tick(&c, 605000, 0); tick(&c, 606000, 1); assert(enabled);
  tick(&c, 666000, 1); assert(!enabled && !c.test_armed);
@@ -425,13 +425,13 @@ int main(void) {
   if (fault == 1) battery_error = -EIO;
   if (fault == 2) usb_error = -EIO;
   if (fault == 3) limit_error = -EPERM;
-  if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = -500001;
+  if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = -6000001;
   tick(&c, 2000, 1);
   assert(!enabled && !c.test_active && !c.test_armed && c.inhibit && feeds == old_feeds);
   battery_error = usb_error = limit_error = 0; values[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
   tick(&c, 3000, 1); assert(!enabled);
  }
- /* Temperature/voltage/health gates remain effective within 600 seconds. */
+ /* Temperature/voltage/health gates remain effective during auto charging. */
  arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 451; tick(&c, 2000, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 300;
@@ -498,7 +498,7 @@ int main(void) {
  registers[0x1070] = 78;
  assert(!smb5_init_hw(&c));
  assert(c.max_fv_uv == 4380000 && registers[0x1070] == 78);
- assert(registers[0x1061] == 10 && registers[0x1370] == 10);
+ assert(registers[0x1061] == 120 && registers[0x1370] == 60);
  assert(registers[0x1653] & BIT(7));
  assert((registers[0x1651] & (BIT(0)|BIT(1)|BIT(6))) == (BIT(0)|BIT(1)|BIT(6)));
  assert(registers[0x1670] & BIT(0));

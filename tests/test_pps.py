@@ -56,17 +56,17 @@ class PpsTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             subprocess.run([str(binary)], check=True, timeout=10)
 
-    def test_board_never_enables_unqualified_power_nodes(self):
+    def test_sink_only_pd_pps_nodes_are_enabled(self):
         board = (ROOT / "kernel/power/umi-pps.dtsi").read_text()
-        self.assertEqual(board.count('status = "disabled"'), 4)
-        self.assertNotIn('status = "okay"', board)
+        self.assertEqual(board.count('status = "okay"'), 4)
+        self.assertNotIn('status = "disabled"', board)
         for unknown in ("ti,sense-resistor-micro-ohms", "ti,bat-ocp-milliamp",
                         "ti,tsbat-threshold-code", "ti,tsbus-threshold-code",
                         "ti,die-alarm-decicelsius", "miseed,die-max-decicelsius"):
             self.assertNotIn(unknown + " =", board)
         self.assertIn('power-role = "sink"', board)
         self.assertNotIn("source-pdos", board)
-        self.assertIn('PDO_FIXED(5000, 500,', board)
+        self.assertIn('PDO_FIXED(5000, 3000,', board)
 
     def test_reference_files_are_hash_locked(self):
         import json

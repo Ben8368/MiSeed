@@ -19,14 +19,14 @@ misaka-link 的 [umi-linux](https://github.com/misaka-link/umi-linux/tree/cf8307
 
 PM8150B 的 FV/FCC 编码、watchdog 和 Umi 正常充电温区/电压上限，另对照本机 Android 对应的 [LineageOS 内核](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/tree/71b13e62f057a649b77fe4062feb73ee72ad609c)：`qpnp-smb5.c`、`smb5-reg.h`、`umi-sm8250.dtsi`。厂商代码归 The Linux Foundation 及原贡献者；本地代码只移植已核实的定义和控制逻辑，不引入厂商二进制或认证数据。
 
-先前仅模块编译的评估见[历史记录](../../docs/archive/research/2026-11-08-upstream-power-port.md)。当前运行版默认抑制充电，读数及保护状态核对通过后才准备用户授权的单次插入测试；原始与本地文件哈希继续由来源锁维护。新增显式 600 秒 SOC 豁免入口，原 60 秒默认及其余保护不变；当时 BQ/PD 快充未采用，详见[专项核查](../../docs/archive/reviews/2026-11-08-fastcharge-ci.md)。
+先前仅模块编译的评估见[历史记录](../../docs/archive/research/2026-11-08-upstream-power-port.md)。当前策略已从人工插入测试改为 LOS Umi 自动充电；仍保留 `charge-test` 作诊断命令。原始与本地文件哈希继续由来源锁维护；历史测试授权与运行记录见[专项核查](../../docs/archive/reviews/2026-11-08-fastcharge-ci.md)。
 
 
 ## LineageOS PPS 移植
 
 `umi_pps.c`、`umi_pps_policy.h` 和 `umi-pps.dtsi` 从 LineageOS 固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq2597x_charger.c`、`bq25970_reg.h`、`pd_policy_manager.c/.h` 以及 Umi/Kona DTS 选择性适配，保持 GPL-2.0-only。BQ 原驱动 Copyright (C) 2017 Texas Instruments、MODULE_AUTHOR Texas Instruments；策略 MODULE_AUTHOR Fei Jiang <jiangfei1@xiaomi.com>，策略头文件保留 a0220433 / Mar 27, 2017 的归属。参考驱动的 TI GPL v2 授权、策略 GPL 模块声明与根 COPYING 一并检查；来源锁记录逐文件哈希。未复制其整个下游 USB PD 实现。
 
-本地修改包括主线 TCPM power_supply 接口、强制板级参数、全保护读回、拒绝未知芯片 ID、SMB5 独占和输入暂停、有界手动测试与失败停止。没有沿用关闭 watchdog/温控的初始化，也未声称保护已通过实机验证。Linux 原生 TCPM/PMIC Type-C/PD PHY 维持内核自身许可证及作者，不改其文件。移植范围、来源报告和运行阻断见[本轮评估](../../docs/archive/research/2026-11-08-lineage-pps-port.md)与[接口说明](PPS.md)。
+本地修改包括主线 TCPM power_supply 接口、固定 LOS Umi 参数与保护读回、拒绝未知芯片 ID、自动 attach/PPS 调节、SMB5 独占和输入暂停、故障回固定 PDO 后恢复 SMB5。没有沿用额外电池 OCP/TS 保护位，未声称硬件路径已通过 MiSeed L3。Linux 原生 TCPM/PMIC Type-C/PD PHY 维持内核自身许可证及作者，不改其文件。移植范围、来源报告和运行阻断见[本轮评估](../../docs/archive/research/2026-11-08-lineage-pps-port.md)与[接口说明](PPS.md)。
 
 常规温控的 FCC 档位及 PMIC ADC 接线继续取自同一固定 Lineage Umi DTS；执行档位对照 `drivers/power/supply/qcom/smb5-lib.c`（SPDX GPL-2.0-only，Copyright (c) 2018–2021 The Linux Foundation，来源锁附逐文件哈希）。本机 vendor 配置和 `mi_thermald` 仅作只读、离线行为核对；不复制守护进程代码、不执行或再分发其二进制/完整配置。数值事实、映射依据与 MiSeed 自行实现的温控控制流程见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)；不能用来源报告替代 MiSeed 实机验收。
 

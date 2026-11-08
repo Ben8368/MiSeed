@@ -10,7 +10,7 @@
  */
 
 /* MiSeed: Umi runtime integration. Standard CHARGE_BEHAVIOUR API,
- * fail-closed polling, source-derived limits, bounded single-insertion test.
+ * fail-closed polling, LOS-derived limits and automatic charge policy.
  */
 
 #include <linux/bits.h>
@@ -482,9 +482,9 @@ static int smb5_set_current_limit(struct smb5_chip *chip, unsigned int val)
 {
 	unsigned char val_raw;
 
-	if (val > UMI_DIAGNOSTIC_CURRENT_UA) {
+	if (val > UMI_CHARGE_USB_ICL_UA) {
 		dev_err(chip->dev,
-			"Diagnostic input current cap exceeded");
+			"LOS Umi USB input current limit exceeded");
 		return -EINVAL;
 	}
 	val_raw = val / CURRENT_SCALE_FACTOR;
@@ -592,14 +592,17 @@ int umi_smb5_release(struct power_supply *psy)
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
-	chip->inhibit = true;
 	rc = smb5_inhibit_with_fallback(chip, "pps-release");
 	if (!rc)
 		rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
 					USBIN_SUSPEND_BIT, 0);
-	if (!rc)
+	if (!rc) {
 		chip->pps_owned = false;
+		chip->inhibit = false;
+	}
 	mutex_unlock(&chip->lock);
+	if (!rc)
+		mod_delayed_work(system_wq, &chip->status_change_work, 0);
 	return rc;
 }
 EXPORT_SYMBOL_GPL(umi_smb5_release);
@@ -626,8 +629,8 @@ static int smb5_limits_verified(struct smb5_chip *chip)
   rc = regmap_read(chip->regmap, chip->base + regs[i], &v[i]);
   if (rc) return rc;
  }
- if (v[0] != UMI_DIAGNOSTIC_CURRENT_UA / CURRENT_SCALE_FACTOR ||
-     v[1] > UMI_DIAGNOSTIC_CURRENT_UA / CURRENT_SCALE_FACTOR ||
+	if (v[0] != UMI_CHARGE_FCC_UA / CURRENT_SCALE_FACTOR ||
+	    v[1] > UMI_CHARGE_USB_ICL_UA / CURRENT_SCALE_FACTOR ||
      3600000 + (int)v[2] * 10000 != chip->max_fv_uv ||
      !(v[3] & WDOG_TIMER_EN_BIT) ||
      !(v[4] & BITE_WDOG_DISABLE_CHARGING_CFG_BIT) || !(v[5] & BIT(0)))
@@ -655,11 +658,12 @@ static void smb5_status_change_work(struct work_struct *work)
  if (!rc) rc = smb5_battery_value(chip, POWER_SUPPLY_PROP_CURRENT_NOW, &bms_current);
  if (!rc) rc = smb5_get_prop_health(chip, &health);
  if (!rc) rc = smb5_limits_verified(chip);
- if (!rc && bms_current < -UMI_DIAGNOSTIC_CURRENT_UA) rc = -EOVERFLOW;
+	if (!rc && bms_current < -UMI_CHARGE_FCC_UA) rc = -EOVERFLOW;
  if (!usb_rc && !online) {
   if (chip->test_active) {
    chip->test_active = false;
    chip->test_armed = false;
+   chip->inhibit = true;
   } else if (chip->test_armed) {
    chip->test_saw_disconnect = true;
   }
@@ -672,6 +676,7 @@ static void smb5_status_change_work(struct work_struct *work)
  if (chip->test_active && time_after_eq(jiffies, chip->test_deadline)) {
   chip->test_active = false;
   chip->test_armed = false;
+  chip->inhibit = true;
  }
  if (!rc && !chip->inhibit && (!chip->test_armed || chip->test_active))
   allow = umi_charge_policy(online, present, health == POWER_SUPPLY_HEALTH_GOOD,
@@ -696,7 +701,7 @@ static void smb5_status_change_work(struct work_struct *work)
  dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_raw_ua=%d soc=%d test_armed=%u test_active=%u rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d\n",
           chip->enabled, online, present, health, temp, voltage, bms_current, soc,
           chip->test_armed, chip->test_active, rc,
-          UMI_DIAGNOSTIC_CURRENT_UA, UMI_DIAGNOSTIC_CURRENT_UA, chip->max_fv_uv);
+			UMI_CHARGE_FCC_UA, UMI_CHARGE_USB_ICL_UA, chip->max_fv_uv);
  mutex_unlock(&chip->lock);
  power_supply_changed(chip->chg_psy);
  schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(1000));
@@ -768,10 +773,7 @@ static int smb5_get_charge_control_threshold(struct smb5_chip *chip, bool end)
 	int threshold;
 
 	mutex_lock(&chip->lock);
-	if (chip->test_active)
-		threshold = end ? 100 : 0;
-	else
-		threshold = end ? UMI_CHARGE_UPPER_SOC : UMI_CHARGE_LOWER_SOC;
+	threshold = end ? UMI_CHARGE_END_SOC : UMI_CHARGE_START_SOC;
 	mutex_unlock(&chip->lock);
 
 	return threshold;
@@ -956,10 +958,10 @@ static int smb5_init_hw(struct smb5_chip *chip)
  rc = regmap_write(chip->regmap, chip->base + FLOAT_VOLTAGE_CFG,
                    (chip->max_fv_uv - 3600000) / 10000);
  if (rc) return rc;
- rc = regmap_write(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG,
-                   UMI_DIAGNOSTIC_CURRENT_UA / CURRENT_SCALE_FACTOR);
+	rc = regmap_write(chip->regmap, chip->base + FAST_CHARGE_CURRENT_CFG,
+	                  UMI_CHARGE_FCC_UA / CURRENT_SCALE_FACTOR);
  if (rc) return rc;
- rc = smb5_set_current_limit(chip, UMI_DIAGNOSTIC_CURRENT_UA);
+	rc = smb5_set_current_limit(chip, UMI_CHARGE_USB_ICL_UA);
  if (rc) return rc;
  /* Keep inherited watchdog intervals; enable bite-to-stop and timer. */
  rc = regmap_update_bits(chip->regmap, chip->base + SNARL_BARK_BITE_WD_CFG,
@@ -1066,8 +1068,10 @@ static int smb5_probe(struct platform_device *pdev)
 	chip->dev = &pdev->dev;
 	chip->name = pdev->name;
 	mutex_init(&chip->lock);
-	/* First boot stays inhibited until telemetry is checked and a test is armed. */
-	chip->inhibit = true;
+	/* LOS automatic charger policy: the worker enables only after telemetry,
+	 * charger limits, health and temperature have been checked.
+	 */
+	chip->inhibit = false;
 	chip->test_seconds = UMI_CHARGE_TEST_SECONDS;
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);

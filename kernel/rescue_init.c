@@ -620,10 +620,10 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-test, pps-test-10min, pps-stop, reboot, bootloader");
+        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
-        puts("PPS controls require a qualified enabled board: pps-status, pps-test (60 s), pps-test-10min (600 s), pps-stop.");
+        puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
             sleep(1);
@@ -645,17 +645,12 @@ static void usb_console(void) {
                                  extended ? "arm-10min" : "arm");
             charge_log_append("CONTROL", "charge_test_arm seconds=%u rc=%d", extended ? 600U : 60U, rc);
             if (rc) puts("Charge test arm failed; inspect logs.");
-            else printf("Test armed: disconnect computer, attach charger. Ends on unplug or after %u seconds; 0.5 A cap and safety gates stay active.\n",
+            else printf("Test armed: disconnect computer, attach charger. Ends on unplug or after %u seconds; LOS limits and safety checks stay active.\n",
                         extended ? 600U : 60U);
         } else if (!strcmp(line, "pps-status")) {
             if (pps_control(NULL)) puts("PPS controller unavailable or ambiguous; board qualification may be incomplete.");
-        } else if (!strcmp(line, "pps-test") || !strcmp(line, "pps-test-10min")) {
-            int extended = !strcmp(line, "pps-test-10min");
-            int rc = pps_control(extended ? "arm-10min" : "arm");
-            puts(rc ? "PPS test arm failed; inspect logs." :
-                 "PPS test armed: unplug, then attach PPS charger. Safety gates and deadline remain active.");
         } else if (!strcmp(line, "pps-stop")) {
-            puts(pps_control("stop") ? "PPS stop unavailable/failed; disconnect charger." : "PPS test stopped.");
+            puts(pps_control("stop") ? "PPS stop unavailable/failed; disconnect charger." : "PPS stopped; SMB5 fallback policy resumed.");
         } else if (!strcmp(line, "charge-stop")) {
             /* Also stop PPS when present, before releasing the ordinary charger. */
             char path[512];
