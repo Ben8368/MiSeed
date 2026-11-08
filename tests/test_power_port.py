@@ -26,6 +26,13 @@ class PowerPortTests(unittest.TestCase):
         self.target.mkdir(parents=True)
         for name in ("Makefile", "Kconfig"):
             (self.target / name).write_text("# fixture\n")
+        self.rpmhpd_kconfig = self.source / "drivers/pmdomain/qcom/Kconfig"
+        self.rpmhpd_kconfig.parent.mkdir(parents=True)
+        self.rpmhpd_kconfig.write_text(
+            'config QCOM_RPMHPD\n'
+            '\ttristate "Qualcomm RPMh Power domain driver"\n'
+            '\tdepends on QCOM_RPMH && QCOM_COMMAND_DB\n'
+        )
 
     def stage(self):
         apply_power_port.stage(self.source, ROOT / "kernel/power")
@@ -33,9 +40,12 @@ class PowerPortTests(unittest.TestCase):
     def test_restage_replaces_stale_generated_driver_without_duplicate_rules(self):
         self.stage()
         snapshot = {p.name: p.read_bytes() for p in self.target.iterdir()}
+        rpmhpd_snapshot = self.rpmhpd_kconfig.read_bytes()
+        self.assertIn(b"\tselect PM_OPP\n", rpmhpd_snapshot)
         (self.target / "qcom_fg.c").write_text("stale source\n")
         self.stage()
         self.assertEqual(snapshot, {p.name: p.read_bytes() for p in self.target.iterdir()})
+        self.assertEqual(rpmhpd_snapshot, self.rpmhpd_kconfig.read_bytes())
 
     def test_wrong_revision_does_not_mutate_tree(self):
         (self.source / ".miseed-source-revision").write_text("0" * 40)

@@ -19,3 +19,20 @@
 | 未覆盖 / 后续 | 设备重新连到主机并进入 Fastboot 后 RAM 启动 `8f01d739…1955c8`，只读核实 TCPM source power_supply 类型/在线值；按此确认是源未宣告 APDO、TCPC/TCPM 没完成 PD，还是 PPS 属性/策略路径未对接，再修正并再次真机测试。GPIO8 VBUS-disable 行为仍未接入 SMB5 |
 
 充电头侧的“优先 PPS”或屏显 PD 档位不代表设备端已经请求或取得 PPS。原始串口长日志未归档。
+
+## PPS 失败清理复测
+
+| 项 | 本轮证据 |
+| --- | --- |
+| 日期 / 操作者 | 2026-11-08，Codex；宿主 Darwin 25.6.0 / arm64 / zsh |
+| 授权范围 | 用户要求读取 USB 重连后的充电日志并修复；仅只读采集。未发充电控制、未刷写分区 |
+| 镜像 / 身份 | 用户确认上一轮诊断镜像已启动；镜像 SHA-256 `8f01d7393e8895d5f38dfc36465150a42cca764935442f8f640f3a3f1e1955c8`。当前记录沿用同一 Umi / CSOT 参考配置 |
+| 充电器观察 | 用户报告拔掉电脑 USB 后充电器表头在 14 W 与 2 W 间跳动，之前稳定约 14 W；这是用户观察，不是救援端采样 |
+| 内核状态 | `pps-status`: `state=5 error=-95 requested_mv=0 requested_ma=2050 stop_pending=1`。内核重复报告 `state=5 reason=-95 stop=0 pd_stop=-95 owned=1`；SMB5 快照 `enabled=0`、输入在线，控制权仍归 PPS。该状态与 SMB5 主充电被停及表头低功率相符，但不能单独证明每次瓦数跳变的精确时序 |
+| TCPM / SMB5 属性 | TCPM source supply 当前 `online=1`、活动 `usb_type=PD`、`voltage_max=5000000`、`current_max=3000000`；属性支持列表里包含 `PD_PPS`，但方括号活动值为 `PD`。这不是已选 APDO 的证据。PM8150B 约 5.138 V、48 mA，状态 `Not charging`，电流上限 500 mA |
+| 电池采样 | SOC 约 81–82%，VBAT 约 4.10–4.13 V，电池温度约 37.0°C；数字为只读状态快照 |
+| 定位 / 修复 | 固定 PD 是 PPS 切换的起始状态，不能要求预先出现活动 `PD_PPS`。无 APDO 时 TCPM 对 `ONLINE=PPS_PROGRAMMABLE` 返回 `-EOPNOTSUPP`；旧清理把该失败误认为可能已切换，再次请求 `PPS_FIXED`，也收到 `-EOPNOTSUPP`，因此保留 SMB5 所有权。现在只在 PPS 激活入口返回 `-EOPNOTSUPP` 时标记尚未切换，停止泵后释放 SMB5；其他错误仍保留完整 PD 回退和故障保护 |
+| 回归 / 构建 | `tests.test_pps` 和 `tests.test_power_port` 共 16 项通过；完整测试 96 项通过、17 项因 macOS 缺 Linux 工具跳过。使用 `bash tools/build_kernel_l2_macos.sh`（Colima/VZ native arm64）构建 L2 成功，镜像 7,806,976 bytes，SHA-256 `50a2ce9c54c866f8be708f4a2056fbc1e20e072e9fcd412b5b202ba931987e23` |
+| 未覆盖 / 下一步 | `-EOPNOTSUPP` 清理路径目前由真实控制器合成故障注入覆盖，尚未在该镜像上真机复验；需要 RAM 启动该哈希，确认失败时 SMB5 释放、充电不再掉到低功率，再确认是否有已选 PPS 合约。当前不宣称 PPS 已激活或充电保护 L3 完成 |
+
+实现根据 Linux [TCPM](https://github.com/torvalds/linux/blob/v6.18/drivers/usb/typec/tcpm/tcpm.c) 的 PPS 激活路径和 [power_supply `online` / `usb_type` ABI](https://github.com/torvalds/linux/blob/v6.18/Documentation/ABI/testing/sysfs-class-power)解释：`online=2` 用于从固定态切 programmable；`usb_type` 标识当前活动类型，不能以支持列表代替活动类型。原始串口长日志未归档。

@@ -465,6 +465,12 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	/* A failed negotiation may still have changed the source. Always unwind. */
 	c->pps = true;
 	ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_ONLINE, PPS_PROGRAMMABLE);
+	/* TCPM returns -EOPNOTSUPP before changing the contract when no PPS APDO
+	 * was advertised. In that case there is no PPS contract to unwind, and a
+	 * second ONLINE write can itself fail and strand SMB5 ownership.
+	 */
+	if (ret == -EOPNOTSUPP)
+		c->pps = false;
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
 	if (!ret)
@@ -531,8 +537,8 @@ static void umi_pps_work(struct work_struct *work)
 		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_USB_TYPE, &usb_type);
 		if (ret)
 			goto fail;
-		/* Ordinary USB/PDO stays on SMB5; only a PD source may be probed for
-		 * an APDO. TCPM returns to its fixed contract on every failed start.
+		/* Fixed-PD is the expected starting state: ONLINE=PPS_PROGRAMMABLE
+		 * asks TCPM to select an advertised APDO. Ordinary USB stays on SMB5.
 		 */
 		if (usb_type != POWER_SUPPLY_USB_TYPE_PD &&
 		    usb_type != POWER_SUPPLY_USB_TYPE_PD_PPS)

@@ -49,7 +49,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。镜像 `9e065431…acfcea` RAM 启动已确认 RPMh RSC 与 power-domain provider 绑定、I2C15 枚举、`15-0066` 绑定 `umi-bq25970-pps`，此前 provider `-95` 和 I2C deferred 阻塞已解除。但 `pps-status` 仍为 `state=1 error=0 requested_mv=0 requested_ma=0`，驱动状态 `PPS_WAIT_PLUG`；用户拔掉电脑 USB 接墙充仍见 PD 固定档。同期 PM8150B APSD supply 显示 `Unknown SDP DCP [CDP]`、约 4.58 V / 0.506 A；这不是 TCPM 合约证据。新增只读诊断遍历 power_supply 白名单属性，L2 镜像 `8f01d739…1955c8` 尚待 RAM 启动，以读取 `tcpm-source-psy-*` 的 `usb_type/online/电流电压`。本轮尚未拿到 TCPM 源的 APDO/PPS 能力报告。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。后续先据 TCPM 属性确定源/驱动状态，再继续 PPS 请求；完成保护/温控、停止恢复、RISK-010 overlay 隔离、Type-C VBUS provider、LOS 外部温控/电池电流路径审查。不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。镜像 `9e065431…acfcea` RAM 启动已确认 RPMh RSC 与 power-domain provider 绑定、I2C15 枚举、`15-0066` 绑定 `umi-bq25970-pps`，此前 provider `-95` 和 I2C deferred 阻塞已解除。后续只读 TCPM 诊断镜像 `8f01d739…1955c8` 已 RAM 启动。充电期间控制器进入 `state=5 error=-95 stop_pending=1`，重复回退 `PPS_FIXED` 也返回 `-95` 并留住 SMB5 所有权；同期 TCPM supply 活动类型为固定 PD（`online=1`，`usb_type=PD`），支持类型列表含 `PD_PPS`，不能据此当作 PPS 合约。用户报告充电表头功率在 14 W / 2 W 间跳动。已修正入口激活返回 `-EOPNOTSUPP` 时的清理：不重复请求固定合约，释放 SMB5；真实硬件尚待新镜像复验。细节见[真机续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。保护/温控、停止恢复、RISK-010 overlay 隔离、Type-C VBUS provider、LOS 外部温控/电池电流路径仍待独立审查与真机验证；不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
 
 ## 诊断接口
 

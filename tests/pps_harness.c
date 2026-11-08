@@ -49,6 +49,7 @@ static struct power_supply pd, bms, sw;
 static unsigned int regs[0x30];
 static int io_count, fail_at, enable_count, fixed_count, release_count, wd_writes;
 static int fail_stop, fail_fixed, fail_claim, fail_sensor, fail_request, fail_caps;
+static int fail_pps_unsupported;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
 static unsigned int delayed_reg;
 static u64 read_delay_ms, request_delay_ms;
@@ -115,6 +116,7 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
   }
  }
  if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 2) {
+  if (fail_pps_unsupported) return -EOPNOTSUPP;
   assert(claim_owned && suspended);pps_activations++;
  }
  if (fail_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) return -EIO;
@@ -162,6 +164,7 @@ static void reset(void) {
  c.pd=&pd;c.bms=&bms;c.sw=&sw;
  clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
+ fail_pps_unsupported=0;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
  missing_property=NULL;hot_during_request=0;
  delayed_reg=0;read_delay_ms=request_delay_ms=0;voltage_requests=current_requests=pps_activations=0;
@@ -268,6 +271,10 @@ int main(void) {
   assert(!(regs[0x0c]&BIT(7)) && !claim_owned && wd_writes==prior_wd_writes);
  }
  /* No enable after failed negotiation, missing APDO, or exclusive claim. */
+ reset();pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD;
+ fail_pps_unsupported=1;begin();
+ assert(c.state==PPS_FAULT && !claim_owned && !c.pps && !fixed_count &&
+        !pps_activations && !enable_count);
  for(int f=0;f<5;f++) {
   reset();
   if(f==0) fail_request=1;
