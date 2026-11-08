@@ -40,8 +40,6 @@ trap cleanup_fallback_trees EXIT
 
 for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget fdtput fdtoverlay; do require "$tool"; done
 require nproc
-# The L2 environment has libfdt tools; exercise overlay failure cases here too.
-(cd "$repo_root" && python3 -m unittest discover -s tests -p test_abl_isolation.py -v)
 readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
 [[ -f "$input_dts" && -f "$config_fragment" ]] || fail "board DTS or config fragment is missing"
@@ -102,6 +100,8 @@ if [[ "$source_verified" != true ]]; then
 fi
 
 readonly qcom_dts_dir="$source_tree/arch/arm64/boot/dts/qcom"
+# The L2 environment has libfdt tools; exercise overlay failure cases here too.
+(cd "$repo_root" && python3 -m unittest discover -s tests -p test_abl_isolation.py -v)
 readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
 readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"

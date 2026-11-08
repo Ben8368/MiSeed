@@ -151,7 +151,7 @@ class SourceCacheTests(unittest.TestCase):
         tools.mkdir()
         for name, output in [("aarch64-linux-gnu-gcc", "13.3.0"), ("aarch64-linux-gnu-nm", ""),
                              ("make", "GNU Make 4.3"),
-                             ("dtc", ""), ("fdtget", "")]:
+                             ("dtc", ""), ("fdtget", ""), ("fdtput", ""), ("fdtoverlay", "")]:
             stub = tools / name
             stub.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(output) + "\n")
             stub.chmod(0o755)
