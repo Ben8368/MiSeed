@@ -1,6 +1,6 @@
 # 当前状态
 
-日期：2026-11-08。`codex/umi-upstream-power-port` 已修复 PR #2 Windows Bash 误判，增加显式 600 秒 SOC 豁免入口。68 项 Linux 回归、新镜像 `793ca218…7030c5` 本地/hosted L2、源码 HEAD `c8bb079` 六项 CI 通过；后续仅更新实测记录，见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
+日期：2026-11-08。PR #2 的源码 HEAD `c8bb079` 修复 Windows Bash 误判并增加显式 600 秒 SOC 豁免入口；68 项 Linux 回归通过，新镜像 `793ca218…7030c5` 本地/hosted L2 一致。包含此前文档更新的 HEAD `ba9172e` 六项约定 CI 均成功；代码和镜像自 `c8bb079` 后未变。CI 记录与后续真机实测见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
 
 本机新镜像 RAM 启动及 600 秒准备完成；维护者提前结束，日志观测约 25.5 秒受限启充、拔出停充、78% 电量下恢复正常策略。1524 条连续记录、覆盖 0、复读一致；温度 36°C，23 条稳定 FG 电流中位 −85,449 µA。不代表 600 秒超时、异常保护或快充已通过。
 
