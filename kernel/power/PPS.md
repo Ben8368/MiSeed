@@ -49,7 +49,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。镜像 `9e065431…acfcea` RAM 启动已确认 RPMh RSC 与 power-domain provider 绑定、I2C15 枚举、`15-0066` 绑定 `umi-bq25970-pps`，此前 provider `-95` 和 I2C deferred 阻塞已解除。后续只读 TCPM 诊断镜像 `8f01d739…1955c8` 已 RAM 启动。充电期间控制器进入 `state=5 error=-95 stop_pending=1`，重复回退 `PPS_FIXED` 也返回 `-95` 并留住 SMB5 所有权；同期 TCPM supply 活动类型为固定 PD（`online=1`，`usb_type=PD`），支持类型列表含 `PD_PPS`，不能据此当作 PPS 合约。用户报告充电表头功率在 14 W / 2 W 间跳动。已修正入口激活返回 `-EOPNOTSUPP` 时的清理：不重复请求固定合约，释放 SMB5；真实硬件尚待新镜像复验。细节见[真机续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。保护/温控、停止恢复、RISK-010 overlay 隔离、Type-C VBUS provider、LOS 外部温控/电池电流路径仍待独立审查与真机验证；不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。镜像 `9e065431…acfcea` RAM 启动已确认 RPMh RSC 与 power-domain provider 绑定、I2C15 枚举、`15-0066` 绑定 `umi-bq25970-pps`，此前 provider `-95` 和 I2C deferred 阻塞已解除。只读诊断镜像 `8f01d739…1955c8` 发现 PPS 激活及固定回退均 `-95` 并留住 SMB5；修复后新镜像 `50a2ce9c…1987e23` 的 L3 日志确认 PPS 仍 `-95`，但 `owned=0`、SMB5 `enabled=1`，用户报告表头恢复稳定约 14 W，TCPM 当前合同仍为固定 PD 5 V / 3 A。活动类型字符串支持列表含 `PD_PPS` 不等同于 APDO 被源宣告或合同已选。为从真实 TCPM Source_Capabilities 定位拒绝原因，增加显式 `tcpm-log` 只读诊断；读取时会消费 TCPM 自身 debugfs 环形日志，故仅用户手动调用，不自动并入 `status`。最新 L2 及其真机结果见[真机续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。保护/温控、停止恢复、RISK-010 overlay 隔离、Type-C VBUS provider、LOS 外部温控/电池电流路径仍待独立审查与真机验证；不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
 
 ## 诊断接口
 

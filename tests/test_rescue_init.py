@@ -71,6 +71,10 @@ static int test_stat(const char *path, struct stat *st) {
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
         return stat(mapped, st);
     }
+    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb/tcpm", 26)) {
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 26);
+        return stat(mapped, st);
+    }
     return stat(path, st);
 }
 
@@ -104,6 +108,11 @@ static int test_open(const char *path, int flags, ...) {
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
         return open(mapped, flags, mode);
     }
+    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb/tcpm", 26)) {
+        char mapped[1024];
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 26);
+        return open(mapped, flags, mode);
+    }
     return open(path, flags, mode);
 }
 
@@ -119,6 +128,8 @@ static DIR *test_opendir(const char *path) {
     if (getenv("TEST_I2C_ROOT") && !strcmp(path, "/sys/bus/i2c/devices"))
         path = getenv("TEST_I2C_ROOT");
     if (getenv("TEST_PPS_ROOT") && !strcmp(path, pps_prefix)) path = getenv("TEST_PPS_ROOT");
+    if (getenv("TEST_TCPM_ROOT") && !strcmp(path, "/sys/kernel/debug/usb/tcpm"))
+        path = getenv("TEST_TCPM_ROOT");
     return opendir(path);
 }
 
@@ -180,6 +191,7 @@ int main(int argc, char **argv) {
     if (argc != 2) return 2;
     if (!strcmp(argv[1], "logs")) report_usb_kernel_messages();
     else if (!strcmp(argv[1], "i2c-report")) report_i2c_devices();
+    else if (!strcmp(argv[1], "tcpm-log")) report_tcpm_logs();
     else if (!strcmp(argv[1], "bind")) {
         delayed_udc = 1;
         wait_for_usb_acm();
@@ -310,6 +322,23 @@ class RescueInitTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("I2C device 15-0066", result.stdout)
             self.assertIn("umi-bq25970-pps", result.stdout)
+
+    def test_tcpm_log_reports_advertised_pdos_only_on_explicit_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            port = root / "tcpm-c440000.typec"
+            port.mkdir()
+            (port / "log").write_text(
+                "[  1.000000] PD state change SNK_READY -> SNK_WAIT_CAPABILITIES\n"
+                "[  1.100000] PDO 0: type 3, 5000 mV, 3000 mA [U]\n"
+                "[  1.200000] PDO 1: type 3, 3300-11000 mV, 3000 mA\n"
+            )
+            env = dict(os.environ, TEST_TCPM_ROOT=str(root))
+            result = subprocess.run([self.program, "tcpm-log"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("read drains kernel ring", result.stdout)
+            self.assertIn("PDO 1: type 3, 3300-11000 mV, 3000 mA", result.stdout)
 
     def test_unbound_pon_refuses_without_reboot_syscall(self):
         result = subprocess.run([self.program, "bootloader-unbound"],

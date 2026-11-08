@@ -590,6 +590,61 @@ static void report_power_supply_diagnostics(void) {
     closedir(dir);
 }
 
+/* TCPM's debugfs reader advances its in-kernel ring buffer. Keep this behind
+ * an explicit console command so routine status sampling does not consume it.
+ */
+static void report_tcpm_logs(void) {
+    const char *root = "/sys/kernel/debug/usb/tcpm";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    unsigned int ports = 0;
+
+    if (!dir) {
+        printf("TCPM debug log unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        char path[512];
+        char line[512];
+        FILE *file;
+        int fd;
+        unsigned int lines = 0;
+
+        if (entry->d_name[0] == '.') continue;
+        if (ports++ == 8) {
+            puts("TCPM log listing truncated after 8 ports");
+            break;
+        }
+        if (snprintf(path, sizeof(path), "%s/%s/log", root,
+                     entry->d_name) >= (int)sizeof(path))
+            continue;
+        fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            printf("TCPM log %s unavailable: %s\n", entry->d_name,
+                   strerror(errno));
+            continue;
+        }
+        file = fdopen(fd, "r");
+        if (!file) {
+            int error = errno;
+            close(fd);
+            printf("TCPM log %s unavailable: %s\n", entry->d_name,
+                   strerror(error));
+            continue;
+        }
+        printf("TCPM protocol log %s (read drains kernel ring):\n",
+               entry->d_name);
+        while (fgets(line, sizeof(line), file)) {
+            if (lines++ < 128) fputs(line, stdout);
+        }
+        if (lines > 128) puts("TCPM log output truncated after 128 lines");
+        if (!lines) puts("TCPM log empty");
+        fclose(file);
+    }
+    closedir(dir);
+    if (!ports) puts("No TCPM debug log ports found");
+}
+
 static void report_runtime_status(void) {
     report_platform_driver("PDC", "qcom,sm8250-pdc");
     report_platform_driver("RPMh RSC", "qcom,rpmh-rsc");
@@ -789,7 +844,7 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("Commands: help, status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
         puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
@@ -802,6 +857,7 @@ static void usb_console(void) {
         line[strcspn(line, "\r\n")] = '\0';
         if (!strcmp(line, "help")) continue;
         if (!strcmp(line, "status")) report_runtime_status();
+        else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");
         else if (!strcmp(line, "cmdline")) print_file("/proc/cmdline");

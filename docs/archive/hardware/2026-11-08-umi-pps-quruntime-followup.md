@@ -33,6 +33,7 @@
 | 电池采样 | SOC 约 81–82%，VBAT 约 4.10–4.13 V，电池温度约 37.0°C；数字为只读状态快照 |
 | 定位 / 修复 | 固定 PD 是 PPS 切换的起始状态，不能要求预先出现活动 `PD_PPS`。无 APDO 时 TCPM 对 `ONLINE=PPS_PROGRAMMABLE` 返回 `-EOPNOTSUPP`；旧清理把该失败误认为可能已切换，再次请求 `PPS_FIXED`，也收到 `-EOPNOTSUPP`，因此保留 SMB5 所有权。现在只在 PPS 激活入口返回 `-EOPNOTSUPP` 时标记尚未切换，停止泵后释放 SMB5；其他错误仍保留完整 PD 回退和故障保护 |
 | 回归 / 构建 | `tests.test_pps` 和 `tests.test_power_port` 共 16 项通过；完整测试 96 项通过、17 项因 macOS 缺 Linux 工具跳过。使用 `bash tools/build_kernel_l2_macos.sh`（Colima/VZ native arm64）构建 L2 成功，镜像 7,806,976 bytes，SHA-256 `50a2ce9c54c866f8be708f4a2056fbc1e20e072e9fcd412b5b202ba931987e23` |
-| 未覆盖 / 下一步 | `-EOPNOTSUPP` 清理路径目前由真实控制器合成故障注入覆盖，尚未在该镜像上真机复验；需要 RAM 启动该哈希，确认失败时 SMB5 释放、充电不再掉到低功率，再确认是否有已选 PPS 合约。当前不宣称 PPS 已激活或充电保护 L3 完成 |
+| 实机复验 | 用户报告修复镜像下表头稳定约 14 W、仍显示 PD。读取完整救援 RAM 时间线 532 条、无覆盖；约 52.84 s 有 `state=5 reason=-95 stop=0 pd_stop=0 owned=0`，当前 `pps-status` 为 `state=5 error=-95 requested_mv=0 requested_ma=3000 stop_pending=0`。SMB5 `enabled=1`、USB 输入在线，TCPM 当前仍为固定 PD 5 V / 3 A。故上一版“`-95` 时释放 SMB5”已由 L3 日志证实，主充电恢复稳定；该次尚未取得 PPS/APDO 合约 |
+| 未覆盖 / 下一步 | `status` 仅能读到当前活动合同，不能区分 `-95` 是 TCPM 激活入口拒绝还是后续能力校验失败，也不能显示源 PDO/APDO。新增显式只读 `tcpm-log` 命令读取 Linux TCPM debugfs 协议环，输出最多 128 行；此 debugfs 文件读取会消费其日志环，所以不由 `status` 自动调用。新 L2 镜像待 RAM 启动后先读此协议记录，再按实际 Source_Capabilities 与请求/响应定位 PPS 不活跃原因。当前不宣称 PPS 已激活或充电保护 L3 完成 |
 
 实现根据 Linux [TCPM](https://github.com/torvalds/linux/blob/v6.18/drivers/usb/typec/tcpm/tcpm.c) 的 PPS 激活路径和 [power_supply `online` / `usb_type` ABI](https://github.com/torvalds/linux/blob/v6.18/Documentation/ABI/testing/sysfs-class-power)解释：`online=2` 用于从固定态切 programmable；`usb_type` 标识当前活动类型，不能以支持列表代替活动类型。原始串口长日志未归档。
