@@ -16,6 +16,11 @@
 	};
 };
 
+/* Mainline keeps this wrapper disabled; enable its single qualified child. */
+&qupv3_id_2 {
+	status = "okay";
+};
+
 &i2c15 {
 	status = "okay";
 

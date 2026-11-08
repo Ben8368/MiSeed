@@ -49,7 +49,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。需用新镜像确认运行时 pinctrl/I2C/IRQ 绑定，并验证 RISK-010 overlay 隔离和 Type-C VBUS provider；完成 LOS 外部温控/电池电流路径审查。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处跟进项检查实际设备树/PMIC 接线及保护路径，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。真机诊断发现 I2C sysfs 为空；compiled DTB 中 I2C15 虽为 `okay`，其 QUPv3 父节点 `qupv3_id_2` 原为 `disabled`。当前 profile 已同时启用该父 wrapper，L2 验证 QUP2 组内只有 I2C15/BQ25970 child 为 `okay`，其他 I2C/SPI child 保持 `disabled`。修正后仍需真机确认运行时 pinctrl/I2C/IRQ 绑定，并验证 RISK-010 overlay 隔离和 Type-C VBUS provider；完成 LOS 外部温控/电池电流路径审查。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处跟进项检查实际设备树/PMIC 接线及保护路径，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
 
 ## 诊断接口
 
@@ -61,6 +61,6 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
-- 本机 L3：诊断镜像 SHA-256 `f13d367585f96486e665219fd956d35447cc20e7a1df8ace167e87241c34c313` 已 RAM 启动。`status` 显示 Type-C `port0`/partner 存在，但 `/sys/bus/i2c/devices` 为空；`pps-status` 无控制器。只读充电日志的 USB supply 类型为 `Unknown [SDP] DCP CDP`，输入约 4.52 V / 0.55 A。内核记录 PMIC Type-C hard-reset。用户照片显示充电器端 PD 5.2 V / 2.8 A，不证明设备侧 PD 合约/PPS APDO。准确命令与范围见[诊断镜像 L3 记录](../../docs/archive/hardware/2026-11-08-umi-pps-diagnostic-ramboot.md)。下一步定位 I2C15/GENI 控制器运行时未注册原因；绑定成功后再验证保护、温度标度、停止恢复与拔插。
+- 本机 L3：诊断镜像 SHA-256 `f13d367585f96486e665219fd956d35447cc20e7a1df8ace167e87241c34c313` RAM 启动后，`status` 显示 Type-C `port0`/partner 存在但 I2C 列表为空，`pps-status` 无控制器；USB supply 为 `Unknown [SDP] DCP CDP`、约 4.52 V / 0.55 A，内核有 PMIC Type-C hard-reset 记录。根因确认为编译 DTB 的 QUP2 父 wrapper disabled，PPS profile 已修正；新镜像 SHA-256 `e2ac23c4aefe85aa4a612a18fdc75873a1211f34103f0833d87df8832f88c377` 已 L2、未 RAM 启动。用户照片仅显示充电器端 PD 5.2 V / 2.8 A。准确命令与范围见[诊断镜像 L3 记录](../../docs/archive/hardware/2026-11-08-umi-pps-diagnostic-ramboot.md)。下一步真机验证 QUP2/I2C15/BQ 绑定，再测 PD/PPS、保护、温度标度、停止恢复与拔插。
 
 来源、PMIC 隔离、最小 GPIO 配置与 PD PHY 电源补齐见[续查记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可在后续授权采集时补充已有启动日志中的芯片 ID 与缓存 PDO，不把 standalone 名称当成芯片型号。软件侧自动策略已对齐；sink-only 硬件节点已启用；设备侧 PD/PPS 控制器绑定及保护/回退 L3 仍待完成。

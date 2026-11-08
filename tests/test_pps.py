@@ -58,7 +58,8 @@ class PpsTests(unittest.TestCase):
 
     def test_sink_only_pd_pps_nodes_are_enabled(self):
         board = (ROOT / "kernel/power/umi-pps.dtsi").read_text()
-        self.assertEqual(board.count('status = "okay"'), 4)
+        self.assertEqual(board.count('status = "okay"'), 5)
+        self.assertRegex(board, r"&qupv3_id_2\s*\{\s*status = \"okay\";")
         self.assertNotIn('status = "disabled"', board)
         for unknown in ("ti,sense-resistor-micro-ohms", "ti,bat-ocp-milliamp",
                         "ti,tsbat-threshold-code", "ti,tsbus-threshold-code",

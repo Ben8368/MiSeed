@@ -158,7 +158,7 @@ readonly dtb="$output_root/umi-csot.dtb"
 install -m 0644 "$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb" "$dtb"
 python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb"
 # The Umi L3 test image intentionally enables the sink-only PD/PPS profile.
-for label in umi_pps pm8150b_typec i2c15 pm8150b_vbus; do
+for label in umi_pps pm8150b_typec i2c15 qupv3_id_2 pm8150b_vbus; do
     node="$(fdtget "$dtb" /__symbols__ "$label")"
     [[ "$(fdtget "$dtb" "$node" status)" == okay ]] || fail "Umi PD/PPS test node is not enabled: ${label}"
 done
