@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "scope": "android_read_only_pump_identity_and_thermal_followup",
+  "collected_at_utc": "2026-11-08T09:59:49.282524+00:00",
+  "device": "umi",
+  "kernel_reference": "71b13e62f057a649b77fe4062feb73ee72ad609c",
+  "pump_identity": {
+    "collected_at_utc": "2026-11-08T09:59:49.282524+00:00",
+    "scope": "single_read_only_pump_identity_register",
+    "preflight": {
+      "device": {
+        "rc": 0,
+        "value": "umi",
+        "error": ""
+      },
+      "node": {
+        "rc": 0,
+        "value": "/sys/firmware/devicetree/base/soc/i2c@884000/bq25970-standalone@66",
+        "error": ""
+      },
+      "name": {
+        "rc": 0,
+        "value": "bq2597x-standalone",
+        "error": ""
+      }
+    },
+    "command": "i2cget -f -y 4 0x66 0x13",
+    "register_0x13": {
+      "rc": 0,
+      "value": "0x10",
+      "error": ""
+    },
+    "qualification": "Only the ID register was read; no scan, full register dump, driver unbind or configuration write."
+  },
+  "sense_selection": {
+    "collected_at_utc": "2026-11-08T10:00:27.420517+00:00",
+    "scope": "single_nonvolatile_pump_configuration_register",
+    "command": "i2cget -f -y 4 0x66 0x2b",
+    "register_0x2b": {
+      "rc": 0,
+      "value": "0xd0",
+      "error": ""
+    },
+    "qualification": "Existing sense-selection configuration only; does not measure or prove physical resistor value. No configuration write.",
+    "decoded_selection_micro_ohms": 2000,
+    "physical_resistor_measured": false
+  },
+  "thermal_config_files": {
+    "thermal-engine.conf": {
+      "rc": 0,
+      "sha256": "c32b39af7a19759a7db7f8b2d92d069a0534848aa7a195ca2cec24aa6c317cb3",
+      "size": 84,
+      "format": "utf8"
+    },
+    "thermald-devices.conf": {
+      "rc": 0,
+      "sha256": "7a2941e1e6a7a840ff1c0e4f3d3c044601df4cfc47723d5fbfb3489d064c6c92",
+      "size": 1161,
+      "format": "utf8"
+    },
+    "thermal-chg-only.conf": {
+      "rc": 0,
+      "sha256": "63cc994eb3d6897414747faaaa67e6e7c69594ce886453818ec6640c83702ee3",
+      "size": 812,
+      "format": "utf8"
+    },
+    "thermal-normal.conf": {
+      "rc": 0,
+      "sha256": "436a49a83321a3f2bcca7c556031805801a548869fb91e1124d0baf448f3868e",
+      "size": 3104,
+      "format": "non_utf8"
+    }
+  },
+  "thermal_adc_paths": {
+    "rc": 0,
+    "value": "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f\n/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/adc_tm@3500/conn_therm@4f\n/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm\n/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm\n",
+    "error": ""
+  },
+  "thermal_adc_properties": {
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f/label": {
+      "rc": 0,
+      "hex": "636f6e6e5f746865726d00",
+      "text": "conn_therm"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f/qcom,pre-scaling": {
+      "rc": 0,
+      "hex": "0000000100000001"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f/qcom,ratiometric": {
+      "rc": 0,
+      "hex": ""
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f/reg": {
+      "rc": 0,
+      "hex": "0000004f"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f/qcom,hw-settle-time": {
+      "rc": 0,
+      "hex": "000000c8"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/vadc@3100/conn_therm@4f/name": {
+      "rc": 0,
+      "hex": "636f6e6e5f746865726d00",
+      "text": "conn_therm"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/adc_tm@3500/conn_therm@4f/qcom,ratiometric": {
+      "rc": 0,
+      "hex": ""
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/adc_tm@3500/conn_therm@4f/reg": {
+      "rc": 0,
+      "hex": "0000004f"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/adc_tm@3500/conn_therm@4f/qcom,hw-settle-time": {
+      "rc": 0,
+      "hex": "000000c8"
+    },
+    "/sys/firmware/devicetree/base/soc/qcom,spmi@c440000/qcom,pm8150b@2/adc_tm@3500/conn_therm@4f/name": {
+      "rc": 0,
+      "hex": "636f6e6e5f746865726d00",
+      "text": "conn_therm"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/polling-delay": {
+      "rc": 0,
+      "hex": "00000000"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/trips/name": {
+      "rc": 0,
+      "hex": "747269707300",
+      "text": "trips"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/polling-delay-passive": {
+      "rc": 0,
+      "hex": "00000000"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/thermal-sensors": {
+      "rc": 0,
+      "hex": "000005e10000004f"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/thermal-governor": {
+      "rc": 0,
+      "hex": "757365725f737061636500"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/wake-capable-sensor": {
+      "rc": 0,
+      "hex": ""
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/conn_therm/name": {
+      "rc": 0,
+      "hex": "636f6e6e5f746865726d00",
+      "text": "conn_therm"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/polling-delay": {
+      "rc": 0,
+      "hex": "00000000"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/trips/name": {
+      "rc": 0,
+      "hex": "747269707300",
+      "text": "trips"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/polling-delay-passive": {
+      "rc": 0,
+      "hex": "00000000"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/thermal-sensors": {
+      "rc": 0,
+      "hex": "000005e20000004d"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/thermal-governor": {
+      "rc": 0,
+      "hex": "757365725f737061636500"
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/wake-capable-sensor": {
+      "rc": 0,
+      "hex": ""
+    },
+    "/sys/firmware/devicetree/base/soc/thermal-zones/quiet_therm/name": {
+      "rc": 0,
+      "hex": "71756965745f746865726d00",
+      "text": "quiet_therm"
+    }
+  },
+  "thermal_state": {
+    "/sys/class/thermal/thermal_zone83/temp": {
+      "rc": 0,
+      "value": "37963"
+    },
+    "/sys/class/thermal/thermal_zone85/temp": {
+      "rc": 0,
+      "value": "43935"
+    },
+    "/sys/class/thermal/thermal_zone87/temp": {
+      "rc": 0,
+      "value": "41706"
+    },
+    "/sys/class/thermal/thermal_zone88/temp": {
+      "rc": 0,
+      "value": "46469"
+    },
+    "/sys/class/thermal/thermal_zone91/temp": {
+      "rc": 0,
+      "value": "35500"
+    },
+    "/sys/class/thermal/thermal_message/sconfig": {
+      "rc": 0,
+      "value": "0"
+    },
+    "/sys/class/power_supply/battery/charge_control_limit": {
+      "rc": 1,
+      "value": null
+    },
+    "/sys/class/power_supply/battery/charge_control_limit_max": {
+      "rc": 1,
+      "value": null
+    },
+    "/sys/class/power_supply/battery/system_temp_level": {
+      "rc": 1,
+      "value": null
+    },
+    "/sys/class/power_supply/bms/battery_type": {
+      "rc": 1,
+      "value": null
+    },
+    "/proc/uptime": {
+      "rc": 0,
+      "value": "18370.32 49422.71"
+    }
+  },
+  "battery_cooling_device": {
+    "path": "/sys/class/thermal/cooling_device15",
+    "type": "battery",
+    "cur_state": 0,
+    "max_state": 16
+  },
+  "qualification": [
+    "ID and sense configuration were read using only register 0x13 and register 0x2b at the preflight-verified I2C address; no scan or configuration write.",
+    "Temperature and cooling-device snapshots are Android observations, not MiSeed runtime validation.",
+    "thermal-normal.conf is non-UTF8; no normal-mode trip or action thresholds have been decoded.",
+    "Vendor configuration contents and binaries are not included in this public snapshot."
+  ]
+}

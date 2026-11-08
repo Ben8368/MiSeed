@@ -58,6 +58,21 @@ struct umi_pps {
 
 static u64 umi_pps_now(void) { return ktime_to_ms(ktime_get_boottime()); }
 
+/* I/O may sleep past a worker's earlier timestamp. Check at each active
+ * operation boundary; stopping/fixed-contract recovery remains unrestricted.
+ * This does not bound a hung bus transaction or replace hardware protection.
+ */
+static int umi_pps_check_deadline(struct umi_pps *c)
+{
+	u64 now = umi_pps_now();
+
+	if (now >= c->deadline)
+		return -ETIME;
+	if (c->state == PPS_SETTLE && now >= c->start_deadline)
+		return -ETIMEDOUT;
+	return 0;
+}
+
 static int umi_pps_get(struct power_supply *psy, enum power_supply_property p, int *v)
 {
 	union power_supply_propval val;
@@ -389,13 +404,21 @@ static int umi_pps_request(struct umi_pps *c, int mv)
 	if (mv < c->caps.min_mv || mv > min(c->caps.max_mv, UMI_PPS_MAX_MV) ||
 	    mv % UMI_PPS_STEP_MV || c->request_ma > c->caps.max_ma)
 		return -ERANGE;
-	ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_VOLTAGE_NOW, mv * 1000);
+	ret = umi_pps_check_deadline(c);
+	if (!ret)
+		ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_VOLTAGE_NOW, mv * 1000);
+	if (!ret)
+		ret = umi_pps_check_deadline(c);
 	if (!ret)
 		ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, c->request_ma * 1000);
+	if (!ret)
+		ret = umi_pps_check_deadline(c);
 	if (!ret) {
 		c->request_mv = mv;
 		ret = umi_pps_contract(c);
 	}
+	if (!ret)
+		ret = umi_pps_check_deadline(c);
 	return ret;
 }
 
@@ -418,9 +441,14 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	ret = umi_pps_prepare(c);
 	if (ret)
 		return ret;
+	ret = umi_pps_check_deadline(c);
+	if (ret)
+		return ret;
 	/* A failed negotiation may still have changed the source. Always unwind. */
 	c->pps = true;
 	ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_ONLINE, PPS_PROGRAMMABLE);
+	if (!ret)
+		ret = umi_pps_check_deadline(c);
 	if (!ret)
 		ret = umi_pps_caps(c);
 	if (ret)
@@ -440,18 +468,24 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 static int umi_pps_refresh(struct umi_pps *c)
 {
 	unsigned int v;
-	int ret = umi_pps_verify(c);
+	int ret = umi_pps_check_deadline(c);
 
 	/* Real write, not regmap_update_bits (which may elide an unchanged value).
 	 * Watchdog expiry / refresh semantics still require device-specific L3.
 	 * Never refresh on faults, cleanup, or from an independent keepalive task.
 	 */
 	if (!ret)
+		ret = umi_pps_verify(c);
+	if (!ret)
 		ret = regmap_read(c->map, BQ_WATCHDOG, &v);
 	if (!ret && (v & BIT(3)))
 		ret = -ETIME;
 	if (!ret)
+		ret = umi_pps_check_deadline(c);
+	if (!ret)
 		ret = regmap_write(c->map, BQ_WATCHDOG, v & ~BIT(7));
+	if (!ret)
+		ret = umi_pps_check_deadline(c);
 	return ret;
 }
 
@@ -530,10 +564,12 @@ static void umi_pps_work(struct work_struct *work)
 		if (!s.bus_low && !s.bus_high && !s.alarm) {
 			/* All gates reread after negotiation; enable is the last operation. */
 			ret = umi_pps_refresh(c);
-			if (!ret && umi_pps_now() >= c->deadline)
-				ret = -ETIME;
+			if (!ret)
+				ret = umi_pps_check_deadline(c);
 			if (!ret)
 				ret = umi_pps_update(c, BQ_CONTROL, BQ_ENABLE, BQ_ENABLE);
+			if (!ret)
+				ret = umi_pps_check_deadline(c);
 			if (ret)
 				goto fail;
 			c->state = PPS_RUN;

@@ -46,6 +46,9 @@ static unsigned int regs[0x30];
 static int io_count, fail_at, enable_count, fixed_count, release_count, kick_count;
 static int fail_stop, fail_fixed, fail_claim, fail_sensor, fail_request, fail_caps;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
+static unsigned int delayed_reg;
+static u64 read_delay_ms, request_delay_ms;
+static int voltage_requests, current_requests, pps_activations;
 static const char *missing_property;
 static int io_fail(void) { return ++io_count == fail_at ? -EIO : 0; }
 static void adc(int channel, int value) {
@@ -54,6 +57,7 @@ static void adc(int channel, int value) {
 }
 static int regmap_read(struct regmap *map, unsigned int r, unsigned int *v) {
  int ret = io_fail(); if (ret) return ret;
+ if (read_delay_ms && r == delayed_reg) { clock_ms += read_delay_ms; read_delay_ms=0; }
  *v = regs[r]; if (bad_readback && r == 0x02) *v ^= 0x80;
  return 0;
 }
@@ -92,6 +96,8 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
                                     const union power_supply_propval *v) {
  int ret=io_fail(); if(ret) return ret;
  assert(p == &pd);
+ if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) voltage_requests++;
+ if (prop == POWER_SUPPLY_PROP_CURRENT_NOW) current_requests++;
  if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 1) {
   fixed_count++; if(fail_fixed) return -EIO;
   if(!stale_contract) {
@@ -99,9 +105,14 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
    p->prop[POWER_SUPPLY_PROP_CURRENT_NOW]=500000;
   }
  }
- if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 2) assert(claim_owned && suspended);
+ if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 2) {
+  assert(claim_owned && suspended);pps_activations++;
+ }
  if (fail_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) return -EIO;
  if (expired_negotiation && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) clock_ms += 601000;
+ if (request_delay_ms && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) {
+  clock_ms += request_delay_ms; request_delay_ms=0;
+ }
  if (hot_during_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) bms.prop[POWER_SUPPLY_PROP_TEMP]=451;
  if (!stale_contract) p->prop[prop]=v->intval;
  if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) adc(1,v->intval/1000);
@@ -143,6 +154,7 @@ static void reset(void) {
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
  missing_property=NULL;hot_during_request=0;
+ delayed_reg=0;read_delay_ms=request_delay_ms=0;voltage_requests=current_requests=pps_activations=0;
  pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD_PPS;
  pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MIN]=3300000;
  pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MAX]=11000000;
@@ -228,7 +240,29 @@ int main(void) {
   begin();assert(c.state==PPS_FAULT && !enable_count);
  }
  reset();expired_negotiation=1;begin();clock_ms+=200;tick();
- assert(c.state==PPS_DONE && !enable_count);
+ assert((c.state==PPS_DONE || c.state==PPS_FAULT) && !enable_count && !claim_owned);
+ /* Slow protection setup must not activate PPS after the session deadline. */
+ reset();delayed_reg=0x02;read_delay_ms=60001;begin();
+ assert(c.state==PPS_FAULT && c.last_error==-ETIME && !pps_activations && !enable_count);
+ /* A blocking read may cross either deadline after the worker's first check. */
+ reset();begin();clock_ms=c.start_deadline-1;delayed_reg=0x0d;read_delay_ms=2;
+ int pre_enable_feeds=kick_count;tick();
+ assert(c.state==PPS_FAULT && c.last_error==-ETIMEDOUT && !enable_count && !claim_owned);
+ assert(kick_count==pre_enable_feeds);
+ reset();begin();clock_ms=c.start_deadline-1;delayed_reg=0x0b;read_delay_ms=2;
+ pre_enable_feeds=kick_count;tick();
+ assert(c.state==PPS_FAULT && !enable_count && kick_count==pre_enable_feeds);
+ reset();run();clock_ms=c.deadline-1;delayed_reg=0x0d;read_delay_ms=2;
+ int old_voltage=voltage_requests,old_current=current_requests,old_kicks=kick_count;tick();
+ assert(c.state==PPS_FAULT && c.last_error==-ETIME && !claim_owned);
+ assert(voltage_requests==old_voltage && current_requests==old_current && kick_count==old_kicks);
+ /* An expired voltage request must not be followed by a current request. */
+ reset();run();clock_ms=c.deadline-1;request_delay_ms=2;
+ old_current=current_requests;old_kicks=kick_count;tick();
+ assert(c.state==PPS_FAULT && current_requests==old_current && kick_count==old_kicks);
+ /* Protection verification may itself consume the remaining refresh window. */
+ reset();run();clock_ms=c.deadline-1;delayed_reg=0x02;read_delay_ms=2;
+ old_kicks=kick_count;assert(umi_pps_refresh(&c)==-ETIME && kick_count==old_kicks);
  reset();run();hot_during_request=1;int pre_feeds=kick_count;clock_ms+=200;tick();
  assert(c.state==PPS_FAULT && kick_count==pre_feeds && !claim_owned);
  /* Failed stop retains ownership, does not feed, retries both mechanisms. */

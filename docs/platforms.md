@@ -41,7 +41,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | ABL 载荷 | 上游 header v2、kernel/initrd/DTB 与 DTBO 约束；MiSeed 产物仍须对照官方包静态核对 |
 | 内存交接 | 采用上游 CSOT 配置起步；本机保留区未知，不能声明可运行 |
 | 存储 / 恢复 | 用户报告官方 MiFlash 已成功恢复并保留身份信息；本项目不得触碰身份/NV，且所有恢复保持 BL 解锁 |
-| 供电 / 温控 | 实际 DT 泵 0x66、IRQ68、切断 GPIO8；缺 sense/BAT_OCP，温控关闭；无芯片 ID；当前 PDO 仅固定 5 V/3 A，校准/保护待核 |
+| 供电 / 温控 | 泵 ID 0x10、sense 选择 2 mΩ（仅配置）；GPIO8/68；实板热敏/OCP、完整保护待核；绿联45W屏显（用户报告，档位未核） |
 
 未锁定项不得声明可用；RAM 载荷须审查写盘行为，其他设备参数不可直接套用。
 
