@@ -2,7 +2,7 @@
 /* Umi wiring/limits: LineageOS 71b13e62f057a649b77fe4062feb73ee72ad609c,
  * umi-sm8250.dtsi / umi-pinctrl.dtsi. Disabled integration description only.
  * See PPS.md: missing calibrated properties deliberately have NO defaults.
- * Do not enable TLMM globally without resolving its unsafe GPIO ranges.
+ * UART-only TLMM deliberately reserves GPIO68; PPS needs separate qualification.
  */
 #include <dt-bindings/usb/pd.h>
 
@@ -41,6 +41,8 @@
 };
 
 &pm8150b_typec {
+	/* Both pinned Umi mainline trees use PM8150 L2 for the PD PHY. */
+	vdd-pdphy-supply = <&vreg_l2a_3p1>;
 	status = "disabled";
 
 	connector {
@@ -55,4 +57,15 @@
 			     PDO_PPS_APDO(3300, 11000, 3000)>;
 		op-sink-microwatt = <2500000>;
 	};
+};
+
+/* TCPM's required VBUS provider. This is the SOURCE/OTG boost regulator,
+ * not the incoming USB path or a PPS voltage request. Keep it disabled until
+ * a reviewed Type-C profile is selected; never mark it boot-on/always-on.
+ * Limits agree in both pinned Umi mainline trees (see NOTICE.md).
+ */
+&pm8150b_vbus {
+	regulator-min-microamp = <500000>;
+	regulator-max-microamp = <3000000>;
+	status = "disabled";
 };

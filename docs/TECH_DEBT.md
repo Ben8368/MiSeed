@@ -10,9 +10,9 @@
 
 偿还：首个 L2 的远端结果与本机构建已独立比对一致；剩余闭合传递依赖与 runner digest，再分别接入 UEFI/rootfs 构建和产物校验。
 
-## TD-002：RAM 诊断暂时禁用 TLMM（P1，2026-11-07）
+## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：维护者/板级适配后续负责。为启用 PDC→SPMI→PON 而不触发尚未锁定的 GPIO 访问，当前 GPIO-free RAM 诊断将 TLMM 设为 disabled；GENI 常规 UART 可能延迟绑定，观测使用继承的早期控制台、framebuffer 与 USB ACM。本机两轮直接 Fastboot 证据及参考来源见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
+取舍：维护者/板级适配后续负责。原 GPIO-free RAM 诊断禁用 TLMM。2026-11-08 源码改为仅开放 UART12 GPIO34/35，其余全部保留，并隔离下游 TLMM overlay；[续查](archive/research/2026-11-08-pps-topology-followup.md)。新配置待独立审查及本机 L3，不能继承旧镜像验证。本机两轮直接 Fastboot 证据及参考来源见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 

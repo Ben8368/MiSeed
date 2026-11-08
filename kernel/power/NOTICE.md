@@ -27,3 +27,9 @@ PM8150B 的 FV/FCC 编码、watchdog 和 Umi 正常充电温区/电压上限，�
 `umi_pps.c`、`umi_pps_policy.h` 和 `umi-pps.dtsi` 从 LineageOS 固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq2597x_charger.c`、`bq25970_reg.h`、`pd_policy_manager.c/.h` 以及 Umi/Kona DTS 选择性适配，保持 GPL-2.0-only。BQ 原驱动 Copyright (C) 2017 Texas Instruments、MODULE_AUTHOR Texas Instruments；策略 MODULE_AUTHOR Fei Jiang <jiangfei1@xiaomi.com>，策略头文件保留 a0220433 / Mar 27, 2017 的归属。参考驱动的 TI GPL v2 授权、策略 GPL 模块声明与根 COPYING 一并检查；来源锁记录逐文件哈希。未复制其整个下游 USB PD 实现。
 
 本地修改包括主线 TCPM power_supply 接口、强制板级参数、全保护读回、拒绝未知芯片 ID、SMB5 独占和输入暂停、有界手动测试与失败停止。没有沿用关闭 watchdog/温控的初始化，也未声称保护已通过实机验证。Linux 原生 TCPM/PMIC Type-C/PD PHY 维持内核自身许可证及作者，不改其文件。移植范围、来源报告和运行阻断见[本轮评估](../../docs/archive/research/2026-11-08-lineage-pps-port.md)与[接口说明](PPS.md)。
+
+## PPS 拓扑续查
+
+PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 misaka-link 固定提交的 `rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-common.dtsi`（BSD-3-Clause，Copyright (c) 2020 The Linux Foundation）及 colorgarden 固定 DTS（BSD-3-Clause）。保留其来源与归属；本地只补齐接线和约束，相关电源节点仍禁用，不采用 dual-role/source PDO。UART12 GPIO34/35 来自固定主线 sm8250.dtsi，最小保留掩码为 MiSeed 自行收敛。
+
+另核对小米官方两个 `umi-q-oss` 仓库，完整 SHA、路径与哈希见来源锁；没有复制其源码、校准值或关闭保护项。官方 Umi DTS 无逐文件 SPDX，仅作事实参考，不作为可再分发文件引入。详情见[续查记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。

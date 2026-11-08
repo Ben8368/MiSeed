@@ -58,7 +58,7 @@ class PpsTests(unittest.TestCase):
 
     def test_board_never_enables_unqualified_power_nodes(self):
         board = (ROOT / "kernel/power/umi-pps.dtsi").read_text()
-        self.assertEqual(board.count('status = "disabled"'), 3)
+        self.assertEqual(board.count('status = "disabled"'), 4)
         self.assertNotIn('status = "okay"', board)
         for unknown in ("ti,sense-resistor-micro-ohms", "ti,bat-ocp-milliamp",
                         "ti,tsbat-threshold-code", "ti,tsbus-threshold-code",

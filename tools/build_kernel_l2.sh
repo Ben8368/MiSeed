@@ -38,8 +38,10 @@ cleanup_fallback_trees() {
 }
 trap cleanup_fallback_trees EXIT
 
-for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget; do require "$tool"; done
+for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget fdtput fdtoverlay; do require "$tool"; done
 require nproc
+# The L2 environment has libfdt tools; exercise overlay failure cases here too.
+(cd "$repo_root" && python3 -m unittest discover -s tests -p test_abl_isolation.py -v)
 readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
 [[ -f "$input_dts" && -f "$config_fragment" ]] || fail "board DTS or config fragment is missing"
@@ -152,12 +154,23 @@ for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
-readonly dtb="$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb"
+readonly dtb="$output_root/umi-csot.dtb"
+# Work on a copy: every build starts with dtc's original symbol identities.
+install -m 0644 "$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb" "$dtb"
+python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb"
 # A compile-only PPS port must never silently become an active power profile.
-for label in umi_pps pm8150b_typec i2c15 tlmm pm8150b_vbus; do
+for label in umi_pps pm8150b_typec i2c15 pm8150b_vbus; do
     node="$(fdtget "$dtb" /__symbols__ "$label")"
     [[ "$(fdtget "$dtb" "$node" status)" == disabled ]] || fail "unqualified power node enabled: ${label}"
 done
+# Verify both Type-C supplies by phandle, not by similarly named nodes.
+typec_node="$(fdtget "$dtb" /__symbols__ pm8150b_typec)"
+for pair in vdd-pdphy:vreg_l2a_3p1 vdd-vbus:pm8150b_vbus; do
+    supply_node="$(fdtget "$dtb" /__symbols__ "${pair#*:}")"
+    [[ "$(fdtget -t x "$dtb" "$typec_node" "${pair%%:*}-supply")" == \
+       "$(fdtget -t x "$dtb" "$supply_node" phandle)" ]] || fail "Type-C supply mismatch: $pair"
+done
+[[ "$(fdtget "$dtb" "$typec_node/connector" power-role)" == sink ]] || fail "Type-C must remain sink-only"
 readonly symbols="$(fdtget "$dtb" /__symbols__ arch_timer 2>/dev/null || true)"
 [[ "$symbols" == "/timer" ]] || fail "DTB lacks overlay symbols (__symbols__.arch_timer=$symbols)"
 readonly anchor_count="$(fdtget -l "$dtb" /abl_ovf | wc -l)"
@@ -181,7 +194,7 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
 
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
-    "$repo_root/tools/extract_boot_v2_dtb.py" "$config_fragment" \
+    "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
     "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
     "$observer_source" "$observer_applier" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \

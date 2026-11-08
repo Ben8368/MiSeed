@@ -372,6 +372,13 @@
         "imported": false,
         "reason": "diagnostic PID1 has no Bash/systemd, compatible charging_enabled interface, or qualified SOC; source report is not local charging-safety evidence",
         "assessment": "docs/archive/research/2026-11-08-upstream-power-port.md"
+      },
+      "pps_topology_review": {
+        "assessment": "docs/archive/research/2026-11-08-pps-topology-followup.md",
+        "reviewed_sha256": {
+          "rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-common.dtsi": "40e572862f41bd4f9561688601c80b6c5ed3c93cec73dfb66ff8e62fa1361d7f"
+        },
+        "use": "PD PHY vreg_l2a_3p1 and VBUS regulator limits cross-checked with colorgarden; GPIO exclusions compared, not copied wholesale. BSD-3-Clause, The Linux Foundation (2020)."
       }
     },
     {
@@ -437,7 +444,8 @@
         "drivers/usb/pd/qpnp-pdphy.c",
         "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi",
         "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi",
-        "COPYING"
+        "COPYING",
+        "drivers/pinctrl/qcom/pinctrl-kona.c"
       ],
       "submodules": [],
       "patches": [],
@@ -456,7 +464,8 @@
         "drivers/usb/pd/qpnp-pdphy.c": "f080fc5beefd0d4143c9350d68b3ad06d0c9724cd843e6f653300f76c536581d",
         "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi": "91147d6f1676ea70f6e6c8e78a1d81399a3bb186986e712fc1246ad1b2250763",
         "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi": "cd826a3af94fe27d95644a4492d4a990f8afed9660cdafdcfed25282973691f0",
-        "COPYING": "ee5808b032a67f587d3541099d46de34f5bec8cd5976114ba07f1299ee6001ff"
+        "COPYING": "ee5808b032a67f587d3541099d46de34f5bec8cd5976114ba07f1299ee6001ff",
+        "drivers/pinctrl/qcom/pinctrl-kona.c": "87014b0ea67da00fb7c78f543c0030647a546797a15f3192657d0ca5840820ff"
       },
       "pps_port": {
         "assessment": "docs/archive/research/2026-11-08-lineage-pps-port.md",
@@ -468,6 +477,46 @@
         "source_report": "Maintainer reports long-term stable hardware operation of this LineageOS branch; not a MiSeed PPS test result.",
         "runtime_status": "disabled pending board calibration, exact pump ID, GPIO/PMIC qualification, independent review and authorized MiSeed L3"
       }
+    },
+    {
+      "id": "micode-umi-kernel-reference",
+      "url": "https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git",
+      "revision": "db67ca6001320efc1f945c270635434fc403a9d4",
+      "license": "TI driver GPL v2 notice; reference-only, no code imported",
+      "license_evidence": "Reviewed file headers; no vendor source added to build inputs",
+      "role": "Read-only Umi charging/GPIO comparison; not a build dependency",
+      "included_paths": [
+        "drivers/power/supply/ti/bq2597x_charger.c",
+        "drivers/power/supply/ti/bq25970_reg.h",
+        "drivers/power/supply/ti/pd_policy_manager.c"
+      ],
+      "submodules": [],
+      "patches": [],
+      "reviewed_sha256": {
+        "drivers/power/supply/ti/bq2597x_charger.c": "8efe71ee067ccfe6cbc7ad25179451e3f63c32a72aa3fb712e067d634bf152f2",
+        "drivers/power/supply/ti/bq25970_reg.h": "aea9e81f566a09a1dd41304a14c89c992f6782ecb28a516ff94e4c29aaff2398",
+        "drivers/power/supply/ti/pd_policy_manager.c": "dd90698a15c215154a6a89cd7b17140f4048eac271067b292b18bb3827561944"
+      },
+      "verification": "Same calibration/protection gaps as Lineage; no new board defaults accepted. See docs/archive/research/2026-11-08-pps-topology-followup.md"
+    },
+    {
+      "id": "micode-umi-dts-reference",
+      "url": "https://github.com/MiCode/kernel_devicetree.git",
+      "revision": "2aa073826fa357cc672c1e0f590d9dbe904203b0",
+      "license": "No per-file SPDX in reviewed Umi DTS; reference-only facts, no file imported; redistribution review remains pending",
+      "license_evidence": "Reviewed file headers; no vendor source added to build inputs",
+      "role": "Read-only Umi charging/GPIO comparison; not a build dependency",
+      "included_paths": [
+        "qcom/umi-pinctrl.dtsi",
+        "qcom/umi-sm8250.dtsi"
+      ],
+      "submodules": [],
+      "patches": [],
+      "reviewed_sha256": {
+        "qcom/umi-pinctrl.dtsi": "c5590840b59b11fd13a2524ead8d6b79884219d2cf39d600b920f4e60a02765b",
+        "qcom/umi-sm8250.dtsi": "4906c37a17e6a768a74dc42413bd3688e50825d191bb94c4232d1b2554828190"
+      },
+      "verification": "Same calibration/protection gaps as Lineage; no new board defaults accepted. See docs/archive/research/2026-11-08-pps-topology-followup.md"
     }
   ],
   "unlocked_inputs": [

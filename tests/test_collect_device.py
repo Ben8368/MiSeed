@@ -43,6 +43,50 @@ class DeviceCollection(unittest.TestCase):
             self.assertFalse(call.kwargs["shell"])
             self.assertEqual(call.kwargs["timeout"], 10)
 
+    def test_power_collects_actual_id_and_cached_pdos_without_raw_logs(self):
+        def fixture(argv, **kwargs):
+            if argv[-1] == "dmesg":
+                return subprocess.CompletedProcess(argv, 0,
+                    "private unrelated " + SERIAL + "\n"
+                    "[bq2597x] bq2597x_detect_device: detect device:16\n", "")
+            return success(argv, **kwargs)
+        with patch.object(collect_device.subprocess, "run", side_effect=fixture) as run:
+            report = collect_device.collect_identity("adb", SERIAL, power=True)
+        self.assertEqual(report["observations"]["pump_ids"]["value"], [16])
+        self.assertNotIn(SERIAL, json.dumps(report))
+        self.assertEqual(report["collection_status"], "complete")
+        for call in run.call_args_list:
+            self.assertIn(tuple(call.args[0][3:]), collect_device.QUERIES + collect_device.POWER_QUERIES)
+
+    def test_pump_model_name_or_ambiguous_log_is_not_a_chip_id(self):
+        for text in ("bq2597x-standalone", "[bq2597x] bq2597x_detect_device: detect device:16\n"
+                     "[bq2597x] bq2597x_detect_device: detect device:65"):
+            def fixture(argv, **kwargs):
+                if argv[-1] == "dmesg":
+                    return subprocess.CompletedProcess(argv, 0, text, "")
+                return success(argv, **kwargs)
+            with patch.object(collect_device.subprocess, "run", side_effect=fixture):
+                report = collect_device.collect_identity("adb", SERIAL, power=True)
+            self.assertEqual(report["observations"]["pump_ids"]["status"], "unavailable")
+            self.assertEqual(report["collection_status"], "partial")
+
+    def test_changing_pd_capabilities_are_not_a_qualified_snapshot(self):
+        counter = 0
+        def fixture(argv, **kwargs):
+            nonlocal counter
+            if argv[-1].endswith("/src_cap_id"):
+                counter += 1
+                return subprocess.CompletedProcess(argv, 0, str(counter), "")
+            return success(argv, **kwargs)
+        with patch.object(collect_device.subprocess, "run", side_effect=fixture):
+            report = collect_device.collect_identity("adb", SERIAL, power=True)
+        self.assertEqual(report["observations"]["source_pdos"]["status"], "unavailable")
+        with patch.object(collect_device.subprocess, "run") as run:
+            for path in ("/sys/class/usbpd/usbpd0/get_src_cap_ext", "/sys/bus/i2c/devices/0-0066/registers"):
+                with self.assertRaises(collect_device.CollectionError):
+                    collect_device.query("adb", SERIAL, ("shell", "cat", path))
+            run.assert_not_called()
+
     def test_disconnected_unauthorized_and_wrong_device_stop(self):
         for value, code in [("unauthorized", 0), ("offline", 0), ("", 1)]:
             with self.subTest(state=value), patch.object(

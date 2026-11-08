@@ -123,16 +123,15 @@
 	};
 };
 
-/*
- * This RAM diagnostic needs no GPIO consumers. Once PDC is available, TLMM
- * would probe all GPIO directions, including Umi regions reported to abort
- * in colorgarden/umi-mainline@5fa2e0048f89b82355d2a9de89c1d74ab9910959
- * (dts/sm8250-xiaomi-umi-common.dtsi, BSD-3-Clause). Keep it out of this
- * profile until the device-specific valid GPIO ranges are independently
- * established. The inherited early UART and framebuffer remain diagnostics.
+/* First TLMM profile: only the existing UART12 pins (SOUTH 34/35).
+ * Both pinned Umi mainline references leave these pins unreserved. Reserve
+ * everything else, including disputed NORTH GPIO8/68 and unused I2C15 44/45.
+ * This is a minimal consumer allowlist, not a claim that other pins are bad.
+ * No power-path GPIO is requested by this profile. Requires fresh boot L3.
  */
 &tlmm {
-	status = "disabled";
+	gpio-reserved-ranges = <0 34>, <36 145>;
+	status = "okay";
 };
 
 /* USB PHY PMIC rails, selectively adapted from the pinned Umi board DTS. */

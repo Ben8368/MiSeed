@@ -31,7 +31,7 @@ BQ watchdog 选择 5 秒，刷新与成功控制循环绑定。其寄存器编�
 
 已知 VBUS/VBAT OVP、总线 OCP 和 AC OVP 取自固定 Umi DTS；仍须独立审查其适用性。测试文件里的 synthetic 数值不是板级参数，不得复制到设备树。
 
-启用前还需：核实 I2C15 `0x884000`、地址 `0x66`、GPIO68 中断；解决 RISK-010 重复 PMIC 与 TD-002 TLMM；确认 Type-C 的 `pm8150b_vbus` 供给（驱动已编入，但该节点仍禁用）及电源路径 GPIO；完成保护专项复核。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。
+启用前还需：核实 I2C15 `0x884000`、地址 `0x66`、GPIO68 中断；验证 RISK-010 的 overlay 隔离与 TD-002 的 UART-only TLMM；GPIO44/45/68 当前仍保留；确认 Type-C 的 `pm8150b_vbus` 供给（驱动已编入，但该节点仍禁用）及电源路径 GPIO；完成保护专项复核。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。
 
 ## 诊断接口
 
@@ -44,3 +44,5 @@ BQ watchdog 选择 5 秒，刷新与成功控制循环绑定。其寄存器编�
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
 - 独立授权的本机 L3：先验证不启泵的读回/身份，再验证保护与退出，最后逐步评估 PPS。具体证据要求见 [QUALITY](../../docs/QUALITY.md)，本轮没有执行设备操作。
+
+来源、PMIC 隔离、最小 GPIO 配置与 PD PHY 电源补齐见[续查记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可在后续授权采集时补充已有启动日志中的芯片 ID 与缓存 PDO，不把 standalone 名称当成芯片型号。本轮无新增保护校准默认值，PPS 仍不准入。

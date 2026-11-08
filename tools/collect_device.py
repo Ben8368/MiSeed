@@ -5,6 +5,7 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,6 +29,44 @@ PROPERTIES = (
 PARTITIONS = ("shell", "ls", "-l", "/dev/block/by-name")
 QUERIES = (("get-state",), *(("shell", "getprop", name) for name in PROPERTIES),
            PARTITIONS)
+# Opt-in only. pdo_h and src_cap_id are cached getters in the pinned LOS
+# policy_engine.c; get_src_cap_ext triggers PD traffic and is NOT allowed.
+POWER_PROPERTIES = ("ro.boot.hwversion", "ro.boot.hardware.sku", "ro.product.board")
+POWER_QUERIES = (
+    *(("shell", "getprop", name) for name in POWER_PROPERTIES),
+    ("shell", "uname", "-r"),
+    ("shell", "dmesg"),
+    ("shell", "cat", "/sys/class/usbpd/usbpd0/src_cap_id"),
+    ("shell", "cat", "/sys/class/usbpd/usbpd0/pdo_h"),
+)
+PUMP_ID = re.compile(r"\[bq2597x\]\s+bq2597x_detect_device:\s*detect device:\s*([0-9]{1,3})\b")
+
+
+def collect_power(adb, serial):
+    observations = {name: query(adb, serial, ("shell", "getprop", name))
+                    for name in POWER_PROPERTIES}
+    observations["kernel_release"] = query(adb, serial, ("shell", "uname", "-r"))
+    log = query(adb, serial, ("shell", "dmesg"))
+    if log["status"] == "ok":
+        ids = sorted({int(v) for v in PUMP_ID.findall(log["value"]) if int(v) <= 255})
+        # Never retain raw kernel logs, unrelated messages or device identifiers.
+        log = {"status": "ok" if len(ids) == 1 else "unavailable",
+               "value": ids or None, "evidence": "boot_log_register_0x13_decimal",
+               "qualification": "observation_only_not_board_calibration"}
+    observations["pump_ids"] = log
+    cap = ("shell", "cat", "/sys/class/usbpd/usbpd0/src_cap_id")
+    before = query(adb, serial, cap)
+    pdos = query(adb, serial, ("shell", "cat", "/sys/class/usbpd/usbpd0/pdo_h"))
+    after = query(adb, serial, cap)
+    observations["source_cap_id_before"] = before
+    observations["source_cap_id_after"] = after
+    observations["source_pdos"] = pdos
+    if before["status"] != "ok" or after != before:
+        pdos["status"] = "unavailable"
+        pdos["error"] = "source_capabilities_changed_or_unavailable"
+    return observations
+
+
 UNRESOLVED = (
     "panel_and_touch_ids",
     "firmware_partition_hashes",
@@ -44,7 +83,7 @@ class CollectionError(ValueError):
 
 def query(adb, serial, command):
     """Commands are fixed locally, including the arguments passed to adb shell."""
-    if command not in QUERIES:
+    if command not in QUERIES + POWER_QUERIES:
         raise CollectionError("command is outside the read-only allowlist")
     try:
         result = subprocess.run(
@@ -64,7 +103,7 @@ def query(adb, serial, command):
     return {"status": "ok" if value else "unavailable", "value": value or None}
 
 
-def collect_identity(adb, serial):
+def collect_identity(adb, serial, *, power=False):
     if (not serial or serial.startswith("-") or not serial.isprintable()
             or any(c.isspace() for c in serial)):
         raise CollectionError("provide one explicit adb serial/address")
@@ -78,6 +117,8 @@ def collect_identity(adb, serial):
     for name in PROPERTIES[1:]:
         observations[name] = query(adb, serial, ("shell", "getprop", name))
     observations["partition_links"] = query(adb, serial, PARTITIONS)
+    if power:
+        observations.update(collect_power(adb, serial))
     complete = all(item["status"] == "ok" for item in observations.values())
     return {
         "schema_version": 1,
@@ -104,6 +145,8 @@ def report_path(root, output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--power", action="store_true",
+                        help="read cached LOS pump-ID logs and PD capabilities; no PD requests")
     parser.add_argument("--serial", required=True, help="explicit device from adb devices")
     parser.add_argument("--output", type=Path, default=Path("local/device-identity.json"))
     args = parser.parse_args(argv)
@@ -112,7 +155,7 @@ def main(argv=None):
         adb = shutil.which("adb")
         if adb is None:
             raise CollectionError("adb not found; install official Android SDK Platform Tools")
-        report = collect_identity(adb, args.serial)
+        report = collect_identity(adb, args.serial, power=args.power)
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(report, stream, ensure_ascii=False, indent=2)

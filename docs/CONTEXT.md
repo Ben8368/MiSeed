@@ -1,17 +1,17 @@
 # 当前状态
 
-日期：2026-11-08。在干净 main `109225e` 上新建 `codex/umi-pd-pps-fastcharge`；LineageOS `lineage-23.2` 锁定 `71b13e62f057a649b77fe4062feb73ee72ad609c`。PPS/BQ25970 控制、SMB5 独占、受控测试及日志已完成源码适配和 L2；已提交并推送至[草稿 PR #3](https://github.com/Ben8368/MiSeed/pull/3)，未合并。远端 CI 已触发，最终结果须按当前 PR HEAD 查询，不能以本地通过代替。详见[本轮移植](archive/research/2026-11-08-lineage-pps-port.md)。
+日期：2026-11-08。分支 `codex/umi-pd-pps-fastcharge`，基于 main `109225e`；工作进入[草稿 PR #3](https://github.com/Ben8368/MiSeed/pull/3)，未合并。Lineage 来源固定 `71b13e62f057a649b77fe4062feb73ee72ad609c`。新增官方源码对照、DTBO 隔离、UART-only GPIO、PD PHY 接线和补采，见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 
-WSL 81 项回归全过；Windows 42 通过、39 跳过。最终 L2 `boot.img` SHA-256 `d2d52ba8…76ad1c51`。快充、Type-C/I2C15、TLMM 与 VBUS 供给节点均禁用；板级参数缺失则拒绝 probe。**尚无 MiSeed 快充 L3，不可启用或声称快充可用。**
+WSL 89 项回归全过；Windows 45 通过、44 跳过；ARM64 L2 通过。最终 boot SHA-256 `b2068513…1770f0`；29 个参考 DTBO 独立叠加后主线 SPMI/TLMM 未变。TLMM 源码仅开放 GPIO34/35；PPS、Type-C/I2C15、VBUS 仍禁用，板级参数缺失拒绝 probe。**没有本次 PMIC/TLMM 或 PPS 新 L3，不可声称快充可用。** CI 按精确 PR HEAD 核验。
 
-上一轮仅记录约 25.5 秒受限启充/拔出停充及 1524 条连续日志；600 秒期限未实测。最后记录已额外停充；本轮未连接设备、未 RAM 启动或修改供电。历史 PR #2 的修复/CI 和未合并结论见[复核](archive/reviews/2026-11-08-pr2-coderabbit.md)，不代替本分支证据。
+已采身份和剩余缺项见[平台](platforms.md)，不重复索取。部分 Mac 原始日志未迁移。本轮未连接手机或修改供电；旧受限充电 L3 不覆盖快充或新拓扑。
 
 ## 近期优先级
 
-1. 核实实际泵 ID、采样/热敏/保护参数与 watchdog 完整语义，完成 PPS 专项复核；RISK-004 保留。
-2. 消除重复 PMIC（RISK-010），锁定 GPIO/供电路径后恢复 TLMM（TD-002）及 PD PHY 接线。
-3. 获得明确授权及回退方案后，分阶段补齐 60/600 秒、SOC、温控/过压/过流、watchdog 与 PPS 真机证据；不继承来源内核验收。
+1. 独立复核 DTBO 隔离及 UART-only TLMM；另行授权后验证当前镜像的启动、唯一 SPMI/PON、USB 往返，RISK-010 / TD-002 未关闭。
+2. 优先复用 Android 既有日志与匹配板级资料，补齐泵 ID、GPIO8/68、采样/热敏参数及 watchdog/VOUT_OVP 完整语义；RISK-004 保留。
+3. 获得明确授权及回退方案后，分阶段补齐 PD/PPS、60/600 秒、SOC 与保护故障真机证据；不继承来源内核验收。
 
 ## 最近验证
 
-[本轮 L0/L1/L2](archive/research/2026-11-08-lineage-pps-port.md)；[既有受限 L3](archive/reviews/2026-11-08-fastcharge-ci.md)；[来源锁](../manifests/sources.lock.json)。
+[本轮续查与验证](archive/research/2026-11-08-pps-topology-followup.md)；[既有受限 L3](archive/reviews/2026-11-08-fastcharge-ci.md)；[来源锁](../manifests/sources.lock.json)。
