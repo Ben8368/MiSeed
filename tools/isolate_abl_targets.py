@@ -51,11 +51,11 @@ def verify(dtb):
         raise ValueError(f"unexpected live SPMI children: {children}")
     tlmm = get(dtb, "/__symbols__", "miseed_live_tlmm")
     if get(dtb, tlmm, "status") != "okay":
-        raise ValueError("UART-only TLMM is not enabled")
+        raise ValueError("allowlisted Umi TLMM is not enabled")
     ranges = subprocess.check_output(
         ["fdtget", "-t", "u", str(dtb), tlmm, "gpio-reserved-ranges"], text=True).split()
-    if ranges != ["0", "34", "36", "145"]:
-        raise ValueError("TLMM must expose only UART12 GPIO34/35")
+    if ranges != ["0", "34", "36", "8", "46", "22", "69", "112"]:
+        raise ValueError("TLMM must expose only Umi UART12, I2C15, and BQ IRQ GPIOs")
     print("verified isolated soc/SPMI/TLMM overlay targets; live phandles retained")
 
 

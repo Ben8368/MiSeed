@@ -23,7 +23,7 @@ class OverlayIsolationTests(unittest.TestCase):
  soc: soc {
   compatible = "simple-bus";
   spmi_bus: spmi { #address-cells = <2>; #size-cells = <0>; PMICS };
-  tlmm: pinctrl { status = "okay"; gpio-reserved-ranges = <0 34>, <36 145>; };
+  tlmm: pinctrl { status = "okay"; gpio-reserved-ranges = <0 34>, <36 8>, <46 22>, <69 112>; };
   consumer { link = <&spmi_bus &tlmm>; };
  };
  abl_ovf {
@@ -93,7 +93,7 @@ class OverlayIsolationTests(unittest.TestCase):
         isolation.isolate(self.base)
         subprocess.run(["fdtput", "-t", "u", str(self.base), "/soc/pinctrl",
                         "gpio-reserved-ranges", "28", "4"], check=True)
-        with self.assertRaisesRegex(ValueError, "only UART12"):
+        with self.assertRaisesRegex(ValueError, "only Umi UART12"):
             isolation.verify(self.base)
         isolation.put(self.base, "/abl_ovf", "status", "okay")
         with self.assertRaisesRegex(ValueError, "container must be disabled"):

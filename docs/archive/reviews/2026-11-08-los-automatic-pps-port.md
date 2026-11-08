@@ -24,3 +24,16 @@ sink-only 测试镜像已启用 `umi-pps.dtsi` 的 Type-C、I2C15、泵和 VBUS 
 | MiSeed 设备 L3 | `fastboot boot` RAM 启动成功；照片显示充电器端 PD 5.2 V / 2.7 A；救援台 `pps-status` 无控制器，设备侧合约/PPS 未证实 |
 
 后续查明 TCPM/I2C15 控制器探测，继续完成设备侧 PD/PPS、保护/温控及退出/恢复验证。仅 RAM 启动；未刷写分区。
+
+## 首次 PPS 镜像后的 GPIO allowlist 跟进
+
+旧测试镜像 RAM 启动后 `pps-status` 找不到绑定控制器。对照 LOS/主线接线发现 TLMM 原 mask 仅开放 UART12 GPIO34/35，因此 I2C15 GPIO44/45 与 BQ IRQ GPIO68 仍不可申请。本次将 mask 收敛为仅开放 UART34/35、I2C15 44/45、泵 IRQ68；GPIO8 继续保留，因为 LOS VBUS-disable 尚未接入 SMB5 路径。
+
+| 验证 | 结果 |
+| --- | --- |
+| `python3 -m unittest discover -s tests` | 95 项通过，16 项因需 Linux GCC/伪终端跳过 |
+| `python3 -X utf8 tools/check_repo.py` / `git diff --check` | 通过 |
+| ARM64 L2 + ABL isolation | 成功；新 boot SHA-256 `44dd30354492eba377843e942db9b06ec07e66048a8b6c914e046b9915e965b0` |
+| 新 mask RAM boot | 未执行：设备当前未连接主机 |
+
+该 GPIO 修复尚未推送；新 mask 的运行时绑定与 PPS 结果待设备重新连接后验证。

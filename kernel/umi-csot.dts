@@ -123,14 +123,14 @@
 	};
 };
 
-/* First TLMM profile: only the existing UART12 pins (SOUTH 34/35).
- * Both pinned Umi mainline references leave these pins unreserved. Reserve
- * everything else, including disputed NORTH GPIO8/68 and unused I2C15 44/45.
- * This is a minimal consumer allowlist, not a claim that other pins are bad.
- * No power-path GPIO is requested by this profile. Requires fresh boot L3.
+/* Umi PD/PPS test profile exposes only active consumers: UART12 34/35,
+ * I2C15 44/45, and the LOS BQ25970 fault IRQ on GPIO68. Keep GPIO8 reserved:
+ * its LOS VBUS-disable behavior is not wired into the mainline SMB5 path yet.
+ * Every other pin remains reserved. This is a consumer allowlist, not a claim
+ * that other pins are bad. Requires fresh boot L3.
  */
 &tlmm {
-	gpio-reserved-ranges = <0 34>, <36 145>;
+	gpio-reserved-ranges = <0 34>, <36 8>, <46 22>, <69 112>;
 	status = "okay";
 };
 

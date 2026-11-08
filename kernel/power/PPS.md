@@ -49,7 +49,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-启用前还需：核实 I2C15 `0x884000`、地址 `0x66`、GPIO68 中断；验证 RISK-010 的 overlay 隔离与 TD-002 的 UART-only TLMM；GPIO44/45/68 当前仍保留；确认 Type-C 的 `pm8150b_vbus` 供给（驱动已编入，但该节点仍禁用）及电源路径 GPIO；完成对 LOS 外部温控/电池电流路径的独立专项复核。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处门槛检查实际设备树/PMIC 接线及软件替代保护，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
+测试 profile 按 LOS 接线开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 仍保留，尚未接入 LOS 的 VBUS-disable 行为。需用新镜像确认运行时 pinctrl/I2C/IRQ 绑定，并验证 RISK-010 overlay 隔离和 Type-C VBUS provider；完成 LOS 外部温控/电池电流路径审查。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。此处跟进项检查实际设备树/PMIC 接线及保护路径，不要求打开 LOS 本身关闭的 BQ 电池 OCP/TS 比较器。
 
 ## 诊断接口
 

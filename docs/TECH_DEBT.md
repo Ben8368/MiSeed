@@ -12,7 +12,7 @@
 
 ## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：维护者/板级适配后续负责。原 GPIO-free RAM 诊断禁用 TLMM。2026-11-08 源码改为仅开放 UART12 GPIO34/35，其余全部保留，并隔离下游 TLMM overlay；[续查](archive/research/2026-11-08-pps-topology-followup.md)。新配置待独立审查及本机 L3，不能继承旧镜像验证。本机两轮直接 Fastboot 证据及参考来源见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
+取舍：原 GPIO-free RAM 诊断禁用 TLMM。PPS 测试 profile 按 LOS 接线只开放 UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68，其余仍保留；GPIO8 暂未接入。下游 TLMM overlay 继续隔离；来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。扩展掩码已通过 ARM64 L2，尚无新镜像 L3，不能继承旧镜像验证。本机两轮直接 Fastboot 证据及参考来源见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 
