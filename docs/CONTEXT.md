@@ -1,15 +1,17 @@
 # 当前状态
 
-确认日期：2026-11-06。LOS 23.2 与 122.984 MiB 内核 RAM 启动通过，尺寸未定；[记录](archive/hardware/2026-11-06-kernel-size-fastboot.md)。`f7d50a25` 的大字横屏/摄像头避让、COM6/help 已 L3。当前诊断版 `33b986f6` 的 PON DT 值为 `0x2`，但 Arbiter/SPMI/PON 未绑定；PDC 对照版丢失 USB 枚举，已撤销。中转路径 Linux→Android→Fastboot→Android 已 L3。详见[记录](archive/reviews/2026-11-06-usb-acm-ramboot.md)。
+日期：2026-11-08。PR #2 已推送 CodeRabbit 复核修复（commit `6b40cf1`），未合并。修复后 macOS 本地 L2 构建成功，`boot.img` SHA-256 `4396142a…b3ca6c`；75 项回归中 61 项通过，14 项因 Linux 专属环境跳过。GitHub CI run `42454735733` 在 PR HEAD `1c2fdefbe59639ab19e3fa427ac187e0bea25d29` 成功，PR 与 base 同步且显示可合并；GitHub review 列表没有本轮修复的独立人工专项复核，故暂不合并。逐项结论与验证见[PR #2 CodeRabbit 复核](archive/reviews/2026-11-08-pr2-coderabbit.md)。此前真机结果和原发布 HEAD CI 记录见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
 
-分支 `codex/board-l2-closure`，PR #1 open。维护者于 2026-11-06 明确本次 PR1 可暂不包含充电；当前验收采用 Linux→Android→Fastboot→Android 中转路径，Linux 直达 Fastboot 和充电留后续。不得声称这两项已完成，也不得主动充电。身份/NV 禁访，禁止重锁 BL，不刷写。
+本机新镜像 RAM 启动及 600 秒准备完成；维护者提前结束，日志观测约 25.5 秒受限启充、拔出停充、78% 电量下恢复正常策略。1524 条连续记录、覆盖 0、复读一致；温度 36°C，23 条稳定 FG 电流中位 −85,449 µA。不代表 600 秒超时、异常保护或快充已通过。
+
+设备仍在本次 RAM Linux、电脑 USB 在线；单次测试结束，额外 `charge-stop` 已成功，保持停充。未刷写或使用 adb root；原 Android 返回路径此前已验证，见[诊断往返](archive/hardware/2026-11-08-upstream-power-ramboot.md)。
 
 ## 近期优先级
 
-1. 后续定位 PDC/IRQ 与 SPMI Arbiter，验证 Linux 直达 Fastboot；任何 BCB 写入须另行授权并有回退方案。
-2. 后续依据匹配来源实现电源/充电，过保护审查与 L3；未完成前不控制充电。
-3. 持续锁定设备变体、固件与工具依赖；以设备实测和来源审计支撑后续能力声明。
+1. 闭合快充 PD/PPS 控制、板级采样/保护与 GPIO 接线；当前不直接启泵，RISK-004 保留。
+2. 消除重复 PMIC（RISK-010），锁定安全 GPIO 后恢复 TLMM（TD-002）。
+3. 补齐 60/600 秒到期、SOC 边界、温控/过压/过流、watchdog 真机证据和独立复核；不把短时插拔扩大为长期验收。
 
 ## 最近验证
 
-硬件尺寸及 RAM 启动：[记录](archive/hardware/2026-11-06-kernel-size-fastboot.md)；MiSeed USB、Framebuffer 与电源安全风险：[记录](archive/reviews/2026-11-06-usb-acm-ramboot.md)；构建 L2 证据和输入锁：[manifests/sources.lock.json](../manifests/sources.lock.json)。
+[PR #2 CodeRabbit 复核 L1/L2](archive/reviews/2026-11-08-pr2-coderabbit.md)；[此前 L1/L2/L3 与 CI](archive/reviews/2026-11-08-fastcharge-ci.md)；[此前受限 L3](archive/hardware/2026-11-08-umi-runtime-power.md)；[来源锁](../manifests/sources.lock.json)。

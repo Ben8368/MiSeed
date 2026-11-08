@@ -118,7 +118,7 @@ WSL2 Ubuntu 24.04 x86_64 上，Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18`�
 
 维护者将该镜像以 `fastboot boot` RAM 启动，屏幕实拍确认 DWC3 peripheral/okay、输出 `USB CDC-ACM diagnostic gadget bound to a600000.usb`。Windows 设备管理器枚举 USB Composite Device `VID_1D6B&PID_0104` 及 CDC Serial `COM6`。通过 COM6 115200 连接后发送 `help`，收到 MiSeed 菜单，USB ACM console L3 通过。该结果不代表完整状态切换。
 
-串口 `bootloader` 命令执行 `restart2("bootloader")` 后 USB COM 消失；主机 25 秒内未见 Fastboot，但随后 ADB 枚举恢复。只读 ADB 查询显示 Android `sys.boot_completed=1`、kernel `4.19.325-cip131-st15-perf-g71b13e62f057`，确认此命令回到了原 Android，未进入 Fastboot。之后执行 `adb -s ec04f57f reboot bootloader`，Fastboot 检测到同一设备 `product=umi`；`fastboot reboot` 成功回 Android，ADB 再次看到 `sys.boot_completed=1` 和原 4.19.325 kernel。因此 Android→Fastboot→Android L3 往返通过，MiSeed diagnostic Linux→Fastboot 仍失败。
+串口 `bootloader` 命令执行 `restart2("bootloader")` 后 USB COM 消失；主机 25 秒内未见 Fastboot，但随后 ADB 枚举恢复。只读 ADB 查询显示 Android `sys.boot_completed=1`、kernel `4.19.325-cip131-st15-perf-g71b13e62f057`，确认此命令回到了原 Android，未进入 Fastboot。之后执行 `adb -s <DEVICE_SERIAL> reboot bootloader`，Fastboot 检测到同一设备 `product=umi`；`fastboot reboot` 成功回 Android，ADB 再次看到 `sys.boot_completed=1` 和原 4.19.325 kernel。因此 Android→Fastboot→Android L3 往返通过，MiSeed diagnostic Linux→Fastboot 仍失败。
 
 没有执行 `fastboot flash`。通过 ADB 请求 bootloader 会使用 Android 标准一次性启动消息；MiSeed 自身若需写 `misc`/BCB 才能进入 Fastboot，仍须先明确分区身份、准备回退方案并取得该轮明确授权。当前 PR1 不推送、不合并；充电仍受 RISK-004 安全阻断。
 
@@ -140,7 +140,7 @@ RAM 启动约 15 秒后，Windows 未枚举 ADB、Fastboot 或 COM 设备。Wind
 
 为区分 PON 探测与 USB gadget 初始化状态，initramfs 新增只读输出：读取 DT `/pon/mode-bootloader` 的 u32 值，并遍历 platform device 的 `of_node/compatible` 查找 `qcom,pm8998-pon` 及其 `driver` symlink；bootloader 命令提示改为“PMIC PON mode”，明确不写存储。L2 重建退出码 0，152 个 ABL anchors 与 241 个 DTBO targets 检查通过；当前 `.work/boot-l2/boot.img` SHA-256 `bac940c29880d3a17888decb87537f4399a5d78a65f7632526d44842c4bdc65d`，initramfs SHA-256 `b9a6660594f8659befa79334f3b97cb32c40b2bf4b6ad6bbb6b23dbf1ad2fd88`。新诊断版尚未 RAM 启动，须先恢复 Fastboot USB 链路；没有设备画面或 PON 行为的 L3 结论。
 
-维护者重新确认手机处于 Fastboot 且 USB 连接。主机 `fastboot devices -l` 识别 `ec04f57f fastboot`；镜像 SHA-256 与 `bac940c2…c4bdc65d` 相符。执行 `fastboot -s ec04f57f boot .work/boot-l2/boot.img`，`Sending` 和 `Booting` 均返回 `OKAY`，未运行 flash 命令。等待 15 秒后主机没有 ACM、ADB、Fastboot 设备，PnP 列表只有 COM1；短时间窗口内未见匹配的 USB PnP 日志。设备屏幕状态待维护者实拍，因此尚不清楚内核是否到达 initramfs、PON 是否绑定或 UDC 是否就绪；没有触发 `bootloader` 命令。
+维护者重新确认手机处于 Fastboot 且 USB 连接。主机 `fastboot devices -l` 识别 `<DEVICE_SERIAL> fastboot`；镜像 SHA-256 与 `bac940c2…c4bdc65d` 相符。执行 `fastboot -s <DEVICE_SERIAL> boot .work/boot-l2/boot.img`，`Sending` 和 `Booting` 均返回 `OKAY`，未运行 flash 命令。等待 15 秒后主机没有 ACM、ADB、Fastboot 设备，PnP 列表只有 COM1；短时间窗口内未见匹配的 USB PnP 日志。设备屏幕状态待维护者实拍，因此尚不清楚内核是否到达 initramfs、PON 是否绑定或 UDC 是否就绪；没有触发 `bootloader` 命令。
 
 维护者实拍该启动画面，确认内核已进入 initramfs；`DT PON mode-bootloader=0x00000002`，但 `/sys/bus/platform/devices` 扫描未找到 `qcom,pm8998-pon` 设备；DWC3 `compatible=snps,dwc3`、`dr_mode=peripheral`、`status=okay`，PHY、Qualcomm glue、DWC3 驱动均有绑定链接，但 `/sys/class/udc` 为空，initramfs 输出 `no USB device controller registered`。日志还显示 GCC clock controller 的 `sync_state()` 因 `88e3000.phy` pending。该实拍确认诊断内核启动到用户空间，但 PMIC PON 子设备和 gadget UDC 均未就绪；尚未触发 PON reboot 命令。注意，initramfs 对 PON 设备的扫描只查 `/sys/bus/platform/devices`；后续增加 SPMI PMIC driver directory 和更晚的 kmsg 尾部以确认父设备是否实例化。
 
@@ -152,6 +152,6 @@ RAM 启动约 15 秒后，Windows 未枚举 ADB、Fastboot 或 COM 设备。Wind
 
 RAM 启动后 Windows 枚举 CDC-ACM `COM6`。串口 `status` 读到 `mode-bootloader=0x2`；运行时 PMIC 子节点 `status` 缺省（默认启用），`reg` 均为两个有效单元；但 `c440000.spmi` 的 platform driver 未绑定、`/sys/bus/spmi/devices` 为空，`qcom,pm8998-pon` 设备缺失，PON 仍不可用。将 `CONFIG_QCOM_PDC=y` 的对照镜像 L2 构建成功，哈希 `b65bf4f0e6d35b8228481d56ca7829e559c3ee3126dbd271f66b2d78c6dcf9dc`；两次 RAM 启动均未枚举 USB，主机曾在约 40 秒后看到 Android ADB。为避免回归，PDC 选项已撤销；当前源配置不包含 `CONFIG_QCOM_PDC=y`。
 
-在 PDC 关闭版上发送串口 `bootloader` 后，COM6 断开并回到 Android；ADB 检测到 `umi`、`sys.boot_completed=1`、内核 `4.19.325-cip131-st15-perf-g71b13e62f057`。随后 `adb reboot bootloader` 进入 Fastboot，设备 `ec04f57f` 被识别；`fastboot reboot` 回 Android，ADB 再次确认 `sys.boot_completed=1`、产品 `umi` 和原 4.19.325 内核。该次全程未 `fastboot flash`；Android 标准 bootloader 请求使用一次性 BCB 路径，Fastboot reboot 为恢复点。
+在 PDC 关闭版上发送串口 `bootloader` 后，COM6 断开并回到 Android；ADB 检测到 `umi`、`sys.boot_completed=1`、内核 `4.19.325-cip131-st15-perf-g71b13e62f057`。随后 `adb reboot bootloader` 进入 Fastboot，设备 `<DEVICE_SERIAL>` 被识别；`fastboot reboot` 回 Android，ADB 再次确认 `sys.boot_completed=1`、产品 `umi` 和原 4.19.325 内核。该次全程未 `fastboot flash`；Android 标准 bootloader 请求使用一次性 BCB 路径，Fastboot reboot 为恢复点。
 
 维护者决定暂缓 Linux 直达 Fastboot/PON 问题，先使用 Linux→Android→Fastboot→Android 中转路径。电源管理和充电仍未达标，继续受 RISK-004 安全阻断；本记录不宣称充电或直达 Fastboot 已实现。

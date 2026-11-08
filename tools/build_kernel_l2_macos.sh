@@ -5,7 +5,6 @@ readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly profile="${MISEED_COLIMA_PROFILE:-miseed-boot-l2}"
 readonly docker_context="colima-${profile}"
 readonly image="miseed-boot-l2:local"
-readonly work_volume="miseed-boot-l2-${profile}"
 readonly jobs="${MISEED_JOBS:-4}"
 
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -35,10 +34,11 @@ case "$(uname -m)" in
         ;;
     *) fail "unsupported macOS architecture: $(uname -m)" ;;
 esac
+readonly work_volume="miseed-boot-l2-${profile}-${build_arch}"
 
 docker --context "$docker_context" build \
     --platform "$image_platform" \
-    --file tools/macos-l2.Dockerfile \
+    --file "$repo_root/tools/macos-l2.Dockerfile" \
     --tag "$image" \
     "$repo_root"
 

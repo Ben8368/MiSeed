@@ -14,7 +14,7 @@
 | Bootloader | Fastboot：`umi`、已解锁、安全启动开启、下载上限 805306368；版本空 | 槽位、ABL 版本、内存图未知；下载上限非启动上限 |
 | ABL / boot header | DEVICE_OBSERVED：官方 LOS 23.2 v2 boot 与仅替换 kernel 的同组件镜像均经 `fastboot boot` 启动；128 MiB boot 中 122.984 MiB kernel 启动完成 | ABL `Load Error` 未定位；最大尺寸未知 |
 | DTB / DTBO | L2 通过 152 个 ABL 锚点、241 个参考目标符号检查 | 本机 DTBO 未锁定；MIUI 包仅为符号参考；启动交接未验证 |
-| Android | 2026-11-06 返回后见 Xiaomi global Android 13 / `V14.0.5.0.TJBMIXM`、kernel `4.19.325...`；较早采集称 LOS 23.2 | 快照冲突，ROM/分区状态待确认；fingerprint 不证明硬件区域 |
+| Android | 2026-11-08 当前设备及 RAM 测试返回后均为 Android 16、kernel `4.19.325-cip131-st15-perf-g71b13e62f057`，启动完成、普通 ADB；2026-11-06 曾观测 Android 13 | 历史 ROM 快照变化未追溯；底层固件未重新读取 |
 | 底层固件 | USER_REPORTED：国行；刷 Lineage 前官方 1.0.5；最新 Fastboot 包 1.0.3 | 当前设备固件未从分区读取 |
 | Recovery | USER_REPORTED：无需个人数据备份；官方 Recovery 1.0.7 / Fastboot 1.0.3 在 `.work/` | `misc` 随官方线刷允许更新；Recovery 入口未验证；身份/NV 禁访，BL 重锁严禁 |
 UPSTREAM_VERIFIED 非本机直测；LOCAL_PACKAGE_OBSERVED 是未鉴真的 `.work/` 数据。ADB 采集 PARTIAL（退出码 1），输出在忽略的 `local/`。
@@ -50,9 +50,9 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 
 | 功能 | 状态 | 证据 |
 | --- | --- | --- |
-| Linux RAM bring-up / UEFI | LOS 122.984 MiB、MiSeed 大字横屏/rotate:3 与 CDC-ACM 为 L3；PON 未进 Fastboot；UEFI 未测 | [USB 记录](archive/reviews/2026-11-06-usb-acm-ramboot.md) / [尺寸记录](archive/hardware/2026-11-06-kernel-size-fastboot.md) |
+| Linux RAM bring-up / UEFI | `3e7083a7…383489f` RAM 启动、Linux→原生 Fastboot→Android 已 L3；PDC/SPMI/PON 绑定正常；UEFI 未测 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有往返](archive/hardware/2026-11-07-direct-fastboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | rotate:3、COM6/help、Linux→Android→Fastboot→Android 为 L3；触控未实现 | [MiSeed 记录](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
+| CSOT 显示 / 触控 / USB | 本轮诊断 Image 的 macOS ACM/version/status/日志已 L3；既有 rotate:3 显示为 L3，本轮未复测显示；TLMM 禁用、触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 电池 / 充电 / 温控 | MiSeed 未实现；Android 单次样本不可作充电参数 | RISK-004；须匹配来源、保护审查及专项 L3 |
+| 充电日志 / 管理 | `793ca218…7030c5` 的 600 秒准备、约 25.5 秒受限启充、拔出停充、恢复策略、1524 条日志/复读 L3；600 秒到期未测，快充未接通 | [本轮](archive/reviews/2026-11-08-fastcharge-ci.md) / [原 L3](archive/hardware/2026-11-08-umi-runtime-power.md)；RISK-004 |

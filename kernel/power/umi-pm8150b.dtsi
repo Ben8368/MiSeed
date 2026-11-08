@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Adapted from Armbian build 8ddeef322b4706b5be19d0fb7869f107c117666d:
+ * sm8250-6.18 patches 0027 (map220v / Jiali Chen) and 0029
+ * (Teguh Sobirin / Jiali Chen), used by misaka-link/umi-linux.
+ * Battery design values: misaka cf83073887899f485a5c606f9842c5e691ea796c.
+ * Normal-charge ceiling: device-matched LOS umi-sm8250.dtsi at 71b13e62.
+ * No BQ25970, Type-C source, GPIO, profile SRAM or protection-disable nodes.
+ */
+#include <dt-bindings/iio/qcom,spmi-vadc.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	umi_battery: battery {
+		compatible = "simple-battery";
+		voltage-min-design-microvolt = <3870000>;
+		voltage-max-design-microvolt = <4480000>;
+		energy-full-design-microwatt-hours = <18498600>;
+		charge-full-design-microamp-hours = <4780000>;
+		constant-charge-voltage-max-microvolt = <4450000>;
+	};
+};
+
+&spmi_bus {
+	pmic@2 {
+		umi_fg: fuel-gauge@4000 {
+			compatible = "qcom,pm8150b-fg";
+			reg = <0x4000>;
+			interrupts = <0x2 0x40 0x3 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "soc-delta";
+			monitored-battery = <&umi_battery>;
+		};
+
+		umi_charger: charger@1000 {
+			compatible = "qcom,pm8150b-charger";
+			reg = <0x1000>;
+			interrupts = <0x2 0x13 0x4 IRQ_TYPE_EDGE_BOTH>,
+				     <0x2 0x12 0x2 IRQ_TYPE_EDGE_BOTH>,
+				     <0x2 0x16 0x1 IRQ_TYPE_EDGE_RISING>,
+				     <0x2 0x13 0x7 IRQ_TYPE_EDGE_RISING>;
+			interrupt-names = "usbin-plugin", "bat-ov", "wdog-bark", "usbin-icl-change";
+			io-channels = <&pm8150b_adc ADC5_USB_IN_I>, <&pm8150b_adc ADC5_USB_IN_V_16>;
+			io-channel-names = "usb_in_i_uv", "usb_in_v_div_16";
+			monitored-battery = <&umi_battery>;
+			power-supplies = <&umi_fg>;
+		};
+	};
+};
+
+&pm8150b_adc {
+	channel@7 {
+		reg = <ADC5_USB_IN_I>;
+		qcom,pre-scaling = <1 1>;
+		label = "usb_in_i_uv";
+	};
+	channel@8 {
+		reg = <ADC5_USB_IN_V_16>;
+		qcom,pre-scaling = <1 16>;
+		label = "usb_in_v_div_16";
+	};
+};

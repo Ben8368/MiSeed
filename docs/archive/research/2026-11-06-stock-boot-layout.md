@@ -43,6 +43,6 @@ floor((128 MiB - 4096 - align(1,330,716,4096)
 
 这是**固定其余段和 AVB 元数据尺寸后的存储上限估算**，不是 ABL 可加载上限，也没有证明改写后的 AVB 描述符或签名有效。加载地址、内存保留区、kernel 解压/展开尺寸和 ABL 实际放置策略仍需独立证据。
 
-当前 MiSeed L2 的 `boot.img` 为 2,453,504 字节，header 段为 kernel 2,030,895、ramdisk 252,977、DTB 163,320 字节。现有 [打包器](../../../tools/pack_android_boot_v2.py)另有固定地址间距保护：kernel 输入必须小于 `0x01000000 - 0x8000 = 16,744,448` 字节（约 15.97 MiB）。这是 MiSeed 当前保守打包约束，低于按分区容量估出的存储空间；不要把 125.18 MiB 当作当前安全可启动目标。接近该保护值前，应先核实本机 ABL、load map 与解压后内存布局，再决定是否调整。
+当前 MiSeed L2 的 `boot.img` 为 2,453,504 字节，header 段为 kernel 2,030,895、ramdisk 252,977、DTB 163,320 字节。固定的 kernel 与 ramdisk 地址间距为 `0x01000000 - 0x8000 = 16,744,448` 字节（约 15.97 MiB），但现有 [打包器](../../../tools/pack_android_boot_v2.py)不检查 kernel 是否超过该间距；只要完整镜像仍不超过 128 MiB，较大的 kernel 仍可能通过打包。不要把 125.18 MiB 当作当前安全可启动目标。接近该地址间距前，应先核实本机 ABL、load map 与解压后内存布局。
 
 依据：[AOSP boot image header](https://source.android.com/docs/core/architecture/bootloader/boot-image-header)、[AOSP DTB image layout](https://source.android.com/docs/core/architecture/bootloader/dtb-images)、[AOSP `unpack_bootimg.py`](https://android.googlesource.com/platform/system/tools/mkbootimg/+/refs/heads/main/unpack_bootimg.py)。

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "lock_date": "2026-11-06",
-  "lock_status": "revision-pinned; rotate:3 display/camera avoidance L3; configfs ACM COM6/help verified on f7d50a25; Android→Fastboot→Android verified; PON diagnostic bac940c2 RAM-booted with no host USB enumeration; expanded kmsg/PMIC diagnosis image 7c0c67ac built and awaits RAM boot; PON handoff and charging remain unverified",
-  "scope": "Reviewed upstream identities and selected reference snapshots. Linux/CSOT profile includes early console, forced diagnostic command line, USB CDC-ACM, SM8250 providers, Qualcomm PON reboot-mode, and framebuffer console at L2. Rotate:3 display/camera avoidance and CDC-ACM serial enumeration/console are L3 on f7d50a25. Android→Fastboot→Android passed. PON diagnostic image bac940c2 was RAM-booted from detected umi Fastboot and returned Sending/Booting OKAY; photo confirmed DT mode-bootloader=2, no qcom,pm8998-pon platform device, and empty /sys/class/udc. Host had no ACM/ADB/Fastboot enumeration. Latest image 7c0c67ac adds recent kmsg and PMIC driver-directory diagnostics, built but not yet RAM-booted. PON handoff and charging remain unverified.",
+  "lock_date": "2026-11-08",
+  "lock_status": "revision-pinned; opt-in 600-second SOC-bypass diagnostic L2 and user-terminated short insertion L3; actual timeout/protection qualification open; fast charge not enabled",
+  "scope": "Reviewed upstream identities, selected reference snapshots and exact local diagnostic build inputs. Device capability and validation status are maintained in docs/platforms.md and its evidence links; this lock does not replace those records.",
   "build_profiles": [
     {
       "id": "umi-csot-boot-l2",
@@ -24,40 +24,161 @@
         "header_dtb_extractor": "tools/extract_boot_v2_dtb.py",
         "initramfs_builder": "tools/make_initramfs.py",
         "boot_packer": "tools/pack_android_boot_v2.py",
-        "dtbo_targets": "kernel/umi-csot-dtbo-targets.txt"
+        "dtbo_targets": "kernel/umi-csot-dtbo-targets.txt",
+        "source_verifier": "tools/verify_kernel_source.py",
+        "charge_log": "kernel/charge_log.h",
+        "power_observer": "kernel/power_observer.c",
+        "power_observer_applier": "tools/apply_power_observer.py",
+        "power_port_fg": "kernel/power/qcom_fg.c",
+        "power_port_charger": "kernel/power/qcom_pm8150b_charger.c",
+        "power_port_kconfig": "kernel/power/Kconfig",
+        "power_port_applier": "tools/apply_power_port.py",
+        "power_policy": "kernel/power/umi_charge_policy.h",
+        "power_board": "kernel/power/umi-pm8150b.dtsi"
       },
       "input_sha256": {
-        "kernel/umi-csot.dts": "89972b4c14693ac774f432737a2f210ed690eea7597aed0b5705bdf147e7d9b0",
-        "kernel/umi-l2.config": "e508fbd091e80864c705c997cfd30565e94b78125e212d5b096981f862c3cab4",
-        "kernel/rescue_init.c": "b16c29b09b36486545b02c86ad409158621b32505a419b0c30d3f8747bc79372",
-        "tools/build_kernel_l2.sh": "859350ddbbd370a2e003fdca5bac9cc91187e09492d6ed602e4260c2f7ae5a35",
+        "kernel/umi-csot.dts": "4ce9815528ee61f4257df7f452932c8201b9785d2272921b1e338655635f2378",
+        "kernel/umi-l2.config": "900a35ae153e44acf6c733e9ac2d72cf936c9066c12df6b799a6c4062dd6eb38",
+        "kernel/rescue_init.c": "eb742935c8fab7fa18025eea839159d6292ffc10ae81cc3b6f1185f6fda76a0d",
+        "tools/build_kernel_l2.sh": "fc5a652ebde3a6cf25c5746c89d0f48382410b3d4b91026a011d0cd361613fde",
         "tools/extract_abl_anchors.py": "971c781396c3472520aabcb10cad4a7c46964e5bc560ae6ed1d397397198adae",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
         "tools/make_initramfs.py": "644d4cbcffc58aaf02715af9d6e2dbe45df2072dd2c3cfffafe5694a6c95dbf3",
         "tools/pack_android_boot_v2.py": "c2f659c5eccc29aed2ffc7e721599b0710c13bb93c034c8331915dcd584629cd",
         "LICENSES/BSD-3-Clause.txt": "8f0e2dfa56521e68f247ea8772f3f83eb9db045a793a8d6061bfb7803a69489b",
         "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
-        "kernel/umi-csot-dtbo-targets.txt": "3c8483b0996bed1b757bba6ad68b5439c5c168c8bb3bec586ce48e603e0d5dd1"
+        "kernel/umi-csot-dtbo-targets.txt": "3c8483b0996bed1b757bba6ad68b5439c5c168c8bb3bec586ce48e603e0d5dd1",
+        "tools/verify_kernel_source.py": "6c51b207097c33e85fc237bda26cce567d0c786333231e61a966bf40f42588dd",
+        "kernel/charge_log.h": "ea345d139bb29da4fac6c7e1238eb197786c9e40ebb3eadfc5ca5188aacf36da",
+        "kernel/power_observer.c": "ec019c4f138e7762629a316b808a44ae632d17a70825631b71dfede77f462256",
+        "tools/apply_power_observer.py": "6c3c4b1c5133128e1e28eab8b00845e834b080425bc074000d83f53d19dcb22c",
+        "kernel/power/qcom_fg.c": "e828e06aabe9d5ed14bad36fc891b3e18146de2c1f1e50568c434f13aa38f1a5",
+        "kernel/power/qcom_pm8150b_charger.c": "402d66c4e304ea10ca896220d368496b4a8664eaf1736abd68c10a16be456c94",
+        "kernel/power/Kconfig": "b2a87423f8ade21adc060d56601f7ae6f570504866e234adafd87bc30624196e",
+        "tools/apply_power_port.py": "a7e41903923c312f9e885d0052f3f9bd96a6ad396ccbc5920cd6e27a055e5e2d",
+        "kernel/power/umi_charge_policy.h": "2e604e8d1efa289ed4f60552a9d42c85bf606b8f39abaebda00eaf547fcd8183",
+        "kernel/power/umi-pm8150b.dtsi": "206b0589b185874f96311d481e7f28421691842f7718249a13310f06c8122bd0"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
-      "build": "arm64 uncompressed Image (VA48/PA48) with forced diagnostic command line, GENI earlycon/console, configfs USB CDC-ACM (legacy g_serial disabled to avoid UDC contention), RPMh PHY rails, Qualcomm PON reboot-mode, and ABL framebuffer console; dtc -@ qcom/umi-csot.dtb; static rescue initramfs; Android boot header v2; WSL2 Ubuntu 24.04 x86_64, GCC 13.3.0, GNU make 4.3",
-      "status": "Baseline f7d50a25 L2/L3 confirms rotate:3 framebuffer, configfs ACM, Windows COM6, and MiSeed help console. Android→Fastboot→Android passed. Current PDC-disabled diagnostic image 33b986f6 was RAM-booted; COM6 is present. Serial status confirms PON DT mode-bootloader=0x2, PMIC child nodes default available with valid two-cell reg properties, but c440000.spmi has no bound driver, /sys/bus/spmi/devices is empty, and qcom,pm8998-pon platform device is missing. CONFIG_QCOM_PDC=y candidate built at L2 but two RAM boots had no USB enumeration, with Android ADB returning once; PDC option was removed from current config. PON handoff, charging, and direct Linux→Fastboot remain incomplete; fallback Linux→Android→Fastboot→Android passed L3.",
+      "build": "Pinned Linux 6.18.60, Umi CSOT ABL header v2, FG/SMB5/ADC5 built-in, rescue RAM logger and explicit 60/600-second bounded charge tests; no BQ25970 or Type-C source initialization; probe starts inhibited.",
+      "status": "Current opt-in 600-second diagnostic build L2 and 68 Linux offline regressions passed. Source HEAD c8bb079 remote CI six jobs passed; hosted/local image hashes match. Current image L3: RAM boot, inhibited start, 600-second preparation, user-terminated 25.536-second sampled insertion, unplug stop and 1524 retained/replayed records. Timeout/fault/long-term qualification open; fast charge not enabled. Evidence: docs/archive/reviews/2026-11-08-fastcharge-ci.md.",
       "dtbo_symbol_reference": {
         "origin": "Local Xiaomi UMI MIUI OS1.0.7.0.TJBCNXM package, firmware-update/dtbo.img",
         "sha256": "d6a6f4c07d7ce88f6213cfed0cee26d55f908e8eff38675faadc6f6e4671eee6",
         "archive": ".work/miui_UMI_OS1.0.7.0.TJBCNXM_2cc115c0ee_13.0.zip (local reference; not part of project inputs)",
         "use": "Extracted 241 overlay target symbol names only as input data for symbol anchors; no DTBO binary, overlay properties, or payloads are copied into the build. This MIUI reference is not verified as the DTBO installed on the connected LOS device."
       },
+      "power_observer_scope": {
+        "pmic": "qcom,pm8150b; existing mainline PMIC@2 only",
+        "read_registers_hex": [
+          "0x1310",
+          "0x1006",
+          "0x1007",
+          "0x1042"
+        ],
+        "poll_interval_ms": 1000,
+        "control_writes": false,
+        "reference": {
+          "repository": "https://github.com/Ben8368/MiSeed.git",
+          "revision": "68dfe4f07f870b638f3c5c790076bb3110beecc7",
+          "path": "kernel/patches/qcom-smbx/0007-smb5-driver.patch",
+          "sha256": "f1516255f074c2656f26dd7b80ea4e0ef0110c037b9185059694860108d4bad2",
+          "authors": "Robin Snyders (SMB5), The Linux Foundation and Casey Connolly (qcom_smb2 base)",
+          "use": "read-only comparison of register addresses and SMB5 phase enum in the existing pinned patch; no patch applied or charger/FG source imported after rollback"
+        },
+        "local_driver_license": "GPL-2.0-only"
+      },
+      "host_tools": {
+        "tools/collect_charge_log.py": "5214dab6752bf387f61b4918edbe9d8a5a2263a43ebb47c5f2898e6d29d91255"
+      },
+      "power_port_scope": {
+        "purpose": "Umi runtime integration; first boot inhibited; explicitly armed single-insertion 60-second default or 600-second opt-in SOC bypass, then normal 70/65 hysteresis. Current and protection gates unchanged.",
+        "config": {
+          "BATTERY_MISEED_QCOM_FG": "y",
+          "CHARGER_MISEED_PM8150B": "y",
+          "QCOM_SPMI_ADC5": "y"
+        },
+        "dts_imported": true,
+        "active_charging_qualified": false,
+        "first_boot_inhibited": true,
+        "guard_limits_source": "device-matched LineageOS/android_kernel_xiaomi_sm8250@71b13e62f057a649b77fe4062feb73ee72ad609c",
+        "guard_limits": {
+          "temperature_lower_exclusive_decic": 150,
+          "temperature_upper_inclusive_decic": 450,
+          "normal_voltage_ceiling_uv": 4450000,
+          "diagnostic_input_and_fcc_cap_ua": 500000
+        },
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md",
+        "active_charging_tested": true,
+        "test_windows_seconds": [
+          60,
+          600
+        ]
+      },
       "generated_artifacts": {
-        "abl_anchor_include_sha256": "faad288a83a353234f0fd8b0300e9fdf18bdddf41463401091d31a4d77480361",
-        "resolved_config_sha256": "8c6e7caac2f17f1e657bf9eedb228130ce57394524c5fd8006eeeb99a1822c9a",
-        "kernel_image_sha256": "45b4e25540d5c877869eca06c8372acea995abdb91bb8ba6259bffd696dfe9d1",
-        "rescue_initramfs_sha256": "84c5eb874bbce40e8848ec1e144b152eb2f798e0217fe85b9cd6f99d91a3cd67",
-        "dtb_sha256": "32331bad24d382f7f3be99b8ed330b0a84a1ec4132bf1a5843c180e3408993e3",
-        "dtbo_target_symbol_count": 241,
-        "boot_img_sha256": "33b986f64a57b4ee8d1c5528e657c3bc38e85f0ac40faf5700dd4ad9f76a3d6c",
-        "boot_img_size_bytes": 7131136
+        "kernel_image_sha256": "242457ef7f5a317cee2db41842d6743a32636ee69770aab334c83962eb49e2d4",
+        "kernel_image_size_bytes": 6953472,
+        "boot_img_sha256": "793ca218ce21e8c51f597356e940a9bbfb33aeb56267b0d2a5d6b91a957030c5",
+        "boot_img_size_bytes": 7405568,
+        "resolved_config_sha256": "42681b2b42daad5c964e2e6eb4f6899877d6d43aab50e307eb3a8a8977868d78",
+        "resolved_config_size_bytes": 65493,
+        "rescue_initramfs_sha256": "39e81a9a6f80ee2ed2df7f62939ad067df37430fdbdd287e7f5a01fce38167db",
+        "rescue_initramfs_size_bytes": 266568,
+        "dtb_sha256": "f108a562c88b9f7d6ac8393b9657c821b2212abab3bfa60ce08271ed9765bf39",
+        "dtb_size_bytes": 173021,
+        "fg_object_sha256": "4663fd83eb6dc2019fcb991f93f4630e508cd0033c0d019d9b318ab21587d557",
+        "fg_object_size_bytes": 23976,
+        "charger_object_sha256": "b33a255dc9f6482ffcacd8d7321f9bbcb42ba6ed69846e9f06dc32f0c0a06bee",
+        "charger_object_size_bytes": 21832,
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md"
+      },
+      "runtime_evidence_previous_diagnostic": {
+        "date": "2026-11-08",
+        "image_sha256": "3e7083a7ca5f8dc4bc9a3901305fe80add064f9b324bfe47b6cd3e92e383489f",
+        "evidence": "docs/archive/hardware/2026-11-08-upstream-power-ramboot.md",
+        "scope": "diagnostic RAM boot, USB/status/logs/replay and native Fastboot to Android return only",
+        "power_modules_loaded": false,
+        "charging_control_tested": false,
+        "final_state": "Android 16 boot completed; ADB uid=2000(shell)"
+      },
+      "runtime_evidence": {
+        "date": "2026-11-08",
+        "image_sha256": "793ca218ce21e8c51f597356e940a9bbfb33aeb56267b0d2a5d6b91a957030c5",
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md",
+        "scope": "RAM boot, explicit 600-second preparation, one 25.536-second sampled charger insertion terminated by user unplug, restored SOC policy and retained/replayed RAM logs",
+        "charging_control_tested": true,
+        "protection_faults_tested": false,
+        "configured_window_seconds": 600,
+        "timeout_tested": false,
+        "records": 1524,
+        "replay_records": 1525,
+        "identical_replay_overlap": 1524,
+        "overwritten": 0,
+        "enabled_samples": 24,
+        "steady_current_samples": 23,
+        "steady_current_median_ua": -85449,
+        "temperature_range_decic": [
+          360,
+          360
+        ],
+        "final_state": "RAM Linux, computer USB reconnected, test consumed on unplug, SOC 78% and enabled=0; charge-stop acknowledged for explicit cleanup"
+      },
+      "runtime_evidence_previous_bounded_charging": {
+        "date": "2026-11-08",
+        "image_sha256": "10ec0d0ee1a8255e14db31e0cc0f112dfbe310541a16eabc8992be4bdd9ce7c4",
+        "evidence": "docs/archive/hardware/2026-11-08-umi-runtime-power.md",
+        "scope": "one bounded charger insertion, FG telemetry trends, unplug stop, restored 70/65 and retained/replayed RAM logs",
+        "charging_control_tested": true,
+        "protection_faults_tested": false,
+        "records": 1004,
+        "enabled_samples": 23,
+        "steady_current_median_ua": -92773,
+        "temperature_range_decic": [
+          310,
+          320
+        ],
+        "final_state": "RAM Linux, USB computer connected, test ended, enabled=0, default SOC policy restored"
       }
     }
   ],
@@ -77,7 +198,7 @@
       "included_paths": [],
       "submodules": [],
       "patches": [],
-      "verification": "Official stable tag resolved with git ls-remote; exact commit materialized from the pinned revision. MiSeed Umi/CSOT arm64 Image.gz and DTB compiled locally with Ubuntu GCC 13.3.0; selected Debian GCC 14.2, full package closure, independent reproduction and device boot remain unverified."
+      "verification": "Official stable tag resolved with git ls-remote; exact commit materialized from the pinned revision. Current MiSeed build inputs and generated artifact hashes are recorded in build_profiles; validation is maintained in the referenced evidence record. Package/toolchain closure remains subject to TD-001."
     },
     {
       "id": "edk2",
@@ -105,19 +226,47 @@
         "LICENSES/",
         "DTS and driver SPDX headers"
       ],
-      "role": "board support reference; selected Umi DTS properties adapted for reserved-memory and USB/UART L2; no panel driver imported",
+      "role": "Selective board support plus GPL FG/SMB5 source reference; runtime port with device-matched limits. No colorgarden approximate battery parameters, BQ25970 or protection-disable DTS imported.",
       "included_paths": [
         "dts/sm8250-xiaomi-umi*.dts[i]",
         "patches/panel-xiaomi-umi.c",
         "docs/DISPLAY.md",
-        "docs/TOUCH.md"
+        "docs/TOUCH.md",
+        "power/qcom_fg.c",
+        "power/qcom_pm8150b_charger.c"
       ],
       "submodules": [],
       "patches": [],
-      "verification": "Exact commit checked against the repository remote; adapted DTS is BSD-3-Clause. Mixed-license panel/touch code was not imported. Read the pinned diagnostic config and report for early-console and boot-argument hypotheses; only standard options were selected for MiSeed, with no reference config or runtime claims imported. This bring-up pass also references the pinned Umi early-board support set to select SM8250 clocks, RPMh power domains, interconnect, SMMU, PMIC arbiter, and large fbcon font/rotation options; no upstream DTS/config file is copied into the project.",
+      "verification": "Exact commit checked against the repository remote; adapted DTS is BSD-3-Clause. Mixed-license panel/touch code was not imported. Read the pinned diagnostic config and report for early-console and boot-argument hypotheses; only standard options were selected for MiSeed, with no reference config or runtime claims imported. This bring-up pass also references the pinned Umi early-board support set to select SM8250 clocks, RPMh power domains, interconnect, SMMU, PMIC arbiter, and large fbcon font/rotation options; no upstream DTS/config file is copied into the project. Original compile assessment is archived at docs/archive/research/2026-11-08-upstream-power-port.md. Runtime adaptations and scoped local L3 are recorded at docs/archive/hardware/2026-11-08-umi-runtime-power.md; source reports and local hardware evidence remain separate.",
       "reviewed_paths": {
         "config/umi.config": "7f71cb347672113e11906d810b3412812be040de33ea82ff2170ecdbe9733578",
         "docs/DIAGNOSIS.md": "06c207a5b31803a3e1d2b4ce5e50047dc7eac5ca509ce617badcdf1036b48333"
+      },
+      "power_port_files": [
+        {
+          "original_path": "power/qcom_fg.c",
+          "original_sha256": "42d5bfcc88eebfd5544fb4330cec59476b452b789bb6eb5b8da99572e2080f3a",
+          "local_path": "kernel/power/qcom_fg.c",
+          "local_sha256": "2d0db26f6f660502e0605be6bc496d83d5bf2ec1227e4a50a19752f980f6fd2f",
+          "license": "GPL-2.0-only",
+          "authors_preserved": true
+        },
+        {
+          "original_path": "power/qcom_pm8150b_charger.c",
+          "original_sha256": "331689123647bd48de7183ca100df2bd90120956c52796bfcbcb47b54ff5882b",
+          "local_path": "kernel/power/qcom_pm8150b_charger.c",
+          "local_sha256": "dee716e6f8fb14d016070d7a90b0d5f3d57b273d369ee26dbf888eaf3ede0bd5",
+          "license": "GPL-2.0-only",
+          "authors_preserved": true
+        }
+      ],
+      "fast_charge_assessment": {
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md",
+        "reviewed_path": "power/bq25970_charger.c",
+        "git_blob_sha": "6315672ddc4cd0720f22b5b173f6666b1db3d38a",
+        "imported": false,
+        "enabled": false,
+        "reason": "Disabled watchdog, unconditional delayed pump enable on Type-C ONLINE, unchecked protection setup; board sense resistor and PD/PPS control loop not qualified; TLMM/GPIO68 unavailable."
       }
     },
     {
@@ -201,7 +350,8 @@
       "license": "GPL-2.0-only",
       "license_evidence": [
         "LICENSE",
-        "per-file SPDX headers; CSOT DTS declares BSD-3-Clause; adapted board properties are accompanied by LICENSES/BSD-3-Clause.txt"
+        "per-file SPDX headers; CSOT DTS declares BSD-3-Clause; adapted board properties are accompanied by LICENSES/BSD-3-Clause.txt",
+        "NOTICE-许可与出处.md sections 1/2: GPL-2.0 specifically covers scripts; README has conflicting older rights-reserved wording"
       ],
       "role": "device-tested CSOT boot-chain reference; do not import as a whole or claim MiSeed validation",
       "included_paths": [
@@ -210,7 +360,19 @@
       ],
       "submodules": [],
       "patches": [],
-      "verification": "Pinned public source inspected, including the CSOT DTS and boot build implementation. Upstream README reports testing on umi/CSOT with ABL boot-header-v2, kernel/initrd/DTB, dtc -@ symbols and stock DTBO. Treat those as upstream-reported device results; MiSeed has not booted this input. Panel driver and touchscreen are reported unsupported."
+      "verification": "Pinned public source inspected, including the CSOT DTS and boot build implementation. Upstream README reports testing on umi/CSOT with ABL boot-header-v2, kernel/initrd/DTB, dtc -@ symbols and stock DTBO. Treat those as upstream-reported device results; MiSeed has not booted this input. Panel driver and touchscreen are reported unsupported.",
+      "power_reference_review": {
+        "paths": [
+          "rootfs-config/battery-charge-limit",
+          "rootfs-build/tests/test-charge-limit.sh",
+          "rootfs-build/apply-umi-port.sh",
+          "rootfs-build/BUILD.md",
+          "NOTICE-许可与出处.md"
+        ],
+        "imported": false,
+        "reason": "diagnostic PID1 has no Bash/systemd, compatible charging_enabled interface, or qualified SOC; source report is not local charging-safety evidence",
+        "assessment": "docs/archive/research/2026-11-08-upstream-power-port.md"
+      }
     },
     {
       "id": "misaka-umi-boot-header-template",
@@ -227,6 +389,52 @@
       "submodules": [],
       "patches": [],
       "verification": "Release asset SHA-256 checked before parsing. The build reads v2 header fields and source DTB symbol names only; it replaces kernel, ramdisk, DTB and command line, and never executes or distributes the reference image."
+    },
+    {
+      "id": "armbian-sm8250-power-runtime-reference",
+      "url": "https://github.com/armbian/build.git",
+      "revision": "8ddeef322b4706b5be19d0fb7869f107c117666d",
+      "license": "GPL-2.0-only",
+      "license_evidence": [
+        "patch headers and Linux-derived DTS"
+      ],
+      "role": "PM8150B fuel-gauge/charger IRQ and ADC nodes used by misaka-link umi-linux; selectively adapted, no scripts executed",
+      "included_paths": [
+        "patch/kernel/archive/sm8250-6.18/0027-arm64-dts-qcom-pm8150b-Add-fuel-gauge.patch",
+        "patch/kernel/archive/sm8250-6.18/0029-From-Teguh-Sobirin-teguh-sobir.in-Date-Wed-20-Nov-20.patch"
+      ],
+      "submodules": [],
+      "patches": [],
+      "verification": "Exact snapshot inspected through GitHub. Hardware applicability is verified separately; no whole Armbian fork, rootfs or binary imported.",
+      "reviewed_sha256": {
+        "patch/kernel/archive/sm8250-6.18/0027-arm64-dts-qcom-pm8150b-Add-fuel-gauge.patch": "051b66ddd6be83748f5d0219af3eef58cffb7532b5e743364aced7236fba4ac9",
+        "patch/kernel/archive/sm8250-6.18/0029-From-Teguh-Sobirin-teguh-sobir.in-Date-Wed-20-Nov-20.patch": "7ccc7e7ab43305d98606059ba2852ac0ef4c5c1a9209cf22e6f1e91decd0bd70"
+      }
+    },
+    {
+      "id": "lineage-umi-power-runtime-reference",
+      "url": "https://github.com/LineageOS/android_kernel_xiaomi_sm8250.git",
+      "revision": "71b13e62f057a649b77fe4062feb73ee72ad609c",
+      "license": "GPL-2.0-only",
+      "license_evidence": [
+        "driver SPDX headers"
+      ],
+      "role": "Device-matched PM8150B encodings, Umi charge limits and readback definitions; selectively adapted constants/control logic",
+      "included_paths": [
+        "drivers/power/supply/qcom/qpnp-smb5.c",
+        "drivers/power/supply/qcom/smb5-reg.h",
+        "drivers/power/supply/qcom/fg-reg.h",
+        "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi"
+      ],
+      "submodules": [],
+      "patches": [],
+      "verification": "Revision matches observed Android kernel. No vendor binary, battery authentication data, NVM/profile SRAM contents or vendor kernel copied.",
+      "reviewed_sha256": {
+        "drivers/power/supply/qcom/qpnp-smb5.c": "f1f866321bd0d6ab4fb9dff930bf7075d6e5cc8b0de00159c1b0070e116bf41a",
+        "drivers/power/supply/qcom/smb5-reg.h": "a3244822ce0d977369ca1dcf3d0d649559230932d83c0bdd37d91a8dcfd33c87",
+        "drivers/power/supply/qcom/fg-reg.h": "a56490203975f6be2c7bc0e43a6237c63e2df2b09ea39b0927d5da5ea6db753f",
+        "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi": "5d7693de26606e5d9fa9cb6b73d1278fd79e008a5e08134a3c0d83d90fc90a01"
+      }
     }
   ],
   "unlocked_inputs": [

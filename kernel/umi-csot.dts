@@ -14,6 +14,7 @@
 #include "pm8150b.dtsi"
 #include "pm8150l.dtsi"
 #include "pm8009.dtsi"
+#include "umi-pm8150b.dtsi"
 
 /* The SM8250 MTP defaults do not match the Umi remote-processor carveouts. */
 /delete-node/ &adsp_mem;
@@ -109,6 +110,28 @@
 /* Match Qualcomm Xiaomi SM8250 PON bootloader-reboot convention. */
 &pon {
 	mode-bootloader = <0x2>;
+};
+
+/* Diagnostic status reads only; this node never initializes/enables charging. */
+&spmi_bus {
+	pmic@2 {
+		power-observer@1000 {
+			compatible = "miseed,umi-power-observer";
+			reg = <0x1000>;
+		};
+	};
+};
+
+/*
+ * This RAM diagnostic needs no GPIO consumers. Once PDC is available, TLMM
+ * would probe all GPIO directions, including Umi regions reported to abort
+ * in colorgarden/umi-mainline@5fa2e0048f89b82355d2a9de89c1d74ab9910959
+ * (dts/sm8250-xiaomi-umi-common.dtsi, BSD-3-Clause). Keep it out of this
+ * profile until the device-specific valid GPIO ranges are independently
+ * established. The inherited early UART and framebuffer remain diagnostics.
+ */
+&tlmm {
+	status = "disabled";
 };
 
 /* USB PHY PMIC rails, selectively adapted from the pinned Umi board DTS. */

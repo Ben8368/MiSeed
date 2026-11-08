@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Umi runtime integration. Charging starts inhibited pending telemetry review.
+config BATTERY_MISEED_QCOM_FG
+	tristate "MiSeed Qualcomm FG port (Umi runtime)"
+	depends on SPMI && POWER_SUPPLY && OF
+	help
+	  Qualcomm FG driver from colorgarden/umi-mainline. Gen4 telemetry
+	  are read from inherited peripheral state; no profile SRAM is loaded.
+
+config CHARGER_MISEED_PM8150B
+	tristate "MiSeed PM8150B charger port (Umi runtime)"
+	depends on SPMI && POWER_SUPPLY && IIO && OF
+	help
+	  SMB5 driver from colorgarden/umi-mainline with Umi safety gates.
+	  Charge starts inhibited, with a bounded insertion test and
+	  misaka-derived SOC hysteresis. No fast-charge pump is enabled.
