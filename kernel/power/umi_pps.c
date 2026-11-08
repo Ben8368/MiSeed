@@ -10,6 +10,7 @@
  */
 #include <linux/delay.h>
 #include <linux/i2c.h>
+#include <linux/iio/consumer.h>
 #include <linux/interrupt.h>
 #include <linux/ktime.h>
 #include <linux/module.h>
@@ -47,6 +48,9 @@ struct umi_pps {
 	struct delayed_work work;
 	struct mutex lock;
 	struct umi_pps_caps caps;
+	struct iio_channel *thermal_channels[UMI_PPS_THERMAL_SENSORS - 1];
+	struct umi_pps_thermal thermal;
+	int thermal_comp_mc;
 	struct umi_pps_reg protection[18];
 	unsigned int nprotection;
 	enum umi_pps_state state;
@@ -189,6 +193,12 @@ static int umi_pps_parse(struct umi_pps *c)
 {
 	int ret, sense, bat_ts, bus_ts, die_alarm;
 
+	ret = umi_pps_property(c, "miseed,thermal-board-compensation-millicelsius",
+			       &c->thermal_comp_mc);
+	if (ret)
+		return ret;
+	if (c->thermal_comp_mc != 0)
+		return -EINVAL;
 	/* All current and thermistor calibration is mandatory, with no fallback. */
 	ret = umi_pps_property(c, "ti,sense-resistor-micro-ohms", &sense);
 	if (ret)
@@ -256,6 +266,11 @@ static int umi_pps_verify(struct umi_pps *c)
 		/* Do not discard read-to-clear events during protection readback. */
 		if (r->reg == BQ_WATCHDOG && (v & BIT(3)))
 			return -ETIME;
+		/* Native Android 0x2b was 0xd0. Preserve and require its VOUT
+		 * control bit; do not guess the contradictory header's polarity.
+		 */
+		if (r->reg == 0x2b && (v & BIT(3)))
+			return -EPERM;
 		if ((r->reg == 0x05 && (v & 0xc0)) || (r->reg == 0x2c && (v & 3)))
 			return -EIO;
 	}
@@ -280,7 +295,8 @@ static int umi_pps_prepare(struct umi_pps *c)
 
 static int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 {
-	int ret, raw;
+	int ret, raw, i, temp_mc[UMI_PPS_THERMAL_SENSORS];
+	u64 start = umi_pps_now();
 
 	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &s->online);
 	if (!ret)
@@ -304,7 +320,26 @@ static int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 		if (!ret)
 			s->ibat_ma = -(raw / 1000);
 	}
-	return ret;
+	if (ret)
+		return ret;
+	/* Validate before the deci-C -> milli-C multiplication. */
+	if (s->temp <= -400 || s->temp >= 1250)
+		return -ERANGE;
+	temp_mc[0] = s->temp * 100;
+	for (i = 1; i < UMI_PPS_THERMAL_SENSORS; i++) {
+		ret = iio_read_channel_processed(c->thermal_channels[i - 1], &temp_mc[i]);
+		if (ret < 0)
+			return ret;
+	}
+	if (umi_pps_now() - start > UMI_PPS_PERIOD_MS)
+		return -ETIME;
+	/* Until the diagnostic image has a reviewed display-state provider, use
+	 * the more restrictive of both LOS screen-dependent battery limits.
+	 */
+	if (umi_pps_thermal_update(&c->thermal, temp_mc, -1, c->thermal_comp_mc))
+		return -ERANGE;
+	s->thermal_bat_ma = c->thermal.max_bat_ma;
+	return 0;
 }
 
 static int umi_pps_adc(struct umi_pps *c, int channel, int *value)
@@ -454,7 +489,8 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	if (ret)
 		return ret;
 	mv = umi_pps_target(&c->caps, s->vbat_mv);
-	c->request_ma = umi_pps_current(&c->caps, UMI_PPS_MAX_MA);
+	c->request_ma = umi_pps_current(&c->caps,
+		min(UMI_PPS_MAX_MA, s->thermal_bat_ma / 2));
 	if (mv < 0 || c->request_ma < 0)
 		return -ERANGE;
 	ret = umi_pps_request(c, mv);
@@ -556,6 +592,27 @@ static void umi_pps_work(struct work_struct *work)
 		ret = -ERANGE;
 		goto fail;
 	}
+	/* Tighten the adapter's current before any further voltage request.
+	 * A session never raises this current again after a thermal reduction.
+	 */
+	next = umi_pps_current(&c->caps, min(UMI_PPS_MAX_MA, s.thermal_bat_ma / 2));
+	if (next < 0) {
+		ret = -ERANGE;
+		goto fail;
+	}
+	if (next < c->request_ma) {
+		ret = umi_pps_check_deadline(c);
+		if (!ret)
+			ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, next * 1000);
+		if (!ret) {
+			c->request_ma = next;
+			ret = umi_pps_contract(c);
+		}
+		if (!ret)
+			ret = umi_pps_check_deadline(c);
+		if (ret)
+			goto fail;
+	}
 	if (c->state == PPS_SETTLE) {
 		if (now >= c->start_deadline) {
 			ret = -ETIMEDOUT;
@@ -611,8 +668,9 @@ static void umi_pps_work(struct work_struct *work)
 		ret = umi_pps_refresh(c);
 	if (ret)
 		goto fail;
-	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d\n",
-		 c->state, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.ibat_ma, c->request_mv, c->request_ma);
+	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d thermal_mc=%d thermal_level=%d thermal_bat_ma=%d\n",
+		 c->state, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.ibat_ma, c->request_mv, c->request_ma,
+		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
 	goto out;
 fail:
 	umi_pps_stop(c, PPS_FAULT, ret);
@@ -710,10 +768,13 @@ static const struct regmap_config umi_pps_regmap = {
 
 static int umi_pps_probe(struct i2c_client *client)
 {
+	static const char * const thermal_names[] = {
+		"cam_therm1", "conn_therm", "quiet_therm", "wireless_therm", "xo_therm"
+	};
 	struct device *dev = &client->dev;
 	struct umi_pps *c;
 	unsigned int id, mode;
-	int ret;
+	int ret, i;
 
 	c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
 	if (!c)
@@ -741,6 +802,18 @@ static int umi_pps_probe(struct i2c_client *client)
 	ret = umi_pps_parse(c);
 	if (ret)
 		return ret;
+	for (i = 0; i < ARRAY_SIZE(thermal_names); i++) {
+		enum iio_chan_type type;
+
+		c->thermal_channels[i] = devm_iio_channel_get(dev, thermal_names[i]);
+		if (IS_ERR(c->thermal_channels[i]))
+			return dev_err_probe(dev, PTR_ERR(c->thermal_channels[i]),
+					     "missing thermal channel %s\n", thermal_names[i]);
+		ret = iio_get_channel_type(c->thermal_channels[i], &type);
+		if (ret || type != IIO_TEMP)
+			return dev_err_probe(dev, ret ? ret : -EINVAL,
+					     "thermal channel must report temperature\n");
+	}
 	c->sw = devm_power_supply_get_by_reference(dev, "miseed,switch-charger");
 	if (IS_ERR(c->sw))
 		return PTR_ERR(c->sw);

@@ -28,6 +28,8 @@ PM8150B 的 FV/FCC 编码、watchdog 和 Umi 正常充电温区/电压上限，�
 
 本地修改包括主线 TCPM power_supply 接口、强制板级参数、全保护读回、拒绝未知芯片 ID、SMB5 独占和输入暂停、有界手动测试与失败停止。没有沿用关闭 watchdog/温控的初始化，也未声称保护已通过实机验证。Linux 原生 TCPM/PMIC Type-C/PD PHY 维持内核自身许可证及作者，不改其文件。移植范围、来源报告和运行阻断见[本轮评估](../../docs/archive/research/2026-11-08-lineage-pps-port.md)与[接口说明](PPS.md)。
 
+常规温控的 FCC 档位及 PMIC ADC 接线继续取自同一固定 Lineage Umi DTS；执行档位对照 `drivers/power/supply/qcom/smb5-lib.c`（SPDX GPL-2.0-only，Copyright (c) 2018–2021 The Linux Foundation，来源锁附逐文件哈希）。本机 vendor 配置和 `mi_thermald` 仅作只读、离线行为核对；不复制守护进程代码、不执行或再分发其二进制/完整配置。数值事实、映射依据与 MiSeed 自行实现的温控控制流程见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)；不能用来源报告替代 MiSeed 实机验收。
+
 ## PPS 拓扑续查
 
 PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 misaka-link 固定提交的 `rootfs-build/patch/kernel/archive/sm8250-6.18/dt/sm8250-xiaomi-umi-common.dtsi`（BSD-3-Clause，Copyright (c) 2020 The Linux Foundation）及 colorgarden 固定 DTS（BSD-3-Clause）。保留其来源与归属；本地只补齐接线和约束，相关电源节点仍禁用，不采用 dual-role/source PDO。UART12 GPIO34/35 来自固定主线 sm8250.dtsi，最小保留掩码为 MiSeed 自行收敛。

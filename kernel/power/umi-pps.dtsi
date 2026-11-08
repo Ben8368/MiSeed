@@ -30,6 +30,15 @@
 		miseed,pd-source = <&pm8150b_typec>;
 		miseed,switch-charger = <&umi_charger>;
 		monitored-battery = <&umi_fg>;
+		io-channels = <&pm8150l_adc ADC5_AMUX_THM1_100K_PU>,
+			      <&pm8150b_adc ADC5_AMUX_THM3_100K_PU>,
+			      <&pm8150_adc ADC5_AMUX_THM1_100K_PU>,
+			      <&pm8150b_adc ADC5_AMUX_THM1_100K_PU>,
+			      <&pm8150l_adc ADC5_AMUX_THM2_100K_PU>;
+		io-channel-names = "cam_therm1", "conn_therm", "quiet_therm",
+				   "wireless_therm", "xo_therm";
+		/* This Android kernel has no board_sensor_temp_comp node. */
+		miseed,thermal-board-compensation-millicelsius = <0>;
 		ti,bat-ovp-millivolt = <4550>;
 		ti,bat-ovp-alarm-millivolt = <4525>;
 		ti,bus-ovp-millivolt = <12000>;
@@ -37,6 +46,53 @@
 		ti,bus-ocp-milliamp = <3750>;
 		ti,bus-ocp-alarm-milliamp = <3500>;
 		ti,ac-ovp-volt = <14>;
+	};
+};
+
+/* Fixed LOS Umi ADC wiring. Conversion/scale agreement still needs L3.
+ * These consumers do not turn on Type-C/I2C15/the pump or any power GPIO.
+ */
+&pm8150_adc {
+	channel@4d {
+		reg = <ADC5_AMUX_THM1_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "quiet_therm";
+	};
+};
+
+&pm8150b_adc {
+	channel@4d {
+		reg = <ADC5_AMUX_THM1_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "wireless_therm";
+	};
+	channel@4f {
+		reg = <ADC5_AMUX_THM3_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "conn_therm";
+	};
+};
+
+&pm8150l_adc {
+	channel@4d {
+		reg = <ADC5_AMUX_THM1_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "cam_therm1";
+	};
+	channel@4e {
+		reg = <ADC5_AMUX_THM2_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "xo_therm";
 	};
 };
 

@@ -6,7 +6,7 @@
 
 参考 LineageOS `lineage-23.2`，固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c`；作者、许可证和文件哈希见 [NOTICE](NOTICE.md) 与[来源锁](../../manifests/sources.lock.json)。依赖本项目固定 Linux 的 PM8150B Type-C/PD PHY、TCPM power_supply 接口和现有 FG/SMB5。Android 的 usbpd、pmic-voter、私有 power_supply 属性不直接导入。
 
-仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。设备 ID 必须另行核实。固定 PDO 仅声明 5 V / 0.5 A，PPS APDO 声明 3.3–11 V / 3 A；控制器限制到 9.5 V、3 A 总线和 6 A 电池，数值来自参考策略，不是实测充电功率。
+仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。固定 PDO 仅声明 5 V / 0.5 A，PPS APDO 声明 3.3–11 V / 3 A；控制器限制到 9.5 V、3 A 总线和 6 A 电池，数值来自参考策略，不是实测充电功率。
 
 ## 状态与安全退出
 
@@ -20,6 +20,8 @@ BQ watchdog 选择 5 秒，刷新与成功控制循环绑定。其寄存器编�
 
 阻塞 I/O 返回后重新检查会话期限：PPS 激活、电压/电流请求、watchdog 刷新与启泵分别检查，SETTLE 还受 5 秒窗口约束。已过期时不继续提交主动请求，进入原停泵/固定合约回退；清理操作不被期限拦截。这不能中止已经发出的挂死事务，也不是硬实时或硬件 watchdog 的验证。
 
+常规温控取自本机 LOS 有效配置及已核实的动作映射：电池温度加五路 PMIC IIO 温度，计算虚拟温度、九档滞回，再查原 16 档 PPS FCC 表。未知屏幕状态取两种动作的严格值；读取错误、ADC 端点、整组采样超过 200 ms 均停止。降额先降低 PD 电流，单次会话不再提高；超出实测电流上限或降至现有泵工作范围之外则停止。原系统 3 秒延迟降额不移植。细节和 L1/L2 见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)，主线温度标度仍待 L3。
+
 ## 必须补齐的板级属性
 
 驱动没有以下参数的默认值，缺一即拒绝 probe：
@@ -30,8 +32,11 @@ BQ watchdog 选择 5 秒，刷新与成功控制循环绑定。其寄存器编�
 | `ti,bat-ocp-milliamp` / `ti,bat-ocp-alarm-milliamp` | mA；精确编码、alarm < trip，须确认电池与路径额定能力 |
 | `ti,tsbat-threshold-code` / `ti,tsbus-threshold-code` | 原始 8 位编码；必须匹配实板热敏网络 |
 | `ti,die-alarm-decicelsius` / `miseed,die-max-decicelsius` | 0.1°C；软件停止值必须低于硬件 alarm |
+| `miseed,thermal-board-compensation-millicelsius` | 毫摄氏度；只接受本机已观测的 0；五路命名 IIO 输入必须是温度类型 |
 
 已知 VBUS/VBAT OVP、总线 OCP 和 AC OVP 取自固定 Umi DTS；仍须独立审查其适用性。测试文件里的 synthetic 数值不是板级参数，不得复制到设备树。
+
+0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
 启用前还需：核实 I2C15 `0x884000`、地址 `0x66`、GPIO68 中断；验证 RISK-010 的 overlay 隔离与 TD-002 的 UART-only TLMM；GPIO44/45/68 当前仍保留；确认 Type-C 的 `pm8150b_vbus` 供给（驱动已编入，但该节点仍禁用）及电源路径 GPIO；完成保护专项复核。共享 VBUS 源端不得被其他节点重新驱动；仅允许 sink/device。
 
@@ -45,6 +50,6 @@ BQ watchdog 选择 5 秒，刷新与成功控制循环绑定。其寄存器编�
 
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
-- 独立授权的本机 L3：先验证不启泵的读回/身份，再验证保护与退出，最后逐步评估 PPS。具体证据要求见 [QUALITY](../../docs/QUALITY.md)，本轮没有执行设备操作。
+- 本机 L3：用户已请求后续 RAM 启动与快充插拔测试；先闭合保护，再验证新拓扑、温度标度、保护与退出。具体证据要求见 [QUALITY](../../docs/QUALITY.md)，本轮仅有 Android 只读采集，尚未启动新 MiSeed 镜像。
 
 来源、PMIC 隔离、最小 GPIO 配置与 PD PHY 电源补齐见[续查记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可在后续授权采集时补充已有启动日志中的芯片 ID 与缓存 PDO，不把 standalone 名称当成芯片型号。本轮无新增保护校准默认值，PPS 仍不准入。

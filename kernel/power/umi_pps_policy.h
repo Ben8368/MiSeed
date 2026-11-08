@@ -20,6 +20,73 @@
 #define UMI_PPS_PERIOD_MS 200
 #define UMI_PPS_START_MS 5000
 
+/* Normal-profile facts observed on this Umi. The opaque Android daemon is
+ * not redistributed. Its generic_set_level selects target / 100 while the
+ * screen-state input is nonzero, target % 100 otherwise (targets >= 100).
+ * Unknown screen state uses the stricter result, never an unrestricted vote.
+ */
+#define UMI_PPS_THERMAL_SENSORS 6
+#define UMI_PPS_THERMAL_STEPS 9
+struct umi_pps_thermal {
+	int step, level, virtual_mc, max_bat_ma;
+};
+
+static inline int umi_pps_thermal_level(int target, int screen_state)
+{
+	int on, off;
+
+	if (target < 0)
+		return -1;
+	on = target < 100 ? target : target / 100;
+	off = target < 100 ? target : target % 100;
+	if (on > 15 || off > 15)
+		return -1;
+	if (screen_state < 0)
+		return on > off ? on : off;
+	return screen_state ? on : off;
+}
+
+static inline int umi_pps_thermal_update(struct umi_pps_thermal *t,
+		const int temp_mc[UMI_PPS_THERMAL_SENSORS], int screen_state,
+		int board_comp_mc)
+{
+	/* battery, cam_therm1, conn_therm, quiet_therm, wireless_therm, xo_therm */
+	static const int weight[] = {223, 150, 440, -143, 115, 149};
+	static const int trigger[] = {41000, 43000, 45000, 46000, 47000,
+		48000, 49000, 50000, 63000};
+	static const int clear[] = {38000, 41000, 43000, 45000, 46000,
+		47000, 48000, 49000, 51000};
+	static const int target[] = {0, 803, 1106, 1206, 1206, 1209,
+		1410, 1512, 1514, 1515};
+	/* Fixed LOS Umi thermal-fcc-pps-bq table, battery-side mA. */
+	static const int fcc_ma[] = {6000, 5700, 5475, 5250, 5025, 4800,
+		4575, 4350, 4100, 3500, 3000, 2400, 2000, 1500, 1000, 500};
+	long long sum = 0, virtual_mc;
+	int i, step = t->step, level;
+
+	if (step < 0 || step > UMI_PPS_THERMAL_STEPS || board_comp_mc != 0)
+		return -1; /* Only the observed no-board-compensation profile is qualified. */
+	for (i = 0; i < UMI_PPS_THERMAL_SENSORS; i++) {
+		/* ADC thermistor range; reject endpoints as possible open/short rails. */
+		if (temp_mc[i] <= -40000 || temp_mc[i] >= 125000)
+			return -1;
+		sum += (long long)temp_mc[i] * weight[i];
+	}
+	virtual_mc = sum / 1000 + 4541;
+	while (step < UMI_PPS_THERMAL_STEPS && virtual_mc >= trigger[step])
+		step++;
+	while (step > 0 && virtual_mc < clear[step - 1])
+		step--;
+	level = umi_pps_thermal_level(target[step], screen_state);
+	if (level < 0)
+		return -1;
+	t->step = step;
+	t->level = level;
+	t->virtual_mc = (int)virtual_mc;
+	t->max_bat_ma = fcc_ma[level];
+	return 0;
+}
+
 struct umi_pps_caps {
 	int min_mv, max_mv, max_ma;
 };
@@ -28,6 +95,7 @@ struct umi_pps_sample {
 	int online, present, good, temp, soc;
 	int vbat_mv, ibat_ma, vbus_mv, ibus_ma;
 	int pump_vbat_mv, pump_ibat_ma;
+	int thermal_bat_ma;
 	int fault, alarm, bus_low, bus_high, switching;
 };
 
@@ -89,9 +157,11 @@ static inline int umi_pps_sample_ok(const struct umi_pps_sample *s,
 	int delta = s->pump_vbat_mv - s->vbat_mv;
 
 	return umi_pps_battery_ok(s, max_mv) && !s->fault &&
+		s->thermal_bat_ma > 0 && s->thermal_bat_ma <= UMI_PPS_BAT_MAX_MA &&
+		s->ibat_ma <= s->thermal_bat_ma &&
 		s->pump_vbat_mv >= UMI_PPS_MIN_BAT_MV && s->pump_vbat_mv < max_mv &&
 		delta >= -50 && delta <= 50 &&
-		s->pump_ibat_ma >= 0 && s->pump_ibat_ma <= UMI_PPS_BAT_MAX_MA &&
+		s->pump_ibat_ma >= 0 && s->pump_ibat_ma <= s->thermal_bat_ma &&
 		s->ibus_ma >= 0 && s->ibus_ma <= max_ma &&
 		s->vbus_mv >= 2 * UMI_PPS_MIN_BAT_MV && s->vbus_mv <= UMI_PPS_MAX_MV &&
 		s->vbus_mv >= requested_mv - 200 && s->vbus_mv <= requested_mv + 200;
@@ -106,11 +176,11 @@ static inline int umi_pps_next_mv(const struct umi_pps_sample *s,
 	if (!umi_pps_caps_ok(c))
 		return -1;
 	if (s->bus_high || s->alarm || s->vbat_mv >= max_bat_mv - 20 ||
-	    s->pump_ibat_ma >= UMI_PPS_BAT_MAX_MA - 100 ||
-	    s->ibat_ma >= UMI_PPS_BAT_MAX_MA - 100 || s->ibus_ma >= max_ma - 100)
+	    s->pump_ibat_ma >= s->thermal_bat_ma - 100 ||
+	    s->ibat_ma >= s->thermal_bat_ma - 100 || s->ibus_ma >= max_ma - 100)
 		step = -UMI_PPS_STEP_MV;
 	else if (s->bus_low || (s->vbat_mv < max_bat_mv - 30 &&
-		 s->ibat_ma < UMI_PPS_BAT_MAX_MA - 200 && s->ibus_ma < max_ma - 200))
+		 s->ibat_ma < s->thermal_bat_ma - 200 && s->ibus_ma < max_ma - 200))
 		step = UMI_PPS_STEP_MV;
 	next = mv + step;
 	if (next < c->min_mv || next > umi_pps_min(c->max_mv, UMI_PPS_MAX_MV))

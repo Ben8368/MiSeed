@@ -19,6 +19,9 @@ typedef int16_t s16;
 struct device { int unused; };
 struct mutex { int unused; };
 struct regmap { int unused; };
+struct iio_channel { int index; };
+static struct iio_channel thermal_channels[5];
+static int thermal_mc[5], thermal_fail, thermal_delay_ms;
 struct work_struct { int unused; };
 struct delayed_work { struct work_struct work; };
 #define to_delayed_work(p) container_of(p, struct delayed_work, work)
@@ -51,6 +54,11 @@ static u64 read_delay_ms, request_delay_ms;
 static int voltage_requests, current_requests, pps_activations;
 static const char *missing_property;
 static int io_fail(void) { return ++io_count == fail_at ? -EIO : 0; }
+static int iio_read_channel_processed(struct iio_channel *chan, int *v) {
+ int ret=io_fail();if(ret)return ret;
+ if(thermal_fail && chan->index==thermal_fail-1)return -EIO;
+ clock_ms+=thermal_delay_ms;*v=thermal_mc[chan->index];return 0;
+}
 static void adc(int channel, int value) {
  regs[0x16 + channel*2] = ((unsigned int)value >> 8) & 255;
  regs[0x17 + channel*2] = value & 255;
@@ -136,6 +144,7 @@ static int device_property_read_u32(struct device *d, const char *key, u32 *v) {
   {"ti,bat-ocp-alarm-milliamp",7500}, {"ti,bus-ovp-millivolt",12000},
   {"ti,bus-ovp-alarm-millivolt",11000}, {"ti,bus-ocp-milliamp",3750},
   {"ti,bus-ocp-alarm-milliamp",3500}, {"ti,ac-ovp-volt",14}
+  ,{"miseed,thermal-board-compensation-millicelsius",0}
  };
  if(missing_property && !strcmp(key,missing_property)) return -EINVAL;
  for(unsigned int i=0;i<sizeof(values)/sizeof(values[0]);i++)
@@ -155,6 +164,8 @@ static void reset(void) {
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
  missing_property=NULL;hot_during_request=0;
  delayed_reg=0;read_delay_ms=request_delay_ms=0;voltage_requests=current_requests=pps_activations=0;
+ thermal_fail=thermal_delay_ms=0;
+ for(int i=0;i<5;i++){thermal_channels[i].index=i;thermal_mc[i]=30000;c.thermal_channels[i]=&thermal_channels[i];}
  pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD_PPS;
  pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MIN]=3300000;
  pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MAX]=11000000;
@@ -178,6 +189,22 @@ static void run(void) {
  clock_ms+=200;tick(); assert(c.state==PPS_RUN && enable_count==1);
 }
 int main(void) {
+ struct umi_pps_thermal thermal={0};int temperatures[6]={30000,30000,30000,30000,30000,30000};
+ assert(umi_pps_thermal_level(803,1)==8 && umi_pps_thermal_level(803,0)==3);
+ assert(umi_pps_thermal_level(803,-1)==8 && umi_pps_thermal_level(1500,-1)==15);
+ assert(umi_pps_thermal_level(1615,-1)<0 && umi_pps_thermal_level(-1,0)<0);
+ assert(!umi_pps_thermal_update(&thermal,temperatures,-1,0));
+ assert(thermal.virtual_mc==32561 && thermal.level==0 && thermal.max_bat_ma==6000);
+ /* At 40C inputs the observed weighted model is 41.901C, step 1. */
+ for(int i=0;i<6;i++)temperatures[i]=40000;
+ assert(!umi_pps_thermal_update(&thermal,temperatures,-1,0));
+ assert(thermal.step==1 && thermal.level==8 && thermal.max_bat_ma==4100);
+ for(int i=0;i<6;i++)temperatures[i]=38000;
+ assert(!umi_pps_thermal_update(&thermal,temperatures,-1,0) && thermal.step==1);
+ for(int i=0;i<6;i++)temperatures[i]=35000;
+ assert(!umi_pps_thermal_update(&thermal,temperatures,-1,0) && thermal.step==0);
+ temperatures[2]=125000;assert(umi_pps_thermal_update(&thermal,temperatures,-1,0)<0);
+ temperatures[2]=35000;assert(umi_pps_thermal_update(&thermal,temperatures,-1,1)<0);
  struct umi_pps_caps caps={3300,11000,3000};
  assert(umi_pps_target(&caps,4000)==8400);
  assert(umi_pps_target(&caps,3499)<0);
@@ -200,7 +227,7 @@ int main(void) {
  reset();c.seconds=600;run();clock_ms=c.deadline-200;tick();assert(c.state==PPS_RUN);
  clock_ms=c.deadline;tick();assert(c.state==PPS_DONE);
  /* Current/voltage/temperature/SOC/protection/contract/ownership failures. */
- for(int fault=0;fault<22;fault++) {
+ for(int fault=0;fault<23;fault++) {
   reset();run();int feeds=kick_count;
   switch(fault) {
    case 0: fail_sensor=1;break;
@@ -225,6 +252,7 @@ int main(void) {
    case 19: regs[0x0a]|=BIT(0);break;
    case 20: regs[0x2c]|=BIT(0);break;
    case 21: pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=2000000;break;
+   case 22: regs[0x2b]|=BIT(3);break;
   }
   clock_ms+=200;tick();assert(c.state==PPS_FAULT);
   assert(!(regs[0x0c]&BIT(7)) && !claim_owned && kick_count==feeds);
@@ -265,6 +293,24 @@ int main(void) {
  old_kicks=kick_count;assert(umi_pps_refresh(&c)==-ETIME && kick_count==old_kicks);
  reset();run();hot_during_request=1;int pre_feeds=kick_count;clock_ms+=200;tick();
  assert(c.state==PPS_FAULT && kick_count==pre_feeds && !claim_owned);
+ /* Missing, implausible or stale external telemetry must stop with no feed. */
+ for(int i=1;i<=5;i++) {
+  reset();run();thermal_fail=i;int previous=kick_count;tick();
+  assert(c.state==PPS_FAULT && !claim_owned && kick_count==previous);
+ }
+ reset();thermal_delay_ms=41;begin();assert(c.state==PPS_FAULT && !enable_count);
+ reset();run();thermal_mc[1]=125000;pre_feeds=kick_count;tick();
+ assert(c.state==PPS_FAULT && kick_count==pre_feeds);
+ /* Thermal reduction is applied to PD current, and cannot auto-increase. */
+ reset();run();bms.prop[POWER_SUPPLY_PROP_TEMP]=400;
+ for(int i=0;i<5;i++)thermal_mc[i]=40000;
+ tick();assert(c.state==PPS_RUN && c.thermal.level==8 && c.request_ma==2050);
+ bms.prop[POWER_SUPPLY_PROP_TEMP]=300;for(int i=0;i<5;i++)thermal_mc[i]=30000;
+ tick();assert(c.state==PPS_RUN && c.request_ma==2050);
+ /* A lower LOS FCC than this PPS profile can support ends the session. */
+ reset();run();bms.prop[POWER_SUPPLY_PROP_TEMP]=430;
+ for(int i=0;i<5;i++)thermal_mc[i]=43000;
+ tick();assert(c.state==PPS_FAULT && !claim_owned);
  /* Failed stop retains ownership, does not feed, retries both mechanisms. */
  reset();run();fail_stop=1;int feeds=kick_count;
  assert(umi_pps_stop(&c,PPS_OFF,0)==-EIO && c.stop_pending && claim_owned);

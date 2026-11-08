@@ -447,7 +447,8 @@
         "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi",
         "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi",
         "COPYING",
-        "drivers/pinctrl/qcom/pinctrl-kona.c"
+        "drivers/pinctrl/qcom/pinctrl-kona.c",
+        "drivers/power/supply/qcom/smb5-lib.c"
       ],
       "submodules": [],
       "patches": [],
@@ -467,7 +468,8 @@
         "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi": "91147d6f1676ea70f6e6c8e78a1d81399a3bb186986e712fc1246ad1b2250763",
         "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi": "cd826a3af94fe27d95644a4492d4a990f8afed9660cdafdcfed25282973691f0",
         "COPYING": "ee5808b032a67f587d3541099d46de34f5bec8cd5976114ba07f1299ee6001ff",
-        "drivers/pinctrl/qcom/pinctrl-kona.c": "87014b0ea67da00fb7c78f543c0030647a546797a15f3192657d0ca5840820ff"
+        "drivers/pinctrl/qcom/pinctrl-kona.c": "87014b0ea67da00fb7c78f543c0030647a546797a15f3192657d0ca5840820ff",
+        "drivers/power/supply/qcom/smb5-lib.c": "8f542b9679a95da4c5a1bdf1d622ea4e06ab31345b158c9a68bb7d7ff9edeb68"
       },
       "pps_port": {
         "assessment": "docs/archive/research/2026-11-08-lineage-pps-port.md",
