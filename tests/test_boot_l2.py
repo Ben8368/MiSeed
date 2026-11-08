@@ -96,6 +96,14 @@ class SourceCacheTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "marker mismatch"):
             self.verify()
 
+    @unittest.skipIf(os.name == "nt", "POSIX FIFO fixture")
+    def test_revision_marker_fifo_is_rejected_without_reading(self):
+        marker = self.source / ".miseed-source-revision"
+        marker.unlink()
+        os.mkfifo(marker)
+        with self.assertRaisesRegex(ValueError, "not a regular file"):
+            self.verify()
+
     def test_cli_fails_closed_for_dirty_cache(self):
         (self.source / "include/board.dtsi").write_bytes(b"changed")
         result = subprocess.run(
@@ -119,8 +127,14 @@ class SourceCacheTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not a regular file"):
             self.verify()
 
+    def test_generated_file_path_directory_is_rejected(self):
+        path = self.source / "arch/arm64/boot/dts/qcom/umi-csot.dts"
+        path.mkdir(parents=True)
+        with self.assertRaisesRegex(ValueError, "not a regular file"):
+            self.verify()
 
-    def run_cache_preparation(self, dirty):
+
+    def run_cache_preparation(self, dirty, fail_after_selection=False):
         work = self.root / "work"
         work.mkdir()
         cached_source = work / ("linux-source-" + self.revision)
@@ -151,15 +165,19 @@ class SourceCacheTests(unittest.TestCase):
                 lines[index] = "readonly kernel_revision=" + self.revision
             elif line.startswith("readonly boot_sha256="):
                 lines[index] = "readonly boot_sha256=" + hashlib.sha256(template).hexdigest()
+        lines.append('python3 "$repo_root/tools/verify_kernel_source.py" --repository "$source_repository" --revision "$kernel_revision" --source "$source_tree"')
         lines.append('printf "SELECTED:%s\\nSELECTED:%s\\n" "$source_tree" "$build_tree"')
+        if fail_after_selection:
+            lines.append("exit 17")
         entry = self.root / "prepare.sh"
         entry.write_text("\n".join(lines) + "\n")
         env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"],
                    MISEED_KERNEL_SOURCE=str(self.repo), MISEED_WORK_ROOT=str(work),
                    MISEED_OUTPUT_ROOT=str(self.root / "output"), MISEED_JOBS="1")
         env.pop("MISEED_BUILD_ROOT", None)
+        env.pop("MISEED_EXTRACTED_SOURCE", None)
         result = subprocess.run(["bash", entry], env=env, capture_output=True, text=True, timeout=20)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 17 if fail_after_selection else 0, result.stderr)
         selected = [Path(line.removeprefix("SELECTED:")) for line in result.stdout.splitlines()
                     if line.startswith("SELECTED:")]
         self.assertEqual(len(selected), 2, result.stdout)
@@ -177,8 +195,18 @@ class SourceCacheTests(unittest.TestCase):
         self.assertNotEqual(selected[1], build)
         self.assertEqual((source / "include/board.dtsi").read_bytes(), b"edited")
         self.assertEqual((build / "stale-object.o").read_bytes(), b"old build")
-        verifier.verify_source(self.repo, self.revision, selected[0])
-        self.assertEqual(list(selected[1].iterdir()), [])
+        self.assertFalse(selected[0].exists())
+        self.assertFalse(selected[1].exists())
+
+    @unittest.skipUnless(sys.platform == "linux" and shutil.which("bash"), "Linux Bash required")
+    def test_temporary_fallback_trees_are_removed_after_failure(self):
+        source, build, selected = self.run_cache_preparation(dirty=True, fail_after_selection=True)
+        self.assertNotEqual(selected[0], source)
+        self.assertNotEqual(selected[1], build)
+        self.assertFalse(selected[0].exists())
+        self.assertFalse(selected[1].exists())
+        self.assertEqual((source / "include/board.dtsi").read_bytes(), b"edited")
+        self.assertEqual((build / "stale-object.o").read_bytes(), b"old build")
 
 
 @unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "POSIX Bash required")

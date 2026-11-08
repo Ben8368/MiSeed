@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools import apply_power_port
 
@@ -41,6 +42,37 @@ class PowerPortTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pinned Linux"):
             self.stage()
         self.assertFalse((self.target / "qcom_fg.c").exists())
+
+    @unittest.skipIf(os.name == "nt", "POSIX FIFO fixture")
+    def test_nonregular_revision_marker_is_rejected_before_read(self):
+        marker = self.source / ".miseed-source-revision"
+        marker.unlink()
+        os.mkfifo(marker)
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            self.stage()
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink fixture")
+    def test_symlinked_power_destination_directory_is_rejected(self):
+        external = self.source / "external"
+        external.mkdir()
+        (external / "Makefile").write_text("keep\n")
+        shutil.rmtree(self.target)
+        self.target.symlink_to(external, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink directory"):
+            self.stage()
+        self.assertEqual((external / "Makefile").read_text(), "keep\n")
+
+    @unittest.skipIf(os.name == "nt", "POSIX symlink fixture")
+    def test_symlinked_board_destination_directory_is_rejected(self):
+        dts_root = self.source / "arch/arm64/boot/dts"
+        dts_root.mkdir(parents=True)
+        external = self.source / "external-board"
+        external.mkdir()
+        (dts_root / "qcom").symlink_to(external, target_is_directory=True)
+        with self.assertRaises(SystemExit):
+            with patch("sys.argv", ["apply_power_port", "--source", str(self.source)]):
+                apply_power_port.main()
+        self.assertEqual(list(external.iterdir()), [])
 
     @unittest.skipIf(os.name == "nt", "POSIX symlink fixture")
     def test_symlink_does_not_overwrite_external_file(self):
@@ -118,8 +150,89 @@ int main(void) {
         entry = self.source / "behaviour.c"
         binary = self.source / "behaviour"
         entry.write_text(harness)
-        subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(entry), "-o", str(binary)],
-                       check=True, capture_output=True)
+        result = subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(entry), "-o", str(binary)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        subprocess.run([str(binary)], check=True, timeout=10)
+
+    @unittest.skipUnless(shutil.which("cc"), "C compiler required")
+    def test_fg_capacity_endpoints_and_temperature_threshold_mapping(self):
+        source = (ROOT / "kernel/power/qcom_fg.c").read_text()
+
+        def function(name):
+            start = source.index("static int " + name + "(")
+            stop = source.index("\n}\n", start) + 3
+            return source[start:stop]
+
+        functions = [function(name) for name in (
+            "qcom_fg_get_capacity", "qcom_fg_get_temp_threshold",
+            "qcom_fg_set_temp_threshold", "qcom_fg_gen3_get_temp_threshold")]
+        harness = r'''
+#include <assert.h>
+#include <errno.h>
+#include <stdint.h>
+#include <string.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+enum power_supply_property { POWER_SUPPLY_PROP_TEMP_MIN, POWER_SUPPLY_PROP_TEMP_MAX,
+ POWER_SUPPLY_PROP_TEMP_ALERT_MIN, POWER_SUPPLY_PROP_TEMP_ALERT_MAX };
+#define BATT_MONOTONIC_SOC 0x009
+#define TEMP_THRESHOLD 0x454
+#define BATT_INFO_JEITA_COLD 0x162
+#define BATT_INFO_JEITA_COOL 0x163
+#define BATT_INFO_JEITA_WARM 0x164
+#define BATT_INFO_JEITA_HOT 0x165
+#define DIV_ROUND_CLOSEST(n,d) (((n) + (d) / 2) / (d))
+#define dev_err(...) ((void)0)
+struct qcom_fg_chip { void *dev; };
+static u8 raw_soc[2] = { 1, 1 }, raw_temp;
+static int observed_offset = -1, sram_error;
+static int qcom_fg_read(struct qcom_fg_chip *chip, u8 *out, u16 addr, int len)
+{
+ (void)chip;
+ if (addr == BATT_MONOTONIC_SOC) { memcpy(out, raw_soc, len); return 0; }
+ assert(addr == BATT_INFO_JEITA_COLD || addr == BATT_INFO_JEITA_COOL ||
+        addr == BATT_INFO_JEITA_WARM || addr == BATT_INFO_JEITA_HOT);
+ observed_offset = addr; *out = raw_temp; return 0;
+}
+static int qcom_fg_sram_read(struct qcom_fg_chip *chip, u8 *out, u16 addr, int len, int offset)
+{ (void)chip; assert(addr == TEMP_THRESHOLD && len == 1); observed_offset = offset; *out = raw_temp; return sram_error; }
+static int qcom_fg_sram_write(struct qcom_fg_chip *chip, u8 *in, u16 addr, int len, int offset)
+{ (void)chip; assert(addr == TEMP_THRESHOLD && len == 1); observed_offset = offset; raw_temp = *in; return sram_error; }
+'''
+        harness += "\n".join(functions) + r'''
+int main(void) {
+ struct qcom_fg_chip chip = { 0 };
+ int value = -1;
+ raw_soc[0] = raw_soc[1] = 0;
+ assert(!qcom_fg_get_capacity(&chip, &value) && value == 0);
+ raw_soc[0] = raw_soc[1] = 0xff;
+ assert(!qcom_fg_get_capacity(&chip, &value) && value == 100);
+ raw_soc[0] = raw_soc[1] = 1;
+ assert(!qcom_fg_get_capacity(&chip, &value) && value == 1);
+ raw_soc[0] = raw_soc[1] = 0xfe;
+ assert(!qcom_fg_get_capacity(&chip, &value) && value == 99);
+ const int props[] = { POWER_SUPPLY_PROP_TEMP_MIN, POWER_SUPPLY_PROP_TEMP_MAX,
+                       POWER_SUPPLY_PROP_TEMP_ALERT_MIN, POWER_SUPPLY_PROP_TEMP_ALERT_MAX };
+ const int offsets[] = { 2, 3, 0, 1 };
+ for (int i = 0; i < 4; ++i) {
+  assert(!qcom_fg_get_temp_threshold(&chip, props[i], &value));
+  assert(observed_offset == offsets[i]);
+  assert(!qcom_fg_set_temp_threshold(&chip, props[i], 100));
+  assert(observed_offset == offsets[i]);
+ }
+ raw_temp = 111;
+ assert(!qcom_fg_gen3_get_temp_threshold(&chip, POWER_SUPPLY_PROP_TEMP_MIN, &value));
+ assert(value == 255);
+ return 0;
+}
+'''
+        entry = self.source / "fg.c"
+        binary = self.source / "fg"
+        entry.write_text(harness)
+        result = subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(entry), "-o", str(binary)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
         subprocess.run([str(binary)], check=True, timeout=10)
 
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
@@ -162,7 +275,11 @@ int main(void) {
     def test_worker_extended_window_timeout_unplug_faults_and_explicit_stop(self):
         source = (ROOT / "kernel/power/qcom_pm8150b_charger.c").read_text()
         functions = []
-        for name in ("static void smb5_status_change_work(",
+        for name in ("static int smb5_inhibit_with_fallback(",
+                     "static int smb5_get_charge_control_threshold(",
+                     "static void smb5_status_change_work(",
+                     "static irqreturn_t smb5_handle_usb_plugin(",
+                     "static int smb5_get_iio_chan(",
                      "static ssize_t charge_test_store("):
             start = source.index(name)
             stop = source.index("\n}\n", start) + 3
@@ -177,6 +294,8 @@ int main(void) {
 #include <string.h>
 #include <sys/types.h>
 #include "umi_charge_policy.h"
+typedef int irqreturn_t;
+struct iio_channel { int unused; };
 #define HZ 1000UL
 #define USBIN_CMD_IL 0x340
 #define USBIN_SUSPEND_BIT 1
@@ -187,6 +306,9 @@ int main(void) {
 #define POWER_SUPPLY_HEALTH_GOOD 1
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO 0
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE 1
+#define IRQ_HANDLED 1
+#define IS_ERR(chan) ((chan) == NULL)
+#define PTR_ERR(chan) (-EINVAL)
 enum { POWER_SUPPLY_PROP_PRESENT, POWER_SUPPLY_PROP_TEMP,
        POWER_SUPPLY_PROP_VOLTAGE_NOW, POWER_SUPPLY_PROP_CAPACITY,
        POWER_SUPPLY_PROP_CURRENT_NOW };
@@ -206,6 +328,7 @@ static unsigned long jiffies;
 static int online = 1, usb_error, battery_error, limit_error, stop_error;
 static int values[] = { 1, 300, 4100000, 78, 0 };
 static int health = POWER_SUPPLY_HEALTH_GOOD, enabled, feeds, suspends;
+static int adc_reads, adc_error;
 #define container_of(ptr, type, member) ((type *)((char *)(ptr) - offsetof(type, member)))
 #define time_after_eq(a,b) ((long)((a) - (b)) >= 0)
 #define mutex_lock(p) ((void)(p))
@@ -233,6 +356,8 @@ static int regmap_write(void *map, unsigned int reg, unsigned int v)
 { (void)map; assert(reg == BARK_BITE_WDOG_PET && v == 1); ++feeds; return 0; }
 static int smb5_set_prop_charging_enabled(struct smb5_chip *c, unsigned int v)
 { (void)c; if (v == 1 && stop_error) return stop_error; enabled = !v; return 0; }
+static int iio_read_channel_processed(struct iio_channel *chan, int *value)
+{ (void)chan; ++adc_reads; if (adc_error) return adc_error; *value = 1234; return 0; }
 '''
         harness += "\n".join(functions) + r'''
 static void tick(struct smb5_chip *c, unsigned long t, int plugged)
@@ -255,10 +380,14 @@ int main(void) {
  tick(&c, 1000, 1); assert(!enabled && !c.test_active);
  tick(&c, 2000, 0); assert(!enabled && c.test_saw_disconnect);
  tick(&c, 3000, 1); assert(enabled && c.test_active && c.test_deadline == 603000);
+ assert(smb5_get_charge_control_threshold(&c, true) == 100);
+ assert(smb5_get_charge_control_threshold(&c, false) == 0);
  tick(&c, 62000, 1); assert(enabled); /* not the default 60-second timeout */
  tick(&c, 602999, 1); assert(enabled && c.test_active);
  tick(&c, 603000, 1); assert(!enabled && !c.test_active && !c.test_armed);
  tick(&c, 604000, 1); assert(!enabled); /* 78% restores normal inhibition */
+ assert(smb5_get_charge_control_threshold(&c, true) == UMI_CHARGE_UPPER_SOC);
+ assert(smb5_get_charge_control_threshold(&c, false) == UMI_CHARGE_LOWER_SOC);
  arm(&c, "arm"); assert(c.test_seconds == 60);
  tick(&c, 605000, 0); tick(&c, 606000, 1); assert(enabled);
  tick(&c, 666000, 1); assert(!enabled && !c.test_armed);
@@ -270,6 +399,21 @@ int main(void) {
  /* Unplug consumes the insertion; the next computer attachment cannot rearm. */
  arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
  tick(&c, 2000, 0); tick(&c, 3000, 1); assert(!enabled && !c.test_armed);
+ /* IRQ preserves a disconnect/reconnect that occurs between worker polls. */
+ arm(&c, "arm-10min"); online = 0; smb5_handle_usb_plugin(0, &c);
+ assert(c.test_saw_disconnect); online = 1; tick(&c, 4000, 1);
+ assert(enabled && c.test_active);
+ /* Input ADC remains available when USB is present but charging is inhibited. */
+ struct iio_channel channel = { 0 };
+ int measurement = -1; online = 1; enabled = 0;
+ assert(!smb5_get_iio_chan(&c, &channel, &measurement));
+ assert(measurement == 1234 && adc_reads == 1);
+ online = 0; measurement = -1;
+ assert(!smb5_get_iio_chan(&c, &channel, &measurement));
+ assert(measurement == 0 && adc_reads == 1);
+ online = 1; usb_error = -EIO;
+ assert(smb5_get_iio_chan(&c, &channel, &measurement) == -EIO);
+ usb_error = 0;
  /* Software stop, sensor/USB/limit failures and overcurrent cancel the test. */
  for (int fault = 0; fault < 5; ++fault) {
   arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
@@ -297,6 +441,10 @@ int main(void) {
  assert(charge_test_store(&d, NULL, "stop", 4) == -EIO);
  tick(&c, 5000, 1);
  assert(suspends >= 2 && feeds == old_feeds && c.inhibit && !c.test_armed);
+ stop_error = -EIO;
+ int old_suspends = suspends;
+ assert(smb5_inhibit_with_fallback(&c, "initial") == -EIO);
+ assert(suspends == old_suspends + 1);
  return 0;
 }
 '''

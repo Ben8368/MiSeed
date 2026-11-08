@@ -588,7 +588,8 @@ static void usb_console(void) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
         puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, reboot, bootloader");
-        puts("charge-log/logs: retained RAM timeline; charge: latest records; no charge control.");
+        puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
+        puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
             sleep(1);
@@ -645,7 +646,7 @@ int main(void) {
     charge_kmsg_fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (charge_kmsg_fd < 0) charge_log_append("ERROR", "kernel_log_unavailable errno=%d", errno);
     charge_screen_fd = open("/dev/tty0", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-    charge_log_append("START", "read_only=1 sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
+    charge_log_append("START", "samples_read_only=1 controls=charge-test,charge-test-10min,charge-stop sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
     charge_kernel_drain();
     charge_snapshot();
 

@@ -83,11 +83,7 @@ HARNESS = r'''
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #define BIT(n) (1U << (n))
 #define GENMASK(high, low) (((1U << ((high) + 1)) - 1) & ~((1U << (low)) - 1))
-#define OBS_CHGR_STATUS1 0x1006
-#define OBS_CHGR_STATUS2 0x1007
-#define OBS_CHGR_ENABLE 0x1042
-#define OBS_USB_RT 0x1310
-#define OBS_USB_PLUGIN BIT(4)
+@OBSERVER_CONSTANTS@
 struct power_observer { void *dev, *regmap; };
 static unsigned int values[4];
 static int reads, fault;
@@ -159,9 +155,12 @@ class ObserverTests(unittest.TestCase):
         self.assertNotRegex(source, r"\b(?:regmap_(?:write|bulk_write|update_bits|multi_reg_write)|request_irq|devm_request_threaded_irq)\s*\(")
         start = source.index("static void power_observer_sample(")
         end = source.index("\n}\n", start) + 3
+        constants = "\n".join(line for line in source.splitlines()
+                                if line.startswith("#define OBS_"))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "observer.c"
-            path.write_text(HARNESS.replace("@SAMPLE@", source[start:end]))
+            path.write_text(HARNESS.replace("@OBSERVER_CONSTANTS@", constants)
+                            .replace("@SAMPLE@", source[start:end]))
             binary = Path(directory) / "observer"
             result = subprocess.run([CC, "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
                                      "-Wno-sign-compare", str(path), "-o", str(binary)],

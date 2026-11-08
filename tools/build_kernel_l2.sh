@@ -12,6 +12,9 @@ readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
 readonly source_cache="${work_root}/linux-stable.git"
 source_tree="${MISEED_EXTRACTED_SOURCE:-${work_root}/linux-source-${kernel_revision}}"
 build_tree="${MISEED_BUILD_ROOT:-${work_root}/build-${kernel_revision}}"
+source_stage=""
+fallback_source_tree=""
+fallback_build_tree=""
 readonly template="${work_root}/reference-boot-v2.img"
 readonly input_dts="${repo_root}/kernel/umi-csot.dts"
 readonly config_fragment="${repo_root}/kernel/umi-l2.config"
@@ -24,6 +27,16 @@ export KBUILD_BUILD_HOST=Ubuntu2404
 
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"; }
+cleanup_fallback_trees() {
+    local path
+    for path in "$source_stage" "$fallback_source_tree" "$fallback_build_tree"; do
+        [[ -n "$path" && -d "$path" && ! -L "$path" ]] || continue
+        case "$path" in
+            "${work_root}"/linux-source.*|"${work_root}"/build-clean.*) rm -rf -- "$path" ;;
+        esac
+    done
+}
+trap cleanup_fallback_trees EXIT
 
 for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget; do require "$tool"; done
 require nproc
@@ -72,11 +85,16 @@ if [[ "$source_verified" != true ]]; then
     if [[ -e "$source_tree" || -L "$source_tree" ]]; then
         printf 'warning: unverified source cache preserved; using fresh source and build trees\n' >&2
         source_tree="$source_stage"
-        build_tree="$(mktemp -d "${work_root}/build-clean.XXXXXX")"
+        fallback_source_tree="$source_stage"
+        source_stage=""
+        fallback_build_tree="$(mktemp -d "${work_root}/build-clean.XXXXXX")"
+        build_tree="$fallback_build_tree"
     else
         mv -- "$source_stage" "$source_tree"
+        source_stage=""
         if [[ -e "$build_tree" || -L "$build_tree" ]]; then
-            build_tree="$(mktemp -d "${work_root}/build-clean.XXXXXX")"
+            fallback_build_tree="$(mktemp -d "${work_root}/build-clean.XXXXXX")"
+            build_tree="$fallback_build_tree"
         fi
     fi
 fi

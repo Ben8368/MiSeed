@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import argparse
+import stat
 from pathlib import Path
 
 
@@ -14,11 +15,30 @@ RULES = (
 KCONFIG_RULE = 'source "drivers/power/supply/miseed-power.Kconfig"'
 
 
+def destination_dir(source, relative):
+    source = Path(source)
+    current = source
+    for component in Path(relative).parts:
+        current = current / component
+        if current.is_symlink():
+            raise ValueError(f"refusing symlink directory: {current.relative_to(source)}")
+        if not current.is_dir():
+            raise ValueError(f"destination directory is missing: {current.relative_to(source)}")
+    return current
+
+
 def stage(source, inputs):
+    source = Path(source)
+    if source.is_symlink() or not source.is_dir():
+        raise ValueError("source must be a regular directory")
+
     marker = source / ".miseed-source-revision"
+    if not stat.S_ISREG(marker.lstat().st_mode):
+        raise ValueError("source revision marker must be a regular file")
     if marker.read_text().strip() != REVISION:
         raise ValueError("source is not the pinned Linux revision")
-    target = source / "drivers/power/supply"
+
+    target = destination_dir(source, "drivers/power/supply")
     for name in ("qcom_fg.c", "qcom_pm8150b_charger.c", "Kconfig", "Makefile",
                  "miseed-power.Kconfig", "umi_charge_policy.h"):
         if (target / name).is_symlink():
@@ -43,7 +63,11 @@ def main():
         stage(args.source, Path(__file__).resolve().parents[1] / "kernel/power")
     except (OSError, ValueError) as error:
         parser.exit(1, f"power port staging failed: {error}\n")
-    board = args.source / "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi"
+    try:
+        board_dir = destination_dir(args.source, "arch/arm64/boot/dts/qcom")
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+    board = board_dir / "umi-pm8150b.dtsi"
     if board.is_symlink():
         parser.error("refusing board include symlink")
     board.write_bytes((Path(__file__).resolve().parents[1] / "kernel/power/umi-pm8150b.dtsi").read_bytes())

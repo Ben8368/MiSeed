@@ -94,7 +94,12 @@ struct qcom_fg_chip {
 	struct power_supply_battery_info *batt_info;
 	struct power_supply *chg_psy;
 	int status;
+	int voltage_min_design_uv;
+	int voltage_max_design_uv;
+	int charge_full_design_uah;
 	struct delayed_work status_changed_work;
+	bool initialized;
+	bool notifier_registered;
 
 	struct completion sram_access_granted;
 	struct completion sram_access_revoked;
@@ -224,6 +229,10 @@ static int qcom_fg_sram_request_access(struct qcom_fg_chip *chip)
 {
 	bool sram_accessible;
 	int ret;
+	int clear_ret;
+
+	/* Do not let a queued release revoke access during a new request. */
+	cancel_delayed_work_sync(&chip->sram_release_access_work);
 
 	spin_lock(&chip->sram_request_lock);
 
@@ -233,6 +242,9 @@ static int qcom_fg_sram_request_access(struct qcom_fg_chip *chip)
 		sram_accessible, chip->sram_requests);
 
 	if (!sram_accessible && chip->sram_requests == 0) {
+		/* A completion from an earlier request is not a new hardware grant. */
+		reinit_completion(&chip->sram_access_granted);
+		reinit_completion(&chip->sram_access_revoked);
 		ret = qcom_fg_masked_write(chip, MEM_INTF_CFG(chip),
 				RIF_MEM_ACCESS_REQ, RIF_MEM_ACCESS_REQ);
 		if (ret) {
@@ -247,6 +259,8 @@ static int qcom_fg_sram_request_access(struct qcom_fg_chip *chip)
 	chip->sram_requests++;
 
 	spin_unlock(&chip->sram_request_lock);
+	if (sram_accessible)
+		return 0;
 
 	/* Wait to get access to SRAM, and try again if interrupted */
 	do {
@@ -260,6 +274,14 @@ static int qcom_fg_sram_request_access(struct qcom_fg_chip *chip)
 
 		spin_lock(&chip->sram_request_lock);
 		chip->sram_requests--;
+		if (!chip->sram_requests) {
+			clear_ret = qcom_fg_masked_write(chip, MEM_INTF_CFG(chip),
+					RIF_MEM_ACCESS_REQ, 0);
+			if (clear_ret)
+				dev_err(chip->dev,
+					"Failed to clear timed-out SRAM request: %d\n",
+					clear_ret);
+		}
 		spin_unlock(&chip->sram_request_lock);
 	} else {
 		ret = 0;
@@ -505,7 +527,10 @@ static int qcom_fg_get_capacity(struct qcom_fg_chip *chip, int *val)
 		cap[0] = cap[0] < cap[1] ? cap[0] : cap[1];
 	}
 
-	*val = DIV_ROUND_CLOSEST((cap[0] - 1) * 98, 0xff - 2) + 1;
+	if (cap[0] == 0 || cap[0] == 0xff)
+		*val = cap[0] ? 100 : 0;
+	else
+		*val = DIV_ROUND_CLOSEST((cap[0] - 1) * 98, 0xff - 2) + 1;
 
 	return 0;
 }
@@ -601,16 +626,16 @@ static int qcom_fg_get_temp_threshold(struct qcom_fg_chip *chip,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_TEMP_MIN:
-		offset = 0;
-		break;
-	case POWER_SUPPLY_PROP_TEMP_MAX:
-		offset = 1;
-		break;
-	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
 		offset = 2;
 		break;
-	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
+	case POWER_SUPPLY_PROP_TEMP_MAX:
 		offset = 3;
+		break;
+	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
+		offset = 0;
+		break;
+	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
+		offset = 1;
 		break;
 	default:
 		return -EINVAL;
@@ -644,16 +669,16 @@ static int qcom_fg_set_temp_threshold(struct qcom_fg_chip *chip,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_TEMP_MIN:
-		offset = 0;
-		break;
-	case POWER_SUPPLY_PROP_TEMP_MAX:
-		offset = 1;
-		break;
-	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
 		offset = 2;
 		break;
-	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
+	case POWER_SUPPLY_PROP_TEMP_MAX:
 		offset = 3;
+		break;
+	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
+		offset = 0;
+		break;
+	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
+		offset = 1;
 		break;
 	default:
 		return -EINVAL;
@@ -791,7 +816,7 @@ static int qcom_fg_gen3_get_temp_threshold(struct qcom_fg_chip *chip,
 	}
 
 	/* Resolution is 0.5C. Base is -30C. */
-	*val = (((5 * temp) / 10) - 30) * 10;
+	*val = 5 * (int)temp - 300;
 	return 0;
 }
 
@@ -886,6 +911,8 @@ static int qcom_fg_get_property(struct power_supply *psy,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		/* Get status from charger if available */
 		if (chip->chg_psy &&
 			chip->status != POWER_SUPPLY_STATUS_UNKNOWN) {
@@ -921,27 +948,43 @@ static int qcom_fg_get_property(struct power_supply *psy,
 
 		break;
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		ret = chip->ops->get_capacity(chip, &val->intval);
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		ret = chip->ops->get_current(chip, &val->intval);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		ret = chip->ops->get_voltage(chip, &val->intval);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN:
-		val->intval = chip->batt_info->voltage_min_design_uv;
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
+		val->intval = chip->voltage_min_design_uv;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN:
-		val->intval = chip->batt_info->voltage_max_design_uv;
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
+		val->intval = chip->voltage_max_design_uv;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		val->intval = chip->batt_info->charge_full_design_uah;
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
+		val->intval = chip->charge_full_design_uah;
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		if (chip->ops == &ops_fg_gen4) {
 			u8 missing;
 			ret = qcom_fg_read(chip, &missing, 0x107, 1);
@@ -952,12 +995,16 @@ static int qcom_fg_get_property(struct power_supply *psy,
 		}
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		ret = chip->ops->get_temperature(chip, &val->intval);
 		break;
 	case POWER_SUPPLY_PROP_TEMP_MIN:
 	case POWER_SUPPLY_PROP_TEMP_MAX:
 	case POWER_SUPPLY_PROP_TEMP_ALERT_MIN:
 	case POWER_SUPPLY_PROP_TEMP_ALERT_MAX:
+		if (!READ_ONCE(chip->initialized))
+			return -EAGAIN;
 		ret = chip->ops->get_temp_threshold(chip, psp, &val->intval);
 		break;
 	default:
@@ -1071,6 +1118,7 @@ static int qcom_fg_clear_ima(struct qcom_fg_chip *chip,
 		ret = qcom_fg_iacs_clear_sequence(chip);
 		if (!ret)
 			return -EAGAIN;
+		return ret;
 	}
 
 	return 0;
@@ -1118,6 +1166,9 @@ static int qcom_fg_notifier_call(struct notifier_block *nb,
 	union power_supply_propval propval;
 	int ret;
 
+	if (!READ_ONCE(chip->initialized))
+		return NOTIFY_DONE;
+
 	if (psy == chip->chg_psy) {
 		ret = power_supply_get_property(psy,
 				POWER_SUPPLY_PROP_STATUS, &propval);
@@ -1146,6 +1197,38 @@ static int qcom_fg_notifier_call(struct notifier_block *nb,
 	}
 
 	return NOTIFY_OK;
+}
+
+static void qcom_fg_cleanup_sram(void *data)
+{
+	struct qcom_fg_chip *chip = data;
+	int ret;
+
+	if (!chip->sram_wq)
+		return;
+
+	cancel_delayed_work_sync(&chip->sram_release_access_work);
+	spin_lock(&chip->sram_request_lock);
+	if (!chip->sram_requests) {
+		ret = qcom_fg_masked_write(chip, MEM_INTF_CFG(chip),
+				RIF_MEM_ACCESS_REQ, 0);
+		if (ret)
+			dev_err(chip->dev, "Failed to clear SRAM request during cleanup: %d\n",
+				ret);
+	}
+	spin_unlock(&chip->sram_request_lock);
+	destroy_workqueue(chip->sram_wq);
+	chip->sram_wq = NULL;
+}
+
+static void qcom_fg_release_battery_info(void *data)
+{
+	struct qcom_fg_chip *chip = data;
+
+	if (chip->batt_info) {
+		power_supply_put_battery_info(chip->batt_psy, chip->batt_info);
+		chip->batt_info = NULL;
+	}
 }
 
 static int qcom_fg_probe(struct platform_device *pdev)
@@ -1178,6 +1261,8 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	chip->base = be32_to_cpu(*prop_addr);
+	spin_lock_init(&chip->sram_request_lock);
+	spin_lock_init(&chip->sram_rw_lock);
 
 	/* Gen4 getters below use peripheral readback only. Do not touch IMA,
 	 * DMA, profile SRAM or JEITA thresholds just to expose telemetry. */
@@ -1222,6 +1307,10 @@ static int qcom_fg_probe(struct platform_device *pdev)
 	supply_config.drv_data = chip;
 	supply_config.fwnode = pdev->dev.fwnode;
 
+	ret = devm_add_action_or_reset(chip->dev, qcom_fg_cleanup_sram, chip);
+	if (ret)
+		return ret;
+
 	chip->batt_psy = devm_power_supply_register(chip->dev,
 			&batt_psy_desc, &supply_config);
 	if (IS_ERR(chip->batt_psy)) {
@@ -1237,6 +1326,12 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to get battery info: %d\n", ret);
 		return ret;
 	}
+	chip->voltage_min_design_uv = chip->batt_info->voltage_min_design_uv;
+	chip->voltage_max_design_uv = chip->batt_info->voltage_max_design_uv;
+	chip->charge_full_design_uah = chip->batt_info->charge_full_design_uah;
+	ret = devm_add_action_or_reset(chip->dev, qcom_fg_release_battery_info, chip);
+	if (ret)
+		return ret;
 
 	/* Initialize SRAM */
 	if (of_device_is_compatible(pdev->dev.of_node, "qcom,pmi8994-fg")) {
@@ -1251,6 +1346,8 @@ static int qcom_fg_probe(struct platform_device *pdev)
 		init_completion(&chip->sram_access_revoked);
 
 		chip->sram_wq = create_singlethread_workqueue("qcom_fg");
+		if (!chip->sram_wq)
+			return -ENOMEM;
 		INIT_DELAYED_WORK(&chip->sram_release_access_work,
 			qcom_fg_sram_release_access_worker);
 
@@ -1262,8 +1359,6 @@ static int qcom_fg_probe(struct platform_device *pdev)
 			return ret;
 		}
 
-		spin_lock_init(&chip->sram_request_lock);
-		spin_lock_init(&chip->sram_rw_lock);
 		chip->sram_requests = 0;
 	}
 
@@ -1344,7 +1439,10 @@ if (IS_ERR(chip->chg_psy)) {
 				"Failed to register notifier: %d\n", ret);
 			return ret;
 		}
+		chip->notifier_registered = true;
 	}
+
+	WRITE_ONCE(chip->initialized, true);
 
 	return 0;
 }
@@ -1353,10 +1451,13 @@ static void qcom_fg_remove(struct platform_device *pdev)
 {
 	struct qcom_fg_chip *chip = platform_get_drvdata(pdev);
 
-	power_supply_put_battery_info(chip->batt_psy, chip->batt_info);
-
-	if(chip->sram_wq)
-		destroy_workqueue(chip->sram_wq);
+	WRITE_ONCE(chip->initialized, false);
+	if (chip->notifier_registered) {
+		power_supply_unreg_notifier(&chip->nb);
+		chip->notifier_registered = false;
+	}
+	if (chip->chg_psy)
+		cancel_delayed_work_sync(&chip->status_changed_work);
 }
 
 static const struct of_device_id fg_match_id_table[] = {

@@ -350,7 +350,9 @@ class RescueInitTests(unittest.TestCase):
                                        stderr=subprocess.DEVNULL, start_new_session=True)
             os.close(slave)
             try:
-                self.read_until(master, b"miseed> ")
+                banner = self.read_until(master, b"miseed> ")
+                self.assertIn(b"read-only samples", banner)
+                self.assertIn(b"charge-test-10min (600 s)", banner)
                 for command, value, message in (
                     (b"charge-test\n", "arm", b"after 60 seconds"),
                     (b"charge-test-10min\n", "arm-10min", b"after 600 seconds"),

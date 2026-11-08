@@ -51,7 +51,10 @@ def verify_source(repository, revision, source):
     source = Path(source)
     if source.is_symlink() or not source.is_dir():
         raise ValueError("cached source is not a regular directory")
-    if (source / ".miseed-source-revision").read_text().strip() != revision:
+    marker = source / ".miseed-source-revision"
+    if not stat.S_ISREG(marker.lstat().st_mode):
+        raise ValueError("cached Linux source revision marker is not a regular file")
+    if marker.read_text().strip() != revision:
         raise ValueError("cached Linux source revision marker mismatch")
     if git(repository, "rev-parse", revision + "^{commit}").decode().strip() != revision:
         raise ValueError("Linux revision mismatch")
@@ -98,9 +101,11 @@ def verify_source(repository, revision, source):
         raise error
 
     for directory, dirs, files in os.walk(source, onerror=walk_error):
-        for name in files + [d for d in dirs if (Path(directory) / d).is_symlink()]:
+        for name in files + dirs:
             path = Path(directory) / name
             relative = path.relative_to(source).as_posix()
+            if path.is_dir() and not path.is_symlink() and relative not in GENERATED:
+                continue
             if relative not in tracked and relative not in GENERATED:
                 raise ValueError(f"unexpected cached source input: {relative}")
             if relative in GENERATED and not stat.S_ISREG(path.lstat().st_mode):

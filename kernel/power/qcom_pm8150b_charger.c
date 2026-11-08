@@ -503,6 +503,24 @@ static int smb5_set_prop_charging_enabled(struct smb5_chip *chip, unsigned int v
 				 CHARGING_ENABLE_CMD_BIT : 0);
 }
 
+static int smb5_inhibit_with_fallback(struct smb5_chip *chip, const char *where)
+{
+	int rc, suspend_rc;
+
+	rc = smb5_set_prop_charging_enabled(chip,
+			POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE);
+	if (rc) {
+		suspend_rc = regmap_update_bits(chip->regmap,
+			chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT,
+			USBIN_SUSPEND_BIT);
+		dev_err(chip->dev,
+			"miseed-charge %s stop failed rc=%d input_stop_rc=%d; watchdog not fed\n",
+			where, rc, suspend_rc);
+	}
+
+	return rc;
+}
+
 static int smb5_get_prop_health(struct smb5_chip *chip, int *val);
 
 static int smb5_battery_value(struct smb5_chip *chip,
@@ -583,13 +601,8 @@ static void smb5_status_change_work(struct work_struct *work)
   if (!rc) rc = smb5_set_prop_charging_enabled(chip, POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO);
  }
  if (!allow || rc) {
-  stop_rc = smb5_set_prop_charging_enabled(chip, POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE);
-  if (stop_rc) {
-   /* Independent input stop path, and no watchdog feed on this path. */
-   int suspend_rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
-   dev_err(chip->dev, "miseed-charge stop failed rc=%d input_stop_rc=%d; watchdog not fed\n", stop_rc, suspend_rc);
-   if (!rc) rc = stop_rc;
-  }
+  stop_rc = smb5_inhibit_with_fallback(chip, "worker");
+  if (!rc) rc = stop_rc;
  }
  if (rc && chip->test_armed) {
   chip->test_active = false;
@@ -610,18 +623,19 @@ static int smb5_get_iio_chan(struct smb5_chip *chip, struct iio_channel *chan,
 			     int *val)
 {
 	int rc;
-	union power_supply_propval status;
-
-	rc = power_supply_get_property(chip->chg_psy, POWER_SUPPLY_PROP_STATUS,
-				       &status);
-	if (rc < 0 || status.intval != POWER_SUPPLY_STATUS_CHARGING) {
-		*val = 0;
-		return 0;
-	}
+	int online;
 
 	if (IS_ERR(chan)) {
-		dev_err(chip->dev, "Failed to chan, err = %li", PTR_ERR(chan));
+		dev_err(chip->dev, "Failed to get IIO channel, err = %li\n", PTR_ERR(chan));
 		return PTR_ERR(chan);
+	}
+
+	rc = smb5_get_prop_usb_online(chip, &online);
+	if (rc < 0)
+		return rc;
+	if (!online) {
+		*val = 0;
+		return 0;
 	}
 
 	return iio_read_channel_processed(chan, val);
@@ -666,6 +680,20 @@ static int smb5_get_prop_health(struct smb5_chip *chip, int *val)
 	return 0;
 }
 
+static int smb5_get_charge_control_threshold(struct smb5_chip *chip, bool end)
+{
+	int threshold;
+
+	mutex_lock(&chip->lock);
+	if (chip->test_active)
+		threshold = end ? 100 : 0;
+	else
+		threshold = end ? UMI_CHARGE_UPPER_SOC : UMI_CHARGE_LOWER_SOC;
+	mutex_unlock(&chip->lock);
+
+	return threshold;
+}
+
 static int smb5_get_property(struct power_supply *psy,
 			     enum power_supply_property psp,
 			     union power_supply_propval *val)
@@ -696,10 +724,10 @@ static int smb5_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_USB_TYPE:
 		return smb5_apsd_get_charger_type(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
-		val->intval = UMI_CHARGE_UPPER_SOC;
+		val->intval = smb5_get_charge_control_threshold(chip, true);
 		return 0;
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD:
-		val->intval = UMI_CHARGE_LOWER_SOC;
+		val->intval = smb5_get_charge_control_threshold(chip, false);
 		return 0;
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		return smb5_get_prop_charging_enabled(chip, &val->intval);
@@ -772,11 +800,21 @@ static irqreturn_t smb5_handle_batt_overvoltage(int irq, void *data)
 static irqreturn_t smb5_handle_usb_plugin(int irq, void *data)
 {
 	struct smb5_chip *chip = data;
+	int online = 0;
+	int rc;
+
+	/* Preserve short disconnects that could occur between worker samples. */
+	rc = smb5_get_prop_usb_online(chip, &online);
+	if (!rc && !online) {
+		mutex_lock(&chip->lock);
+		if (chip->test_armed && !chip->test_active)
+			chip->test_saw_disconnect = true;
+		mutex_unlock(&chip->lock);
+	}
 
 	power_supply_changed(chip->chg_psy);
 
-	schedule_delayed_work(&chip->status_change_work,
-			      msecs_to_jiffies(1500));
+	mod_delayed_work(system_wq, &chip->status_change_work, 0);
 
 	return IRQ_HANDLED;
 }
@@ -872,11 +910,10 @@ static ssize_t charge_test_store(struct device *dev, struct device_attribute *at
  chip->test_active = false;
  chip->test_saw_disconnect = false;
  chip->enabled = false;
- rc = smb5_set_prop_charging_enabled(chip, POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE);
+ rc = smb5_inhibit_with_fallback(chip, "test-arm");
  if (rc) {
   chip->test_armed = false;
   chip->inhibit = true;
-  regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
  }
  mutex_unlock(&chip->lock);
  if (rc) return rc;
@@ -890,12 +927,13 @@ static const struct attribute_group smb5_group = { .attrs = smb5_attrs };
 static void smb5_stop(void *data)
 {
  struct smb5_chip *chip = data;
+
  mutex_lock(&chip->lock);
  chip->stopping = true;
  chip->inhibit = true;
  mutex_unlock(&chip->lock);
  cancel_delayed_work_sync(&chip->status_change_work);
- smb5_set_prop_charging_enabled(chip, POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE);
+	smb5_inhibit_with_fallback(chip, "teardown");
 }
 
 static int smb5_init_irq(struct smb5_chip *chip, int *irq, const char *name,
@@ -949,8 +987,9 @@ static int smb5_probe(struct platform_device *pdev)
 				     "Couldn't read base address\n");
 
 
- rc = smb5_set_prop_charging_enabled(chip, POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE);
- if (rc) return rc;
+	rc = smb5_inhibit_with_fallback(chip, "initial");
+	if (rc)
+		return rc;
  chip->bms = devm_power_supply_get_by_reference(chip->dev, "power-supplies");
  if (IS_ERR(chip->bms)) return PTR_ERR(chip->bms);
  if (!chip->bms) return -EPROBE_DEFER;
