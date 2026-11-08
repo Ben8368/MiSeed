@@ -209,7 +209,7 @@ static void charge_snapshot(void) {
 
 static int charge_kernel_message(const char *content) {
     static const char * const terms[] = {
-        "miseed-power", "charg", "battery", "power_supply", "smb5", "smb2",
+        "miseed-power", "miseed-pps", "charg", "battery", "power_supply", "smb5", "smb2",
         "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic",
     };
     for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); i++)

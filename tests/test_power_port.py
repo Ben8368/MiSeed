@@ -94,7 +94,10 @@ class PowerPortTests(unittest.TestCase):
                 (self.source / ".config").write_text(
                     f"CONFIG_BATTERY_MISEED_QCOM_FG={state}\n"
                     f"CONFIG_CHARGER_MISEED_PM8150B={state}\n"
-                    "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n")
+                    "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n"
+                    "CONFIG_CHARGER_MISEED_UMI_PPS=y\nCONFIG_I2C_QCOM_GENI=y\n"
+                    "CONFIG_TYPEC_TCPM=y\nCONFIG_TYPEC_QCOM_PMIC=y\n"
+                    "CONFIG_REGULATOR_QCOM_USB_VBUS=y\nCONFIG_USB=y\n")
                 result = subprocess.run(["bash", "-c", check, "fixture", str(self.source)])
                 self.assertEqual(result.returncode, expected)
 
@@ -319,7 +322,7 @@ struct smb5_chip {
  unsigned int base, test_seconds;
  struct delayed_work status_change_work;
  int lock, max_fv_uv;
- bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
+ bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
  unsigned long test_deadline;
 };
 struct device { struct smb5_chip *chip; };

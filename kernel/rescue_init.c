@@ -580,6 +580,39 @@ static int reopen_usb_console(void) {
     return 0;
 }
 
+/* Locate exactly one bound PPS controller; never infer an I2C bus number. */
+static int pps_control_path(char *path, size_t size) {
+    const char *base = "/sys/bus/i2c/drivers/umi-bq25970-pps";
+    DIR *dir = opendir(base);
+    struct dirent *entry;
+    struct stat st;
+    char candidate[512];
+    int found = 0;
+    if (!dir) return -1;
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') continue;
+        int n = snprintf(candidate, sizeof(candidate), "%s/%s/fastcharge_test", base, entry->d_name);
+        if (n < 0 || (size_t)n >= sizeof(candidate)) continue;
+        if (stat(candidate, &st) || !S_ISREG(st.st_mode)) continue;
+        if (++found != 1 || (size_t)n >= size) { found = -1; break; }
+        memcpy(path, candidate, (size_t)n + 1);
+    }
+    closedir(dir);
+    if (found != 1) { errno = found < 0 ? EEXIST : ENODEV; return -1; }
+    return 0;
+}
+
+static int pps_control(const char *value) {
+    char path[512];
+    int rc = pps_control_path(path, sizeof(path));
+    if (!rc) {
+        if (value) rc = write_value(path, value);
+        else print_file(path);
+    }
+    if (value) charge_log_append("CONTROL", "pps_control action=%s rc=%d", value, rc);
+    return rc;
+}
+
 static void usb_console(void) {
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -587,9 +620,10 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, reboot, bootloader");
+        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-test, pps-test-10min, pps-stop, reboot, bootloader");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
+        puts("PPS controls require a qualified enabled board: pps-status, pps-test (60 s), pps-test-10min (600 s), pps-stop.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
             sleep(1);
@@ -613,8 +647,23 @@ static void usb_console(void) {
             if (rc) puts("Charge test arm failed; inspect logs.");
             else printf("Test armed: disconnect computer, attach charger. Ends on unplug or after %u seconds; 0.5 A cap and safety gates stay active.\n",
                         extended ? 600U : 60U);
+        } else if (!strcmp(line, "pps-status")) {
+            if (pps_control(NULL)) puts("PPS controller unavailable or ambiguous; board qualification may be incomplete.");
+        } else if (!strcmp(line, "pps-test") || !strcmp(line, "pps-test-10min")) {
+            int extended = !strcmp(line, "pps-test-10min");
+            int rc = pps_control(extended ? "arm-10min" : "arm");
+            puts(rc ? "PPS test arm failed; inspect logs." :
+                 "PPS test armed: unplug, then attach PPS charger. Safety gates and deadline remain active.");
+        } else if (!strcmp(line, "pps-stop")) {
+            puts(pps_control("stop") ? "PPS stop unavailable/failed; disconnect charger." : "PPS test stopped.");
         } else if (!strcmp(line, "charge-stop")) {
+            /* Also stop PPS when present, before releasing the ordinary charger. */
+            char path[512];
+            int pps_rc = pps_control_path(path, sizeof(path));
+            if (!pps_rc) pps_rc = write_value(path, "stop");
+            else if (errno == ENOENT || errno == ENODEV) pps_rc = 0;
             int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_test", "stop");
+            if (pps_rc) rc = pps_rc;
             charge_log_append("CONTROL", "charge_test_stop rc=%d", rc);
             puts(rc ? "Charge stop failed; disconnect the charger." : "Charging inhibited; test cancelled.");
         } else if (!strcmp(line, "reboot")) {

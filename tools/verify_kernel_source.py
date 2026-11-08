@@ -21,6 +21,10 @@ GENERATED = {
     "drivers/power/supply/miseed-power.Kconfig",
     "drivers/power/supply/umi_charge_policy.h",
     "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
+    "arch/arm64/boot/dts/qcom/umi-pps.dtsi",
+    "drivers/power/supply/umi_pps.c",
+    "drivers/power/supply/umi_pps_policy.h",
+    "drivers/power/supply/umi_smb5.h",
 }
 OVERLAY_RULES = {
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
@@ -29,7 +33,8 @@ OVERLAY_RULES = {
         (b"\n", b"obj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o")],
     "drivers/power/supply/Makefile": [
         (b"\n", b"obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o")],
+        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o"),
+        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi_pps.o")],
     "drivers/power/supply/Kconfig": [
         (b"\n", b'source "drivers/power/supply/miseed-power.Kconfig"')],
 }

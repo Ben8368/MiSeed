@@ -25,15 +25,18 @@ HARNESS = r"""
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #define CHARGE_LOG_CAPACITY 8
 
 static int test_open(const char *path, int flags, ...);
 static DIR *test_opendir(const char *path);
+static int test_stat(const char *path, struct stat *st);
 static ssize_t test_read(int fd, void *buffer, size_t size);
 static unsigned int test_sleep(unsigned int seconds);
 static long test_reboot_syscall(long number, ...);
 #define open test_open
 #define opendir test_opendir
+#define stat(...) test_stat(__VA_ARGS__)
 #define read test_read
 #define sleep test_sleep
 #define syscall test_reboot_syscall
@@ -42,6 +45,7 @@ static long test_reboot_syscall(long number, ...);
 #undef main
 #undef open
 #undef opendir
+#undef stat
 #undef read
 #undef sleep
 #undef syscall
@@ -58,6 +62,16 @@ static long test_reboot_syscall(long number, ...) {
     reboot_calls++;
     errno = EPERM;
     return -1;
+}
+
+static const char *pps_prefix = "/sys/bus/i2c/drivers/umi-bq25970-pps";
+static int test_stat(const char *path, struct stat *st) {
+    char mapped[1024];
+    if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
+        return stat(mapped, st);
+    }
+    return stat(path, st);
 }
 
 static int test_open(const char *path, int flags, ...) {
@@ -80,6 +94,11 @@ static int test_open(const char *path, int flags, ...) {
         snprintf(mapped, sizeof(mapped), "%s/%s", getenv("TEST_POWER_ROOT"), path + 24);
         return open(mapped, flags, mode);
     }
+    if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
+        char mapped[1024];
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
+        return open(mapped, flags, mode);
+    }
     return open(path, flags, mode);
 }
 
@@ -92,6 +111,7 @@ static DIR *test_opendir(const char *path) {
     if (!path) { errno = ENOENT; return NULL; }
     if (!strcmp(path, "/sys/class/power_supply") && getenv("TEST_POWER_ROOT"))
         path = getenv("TEST_POWER_ROOT");
+    if (getenv("TEST_PPS_ROOT") && !strcmp(path, pps_prefix)) path = getenv("TEST_PPS_ROOT");
     return opendir(path);
 }
 
@@ -156,6 +176,11 @@ int main(int argc, char **argv) {
         delayed_udc = 1;
         wait_for_usb_acm();
         if (retries != 2) return 3;
+    } else if (!strcmp(argv[1], "pps-discovery")) {
+        char path[512];
+        int ret = pps_control_path(path, sizeof(path));
+        printf("discovery=%d errno=%d\n", ret, errno);
+        if (!ret && pps_control("arm")) return 23;
     } else if (!strcmp(argv[1], "console")) usb_console();
     else if (!strcmp(argv[1], "console-record")) {
         pid_t child;
@@ -362,6 +387,62 @@ class RescueInitTests(unittest.TestCase):
                     os.write(master, command)
                     self.read_until(master, message)
                     self.assertEqual(control.read_text(), value)
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                os.close(master)
+
+    def test_pps_discovery_refuses_missing_or_ambiguous_devices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = dict(os.environ, TEST_PPS_ROOT=str(root))
+            self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            first = root / "15-0066"
+            first.mkdir()
+            control = first / "fastcharge_test"
+            control.touch()
+            self.assertIn("discovery=0", self.run_log("pps-discovery", env))
+            self.assertEqual(control.read_text(), "arm")
+            second = root / "16-0066"
+            second.mkdir()
+            (second / "fastcharge_test").touch()
+            control.write_text("keep")
+            self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            self.assertEqual(control.read_text(), "keep")
+
+    def test_pps_console_duration_and_unified_stop(self):
+        import pty
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pump = root / "pps" / "15-0066"
+            pump.mkdir(parents=True)
+            control = pump / "fastcharge_test"
+            control.touch()
+            supply = root / "pm8150b-charger"
+            supply.mkdir()
+            normal = supply / "charge_test"
+            normal.touch()
+            master, slave = pty.openpty()
+            env = dict(os.environ, TEST_TTY=os.ttyname(slave), TEST_POWER_ROOT=str(root),
+                       TEST_PPS_ROOT=str(root / "pps"))
+            process = subprocess.Popen([self.program, "console"], env=env,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            os.close(slave)
+            try:
+                self.read_until(master, b"miseed> ")
+                for command, value, message in (
+                    (b"pps-test\n", "arm", b"PPS test armed"),
+                    (b"pps-test-10min\n", "arm-10min", b"PPS test armed"),
+                    (b"pps-stop\n", "stop", b"PPS test stopped"),
+                    (b"charge-stop\n", "stop", b"test cancelled"),
+                ):
+                    control.write_text("")
+                    os.write(master, command)
+                    self.read_until(master, message)
+                    self.assertEqual(control.read_text(), value)
+                self.assertEqual(normal.read_text(), "stop")
             finally:
                 process.terminate()
                 process.wait(timeout=5)

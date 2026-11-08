@@ -1,0 +1,255 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+/* Synthetic board values below are test fixtures, NOT Umi calibration data. */
+#include <assert.h>
+#include <errno.h>
+#include <limits.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+typedef uint8_t u8;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int16_t s16;
+#define BIT(n) (1U << (n))
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#define container_of(p,t,m) ((t *)((char *)(p) - offsetof(t,m)))
+struct device { int unused; };
+struct mutex { int unused; };
+struct regmap { int unused; };
+struct work_struct { int unused; };
+struct delayed_work { struct work_struct work; };
+#define to_delayed_work(p) container_of(p, struct delayed_work, work)
+#define mutex_lock(p) ((void)(p))
+#define mutex_unlock(p) ((void)(p))
+#define dev_info(...) ((void)0)
+#define dev_err_probe(d,e,...) (e)
+#define system_wq NULL
+#define msecs_to_jiffies(v) (v)
+#define mod_delayed_work(q,w,t) ((void)0)
+static u64 clock_ms;
+static u64 ktime_get_boottime(void) { return clock_ms; }
+static u64 ktime_to_ms(u64 v) { return v; }
+enum power_supply_property { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_PRESENT,
+ POWER_SUPPLY_PROP_TEMP, POWER_SUPPLY_PROP_CAPACITY, POWER_SUPPLY_PROP_HEALTH,
+ POWER_SUPPLY_PROP_VOLTAGE_NOW, POWER_SUPPLY_PROP_CURRENT_NOW, POWER_SUPPLY_PROP_USB_TYPE,
+ POWER_SUPPLY_PROP_VOLTAGE_MIN, POWER_SUPPLY_PROP_VOLTAGE_MAX, POWER_SUPPLY_PROP_CURRENT_MAX,
+ PROP_COUNT };
+#define POWER_SUPPLY_HEALTH_GOOD 1
+#define POWER_SUPPLY_USB_TYPE_PD_PPS 7
+union power_supply_propval { int intval; };
+struct power_supply { int id; int prop[PROP_COUNT]; };
+static struct power_supply pd, bms, sw;
+static unsigned int regs[0x30];
+static int io_count, fail_at, enable_count, fixed_count, release_count, kick_count;
+static int fail_stop, fail_fixed, fail_claim, fail_sensor, fail_request, fail_caps;
+static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
+static const char *missing_property;
+static int io_fail(void) { return ++io_count == fail_at ? -EIO : 0; }
+static void adc(int channel, int value) {
+ regs[0x16 + channel*2] = ((unsigned int)value >> 8) & 255;
+ regs[0x17 + channel*2] = value & 255;
+}
+static int regmap_read(struct regmap *map, unsigned int r, unsigned int *v) {
+ int ret = io_fail(); if (ret) return ret;
+ *v = regs[r]; if (bad_readback && r == 0x02) *v ^= 0x80;
+ return 0;
+}
+static int regmap_write(struct regmap *map, unsigned int r, unsigned int v) {
+ int ret = io_fail(); if (ret) return ret;
+ if (r == 0x0b) kick_count++;
+ if (r == 0x0c) {
+  if (fail_stop && !(v & BIT(7))) return -EIO;
+  if (v & BIT(7)) {
+   assert(claim_owned && suspended && pd.prop[POWER_SUPPLY_PROP_ONLINE] == 2);
+   enable_count++; regs[0x0a] |= BIT(2);
+   adc(0,1000); adc(5,2000); bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = -2000000;
+  } else {
+   regs[0x0a] &= ~BIT(2); adc(0,0); adc(5,0);
+   bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
+  }
+ }
+ regs[r] = v; return 0;
+}
+static int regmap_update_bits(struct regmap *map, unsigned int r, unsigned int mask, unsigned int v) {
+ return regmap_write(map, r, (regs[r] & ~mask) | v);
+}
+static int regmap_bulk_read(struct regmap *map, unsigned int r, u8 *v, int n) {
+ int ret = io_fail(); if (ret) return ret;
+ for (int i=0; i<n; i++) v[i]=(u8)regs[r+i];
+ return 0;
+}
+static int power_supply_get_property(struct power_supply *p, enum power_supply_property prop,
+                                    union power_supply_propval *v) {
+ int ret=io_fail(); if(ret) return ret;
+ if (fail_sensor && p == &bms) return -EIO;
+ if (fail_caps && prop == POWER_SUPPLY_PROP_VOLTAGE_MAX) return -EIO;
+ v->intval=p->prop[prop]; return 0;
+}
+static int power_supply_set_property(struct power_supply *p, enum power_supply_property prop,
+                                    const union power_supply_propval *v) {
+ int ret=io_fail(); if(ret) return ret;
+ assert(p == &pd);
+ if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 1) {
+  fixed_count++; if(fail_fixed) return -EIO;
+  if(!stale_contract) {
+   p->prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=5000000;
+   p->prop[POWER_SUPPLY_PROP_CURRENT_NOW]=500000;
+  }
+ }
+ if (prop == POWER_SUPPLY_PROP_ONLINE && v->intval == 2) assert(claim_owned && suspended);
+ if (fail_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) return -EIO;
+ if (expired_negotiation && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) clock_ms += 601000;
+ if (hot_during_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) bms.prop[POWER_SUPPLY_PROP_TEMP]=451;
+ if (!stale_contract) p->prop[prop]=v->intval;
+ if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) adc(1,v->intval/1000);
+ return 0;
+}
+int umi_smb5_claim(struct power_supply *p) {
+ if (fail_claim) return -EBUSY;
+ claim_owned=1; suspended=1; return 0;
+}
+int umi_smb5_check(struct power_supply *p) { return claim_owned && suspended ? 4450000 : -EPERM; }
+int umi_smb5_release(struct power_supply *p) {
+ assert(!(regs[0x0c] & BIT(7))); assert(pd.prop[POWER_SUPPLY_PROP_ONLINE] != 2);
+ release_count++; suspended=0; claim_owned=0; return 0;
+}
+static int device_property_read_u32(struct device *d, const char *key, u32 *v) {
+ static const struct { const char *key; u32 value; } values[] = {
+  {"ti,sense-resistor-micro-ohms",2000}, {"ti,tsbat-threshold-code",0x15},
+  {"ti,tsbus-threshold-code",0x15}, {"ti,die-alarm-decicelsius",1000},
+  {"miseed,die-max-decicelsius",800}, {"ti,bat-ovp-millivolt",4550},
+  {"ti,bat-ovp-alarm-millivolt",4525}, {"ti,bat-ocp-milliamp",8000},
+  {"ti,bat-ocp-alarm-milliamp",7500}, {"ti,bus-ovp-millivolt",12000},
+  {"ti,bus-ovp-alarm-millivolt",11000}, {"ti,bus-ocp-milliamp",3750},
+  {"ti,bus-ocp-alarm-milliamp",3500}, {"ti,ac-ovp-volt",14}
+ };
+ if(missing_property && !strcmp(key,missing_property)) return -EINVAL;
+ for(unsigned int i=0;i<sizeof(values)/sizeof(values[0]);i++)
+  if(!strcmp(key,values[i].key)){*v=values[i].value;return 0;}
+ return -EINVAL;
+}
+
+/* MISEED_DRIVER_UNDER_TEST */
+
+static struct umi_pps c;
+static void reset(void) {
+ memset(&c,0,sizeof(c));memset(regs,0,sizeof(regs));
+ memset(&pd,0,sizeof(pd));memset(&bms,0,sizeof(bms));memset(&sw,0,sizeof(sw));
+ c.pd=&pd;c.bms=&bms;c.sw=&sw;c.seconds=60;
+ clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=kick_count=0;
+ fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
+ claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
+ missing_property=NULL;hot_during_request=0;
+ pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD_PPS;
+ pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MIN]=3300000;
+ pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MAX]=11000000;
+ pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=3000000;
+ pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=5000000;
+ pd.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=500000;
+ bms.prop[POWER_SUPPLY_PROP_PRESENT]=1;bms.prop[POWER_SUPPLY_PROP_TEMP]=300;
+ bms.prop[POWER_SUPPLY_PROP_CAPACITY]=50;bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4000000;
+ sw.prop[POWER_SUPPLY_PROP_HEALTH]=POWER_SUPPLY_HEALTH_GOOD;
+ regs[0x0d]=6;adc(4,4000);adc(8,60);
+ assert(!umi_pps_parse(&c));assert(c.nprotection==18);
+ c.state=PPS_WAIT_UNPLUG;
+}
+static void tick(void) { umi_pps_work(&c.work.work); }
+static void begin(void) {
+ tick();if(c.state==PPS_FAULT)return;assert(c.state==PPS_WAIT_PLUG);
+ pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;tick();
+}
+static void run(void) {
+ begin(); assert(c.state==PPS_SETTLE && !enable_count);
+ clock_ms+=200;tick(); assert(c.state==PPS_RUN && enable_count==1);
+}
+int main(void) {
+ struct umi_pps_caps caps={3300,11000,3000};
+ assert(umi_pps_target(&caps,4000)==8400);
+ assert(umi_pps_target(&caps,3499)<0);
+ assert(umi_pps_target(&caps,INT_MAX)<0);
+ assert(umi_pps_current(&caps,3000)==3000);
+ caps.max_ma=2999;assert(umi_pps_current(&caps,3000)==2950);
+ caps.max_ma=1999;assert(umi_pps_current(&caps,3000)<0);
+ assert(umi_pps_encode(4550,3475,25,63)==43);
+ assert(umi_pps_encode(4551,3475,25,63)<0);
+ assert(umi_pps_encode(INT_MAX,3475,25,63)<0);
+ reset();missing_property="ti,sense-resistor-micro-ohms";c.nprotection=0;
+ assert(umi_pps_parse(&c)==-EINVAL && !enable_count);
+ reset();pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;tick();
+ assert(c.state==PPS_WAIT_UNPLUG && !claim_owned && !enable_count);
+ reset();run();clock_ms+=200;tick();assert(c.state==PPS_RUN);
+ pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();
+ assert(c.state==PPS_DONE && !claim_owned && !(regs[0x0c]&BIT(7)));
+ tick();assert(enable_count==1); /* unplug cannot auto-rearm */
+ reset();run();clock_ms=c.deadline;tick();assert(c.state==PPS_DONE && release_count==1);
+ reset();c.seconds=600;run();clock_ms=c.deadline-200;tick();assert(c.state==PPS_RUN);
+ clock_ms=c.deadline;tick();assert(c.state==PPS_DONE);
+ /* Current/voltage/temperature/SOC/protection/contract/ownership failures. */
+ for(int fault=0;fault<22;fault++) {
+  reset();run();int feeds=kick_count;
+  switch(fault) {
+   case 0: fail_sensor=1;break;
+   case 1: bms.prop[POWER_SUPPLY_PROP_TEMP]=451;break;
+   case 2: bms.prop[POWER_SUPPLY_PROP_TEMP]=150;break;
+   case 3: bms.prop[POWER_SUPPLY_PROP_CAPACITY]=70;break;
+   case 4: bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4450000;break;
+   case 5: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-6001000;break;
+   case 6: regs[0x10]=0x80;break;
+   case 7: regs[0x11]=0x01;break;
+   case 8: regs[0x0b]|=BIT(3);break;
+   case 9: bad_readback=1;break;
+   case 10: adc(0,3001);break;
+   case 11: adc(4,4100);break;
+   case 12: pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=9000000;break;
+   case 13: suspended=0;break;
+   case 14: adc(8,160);break;
+   case 15: regs[0x0c]&=~BIT(7);break;
+   case 16: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=100000;break;
+   case 17: regs[0x05]|=BIT(7);break;
+   case 18: regs[0x0a]|=BIT(1);break;
+   case 19: regs[0x0a]|=BIT(0);break;
+   case 20: regs[0x2c]|=BIT(0);break;
+   case 21: pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=2000000;break;
+  }
+  clock_ms+=200;tick();assert(c.state==PPS_FAULT);
+  assert(!(regs[0x0c]&BIT(7)) && !claim_owned && kick_count==feeds);
+ }
+ /* No enable after failed negotiation, missing APDO, or exclusive claim. */
+ for(int f=0;f<5;f++) {
+  reset();
+  if(f==0) fail_request=1;
+  if(f==1) fail_caps=1;
+  if(f==2) stale_contract=1;
+  if(f==3) fail_claim=1;
+  if(f==4) pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=1900000;
+  begin();assert(c.state==PPS_FAULT && !enable_count);
+ }
+ reset();expired_negotiation=1;begin();clock_ms+=200;tick();
+ assert(c.state==PPS_DONE && !enable_count);
+ reset();run();hot_during_request=1;int pre_feeds=kick_count;clock_ms+=200;tick();
+ assert(c.state==PPS_FAULT && kick_count==pre_feeds && !claim_owned);
+ /* Failed stop retains ownership, does not feed, retries both mechanisms. */
+ reset();run();fail_stop=1;int feeds=kick_count;
+ assert(umi_pps_stop(&c,PPS_OFF,0)==-EIO && c.stop_pending && claim_owned);
+ assert(kick_count==feeds);fail_stop=0;tick();assert(!c.stop_pending && !claim_owned);
+ reset();run();fail_fixed=1;
+ assert(umi_pps_stop(&c,PPS_OFF,0)==-EIO && claim_owned && !(regs[0x0c]&BIT(7)));
+ fail_fixed=0;tick();assert(!claim_owned && !c.stop_pending);
+ /* Any individual initialization / negotiation I/O failure must inhibit. */
+ reset();begin();int setup_io=io_count;
+ for(int n=1;n<=setup_io;n++) {
+  reset();fail_at=n;begin();assert(!enable_count);
+  fail_at=0;umi_pps_stop(&c,PPS_OFF,0);assert(!claim_owned);
+ }
+ /* Any individual running-cycle I/O failure must stop, without another enable. */
+ reset();run();io_count=0;clock_ms+=200;tick();int running_io=io_count;
+ for(int n=1;n<=running_io;n++) {
+  reset();run();io_count=0;fail_at=n;clock_ms+=200;tick();
+  assert(c.state==PPS_FAULT && enable_count==1);
+  fail_at=0;umi_pps_stop(&c,PPS_OFF,0);assert(!claim_owned);
+ }
+ puts("PPS real-driver fault injection passed");return 0;
+}

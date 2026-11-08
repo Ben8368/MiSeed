@@ -125,6 +125,9 @@ done
 for option in MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "power compile test lost CONFIG_${option}"
 done
+for option in CHARGER_MISEED_UMI_PPS I2C_QCOM_GENI TYPEC_TCPM TYPEC_QCOM_PMIC REGULATOR_QCOM_USB_VBUS USB; do
+    grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "PPS compile coverage lost CONFIG_${option}"
+done
 for option in MEMFD_CREATE FILE_LOCKING; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "RAM recorder lost CONFIG_${option}"
 done
@@ -139,17 +142,22 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
     -j"$jobs" Image qcom/umi-csot.dtb modules
 
 # Runtime drivers must be built-in; the rescue image needs no module loader.
-for driver in qcom_fg qcom_pm8150b_charger; do
+for driver in qcom_fg qcom_pm8150b_charger umi_pps; do
     [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"
     install -m 0644 "$build_tree/drivers/power/supply/${driver}.o" "$output_root/${driver}.o"
 done
 cp "$build_tree/.config" "$output_root/resolved.config"
 aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
-for symbol in qcom_fg_probe smb5_probe; do
+for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
 readonly dtb="$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb"
+# A compile-only PPS port must never silently become an active power profile.
+for label in umi_pps pm8150b_typec i2c15 tlmm pm8150b_vbus; do
+    node="$(fdtget "$dtb" /__symbols__ "$label")"
+    [[ "$(fdtget "$dtb" "$node" status)" == disabled ]] || fail "unqualified power node enabled: ${label}"
+done
 readonly symbols="$(fdtget "$dtb" /__symbols__ arch_timer 2>/dev/null || true)"
 [[ "$symbols" == "/timer" ]] || fail "DTB lacks overlay symbols (__symbols__.arch_timer=$symbols)"
 readonly anchor_count="$(fdtget -l "$dtb" /abl_ovf | wc -l)"
@@ -179,7 +187,9 @@ sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" 
     "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \
     "$repo_root/kernel/power/Kconfig" "$repo_root/kernel/power/umi_charge_policy.h" \
     "$repo_root/kernel/power/umi-pm8150b.dtsi" "$repo_root/tools/apply_power_port.py" \
-    "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
+    "$repo_root/kernel/power/umi_pps.c" "$repo_root/kernel/power/umi_pps_policy.h" \
+    "$repo_root/kernel/power/umi_smb5.h" "$repo_root/kernel/power/umi-pps.dtsi" \
+    "$output_root/umi_pps.o" "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \
     "$build_tree/.config" "$kernel_image" "$initramfs" "$dtb" "$output_root/boot.img"
 printf '\nLinux revision: %s\nReference report revision: %s\n' "$kernel_revision" "$reference_revision"

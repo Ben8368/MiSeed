@@ -417,14 +417,27 @@
       "revision": "71b13e62f057a649b77fe4062feb73ee72ad609c",
       "license": "GPL-2.0-only",
       "license_evidence": [
-        "driver SPDX headers"
+        "Existing Qualcomm driver SPDX headers",
+        "bq2597x_charger.c Texas Instruments 2017 GPL v2 notice and MODULE_LICENSE",
+        "pd_policy_manager.c MODULE_LICENSE(\"GPL\") and repository COPYING GPL v2; Fei Jiang MODULE_AUTHOR",
+        "pd_policy_manager.h author a0220433; register header and device tree covered by the pinned kernel license; preserve notices"
       ],
-      "role": "Device-matched PM8150B encodings, Umi charge limits and readback definitions; selectively adapted constants/control logic",
+      "role": "Device-matched PM8150B encodings, Umi charge limits, BQ25970 register definitions and PPS policy; selective GPL-2.0-only adaptation, not the vendor ABI or complete kernel",
       "included_paths": [
         "drivers/power/supply/qcom/qpnp-smb5.c",
         "drivers/power/supply/qcom/smb5-reg.h",
         "drivers/power/supply/qcom/fg-reg.h",
-        "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi"
+        "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi",
+        "drivers/power/supply/ti/bq25970_reg.h",
+        "drivers/power/supply/ti/bq2597x_charger.c",
+        "drivers/power/supply/ti/pd_policy_manager.c",
+        "drivers/power/supply/ti/pd_policy_manager.h",
+        "arch/arm64/boot/dts/vendor/qcom/umi-pinctrl.dtsi",
+        "drivers/usb/pd/policy_engine.c",
+        "drivers/usb/pd/qpnp-pdphy.c",
+        "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi",
+        "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi",
+        "COPYING"
       ],
       "submodules": [],
       "patches": [],
@@ -433,7 +446,27 @@
         "drivers/power/supply/qcom/qpnp-smb5.c": "f1f866321bd0d6ab4fb9dff930bf7075d6e5cc8b0de00159c1b0070e116bf41a",
         "drivers/power/supply/qcom/smb5-reg.h": "a3244822ce0d977369ca1dcf3d0d649559230932d83c0bdd37d91a8dcfd33c87",
         "drivers/power/supply/qcom/fg-reg.h": "a56490203975f6be2c7bc0e43a6237c63e2df2b09ea39b0927d5da5ea6db753f",
-        "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi": "5d7693de26606e5d9fa9cb6b73d1278fd79e008a5e08134a3c0d83d90fc90a01"
+        "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi": "5d7693de26606e5d9fa9cb6b73d1278fd79e008a5e08134a3c0d83d90fc90a01",
+        "drivers/power/supply/ti/bq25970_reg.h": "27e1c8edb82d1d268d67f941878e82df878f45af45d50b5e895b410409300f76",
+        "drivers/power/supply/ti/bq2597x_charger.c": "b7163dd262465b415dab053920adcc8a0c975f9a8d034d9900ec34268f46726e",
+        "drivers/power/supply/ti/pd_policy_manager.c": "9a0021a1b0b556fe7e45b15129b4ffd80177e1e38743599eb043e6c9c7521a40",
+        "drivers/power/supply/ti/pd_policy_manager.h": "31d449dcaf5f42f1f399a35e517e1d3c4d106a2153bd84e220d03bf4f45b2b2f",
+        "arch/arm64/boot/dts/vendor/qcom/umi-pinctrl.dtsi": "80bb179bff1aede9e949cd29819806b1b800bfed79369e7769da116a7ba1ccdc",
+        "drivers/usb/pd/policy_engine.c": "cb0b7b4bf654e1bf228768085d9ae45ce3383cd4c3c1fe93d9abb1e70870c19e",
+        "drivers/usb/pd/qpnp-pdphy.c": "f080fc5beefd0d4143c9350d68b3ad06d0c9724cd843e6f653300f76c536581d",
+        "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi": "91147d6f1676ea70f6e6c8e78a1d81399a3bb186986e712fc1246ad1b2250763",
+        "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi": "cd826a3af94fe27d95644a4492d4a990f8afed9660cdafdcfed25282973691f0",
+        "COPYING": "ee5808b032a67f587d3541099d46de34f5bec8cd5976114ba07f1299ee6001ff"
+      },
+      "pps_port": {
+        "assessment": "docs/archive/research/2026-11-08-lineage-pps-port.md",
+        "local_paths": [
+          "kernel/power/umi_pps.c",
+          "kernel/power/umi_pps_policy.h",
+          "kernel/power/umi-pps.dtsi"
+        ],
+        "source_report": "Maintainer reports long-term stable hardware operation of this LineageOS branch; not a MiSeed PPS test result.",
+        "runtime_status": "disabled pending board calibration, exact pump ID, GPIO/PMIC qualification, independent review and authorized MiSeed L3"
       }
     }
   ],

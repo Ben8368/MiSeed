@@ -30,6 +30,7 @@
 #include <linux/mutex.h>
 #include <linux/jiffies.h>
 #include "umi_charge_policy.h"
+#include "umi_smb5.h"
 
 /* clang-format off */
 #define BATTERY_CHARGER_STATUS_1			0x06
@@ -316,6 +317,7 @@ struct smb5_chip {
 	struct power_supply *bms;
 	struct mutex lock;
 	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
+	bool pps_owned;
 	unsigned long test_deadline;
 	unsigned int test_seconds;
 	int max_fv_uv;
@@ -520,6 +522,87 @@ static int smb5_inhibit_with_fallback(struct smb5_chip *chip, const char *where)
 
 	return rc;
 }
+
+static int smb5_set_property(struct power_supply *psy,
+		enum power_supply_property psp, const union power_supply_propval *val);
+
+/* Only this driver's power_supply may be passed to the PPS ownership API. */
+static bool smb5_is_ours(struct power_supply *psy)
+{
+	return psy && psy->desc && psy->desc->set_property == smb5_set_property;
+}
+
+int umi_smb5_claim(struct power_supply *psy)
+{
+	struct smb5_chip *chip;
+	int rc;
+
+	if (!smb5_is_ours(psy))
+		return -ENODEV;
+	chip = power_supply_get_drvdata(psy);
+	mutex_lock(&chip->lock);
+	if (chip->stopping || chip->pps_owned || chip->test_armed) {
+		rc = -EBUSY;
+		goto out;
+	}
+	/* Keep ownership even after an I/O error; cleanup must verify the stop. */
+	chip->pps_owned = true;
+	chip->inhibit = true;
+	chip->enabled = false;
+	rc = smb5_inhibit_with_fallback(chip, "pps-claim");
+	if (!rc)
+		rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
+					USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
+out:
+	mutex_unlock(&chip->lock);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(umi_smb5_claim);
+
+int umi_smb5_check(struct power_supply *psy)
+{
+	struct smb5_chip *chip;
+	unsigned int charge, input;
+	int rc;
+
+	if (!smb5_is_ours(psy))
+		return -ENODEV;
+	chip = power_supply_get_drvdata(psy);
+	mutex_lock(&chip->lock);
+	rc = !chip->pps_owned || chip->stopping ? -EPERM : 0;
+	if (!rc)
+		rc = regmap_read(chip->regmap, chip->base + CHARGING_ENABLE_CMD, &charge);
+	if (!rc)
+		rc = regmap_read(chip->regmap, chip->base + USBIN_CMD_IL, &input);
+	if (!rc && ((charge & CHARGING_ENABLE_CMD_BIT) || !(input & USBIN_SUSPEND_BIT)))
+		rc = -EPERM;
+	if (!rc)
+		rc = chip->max_fv_uv;
+	mutex_unlock(&chip->lock);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(umi_smb5_check);
+
+int umi_smb5_release(struct power_supply *psy)
+{
+	struct smb5_chip *chip;
+	int rc;
+
+	if (!smb5_is_ours(psy))
+		return -ENODEV;
+	chip = power_supply_get_drvdata(psy);
+	mutex_lock(&chip->lock);
+	chip->inhibit = true;
+	rc = smb5_inhibit_with_fallback(chip, "pps-release");
+	if (!rc)
+		rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
+					USBIN_SUSPEND_BIT, 0);
+	if (!rc)
+		chip->pps_owned = false;
+	mutex_unlock(&chip->lock);
+	return rc;
+}
+EXPORT_SYMBOL_GPL(umi_smb5_release);
 
 static int smb5_get_prop_health(struct smb5_chip *chip, int *val);
 
@@ -746,12 +829,19 @@ static int smb5_set_property(struct power_supply *psy,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
-		return smb5_set_current_limit(chip, val->intval);
+		mutex_lock(&chip->lock);
+		rc = chip->pps_owned ? -EBUSY : smb5_set_current_limit(chip, val->intval);
+		mutex_unlock(&chip->lock);
+		return rc;
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		if (val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
                     val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
                         return -EINVAL;
                 mutex_lock(&chip->lock);
+                if (chip->pps_owned) {
+                        mutex_unlock(&chip->lock);
+                        return -EBUSY;
+                }
                 chip->inhibit = val->intval == POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
                 if (chip->inhibit)
                         rc = smb5_set_prop_charging_enabled(chip, val->intval);
@@ -903,6 +993,10 @@ static ssize_t charge_test_store(struct device *dev, struct device_attribute *at
  if (!sysfs_streq(buf, "arm") && !sysfs_streq(buf, "arm-10min") &&
      !sysfs_streq(buf, "stop")) return -EINVAL;
  mutex_lock(&chip->lock);
+ if (chip->pps_owned) {
+  mutex_unlock(&chip->lock);
+  return -EBUSY;
+ }
  chip->test_armed = !sysfs_streq(buf, "stop");
  chip->test_seconds = sysfs_streq(buf, "arm-10min") ?
                       UMI_CHARGE_EXTENDED_TEST_SECONDS : UMI_CHARGE_TEST_SECONDS;

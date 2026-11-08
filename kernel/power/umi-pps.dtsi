@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Umi wiring/limits: LineageOS 71b13e62f057a649b77fe4062feb73ee72ad609c,
+ * umi-sm8250.dtsi / umi-pinctrl.dtsi. Disabled integration description only.
+ * See PPS.md: missing calibrated properties deliberately have NO defaults.
+ * Do not enable TLMM globally without resolving its unsafe GPIO ranges.
+ */
+#include <dt-bindings/usb/pd.h>
+
+&tlmm {
+	umi_bq_irq_default: umi-bq-irq-state {
+		pins = "gpio68";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+		input-enable;
+	};
+};
+
+&i2c15 {
+	status = "disabled";
+
+	umi_pps: charger@66 {
+		compatible = "miseed,umi-bq25970-pps";
+		reg = <0x66>;
+		status = "disabled";
+		interrupt-parent = <&tlmm>;
+		interrupts = <68 IRQ_TYPE_EDGE_FALLING>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&umi_bq_irq_default>;
+		miseed,pd-source = <&pm8150b_typec>;
+		miseed,switch-charger = <&umi_charger>;
+		monitored-battery = <&umi_fg>;
+		ti,bat-ovp-millivolt = <4550>;
+		ti,bat-ovp-alarm-millivolt = <4525>;
+		ti,bus-ovp-millivolt = <12000>;
+		ti,bus-ovp-alarm-millivolt = <11000>;
+		ti,bus-ocp-milliamp = <3750>;
+		ti,bus-ocp-alarm-milliamp = <3500>;
+		ti,ac-ovp-volt = <14>;
+	};
+};
+
+&pm8150b_typec {
+	status = "disabled";
+
+	connector {
+		compatible = "usb-c-connector";
+		label = "USB-C";
+		power-role = "sink";
+		data-role = "device";
+		/* No high-voltage fixed PDO; fixed fallback stays at 5 V / 0.5 A.
+		 * PPS ceiling follows the source policy; runtime caps at 9.5 V.
+		 */
+		sink-pdos = <PDO_FIXED(5000, 500, PDO_FIXED_USB_COMM)
+			     PDO_PPS_APDO(3300, 11000, 3000)>;
+		op-sink-microwatt = <2500000>;
+	};
+};

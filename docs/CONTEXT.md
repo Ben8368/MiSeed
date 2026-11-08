@@ -1,17 +1,17 @@
 # 当前状态
 
-日期：2026-11-08。PR #2 已推送 CodeRabbit 复核修复（commit `6b40cf1`），未合并。修复后 macOS 本地 L2 构建成功，`boot.img` SHA-256 `4396142a…b3ca6c`；75 项回归中 61 项通过，14 项因 Linux 专属环境跳过。GitHub CI run `42454735733` 在 PR HEAD `1c2fdefbe59639ab19e3fa427ac187e0bea25d29` 成功，PR 与 base 同步且显示可合并；GitHub review 列表没有本轮修复的独立人工专项复核，故暂不合并。逐项结论与验证见[PR #2 CodeRabbit 复核](archive/reviews/2026-11-08-pr2-coderabbit.md)。此前真机结果和原发布 HEAD CI 记录见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
+日期：2026-11-08。在干净 main `109225e` 上新建 `codex/umi-pd-pps-fastcharge`；LineageOS `lineage-23.2` 锁定 `71b13e62f057a649b77fe4062feb73ee72ad609c`。PPS/BQ25970 控制、SMB5 独占、受控测试及日志已完成源码适配和 L2；用户已授权提交、推送并创建草稿 PR；远端 CI 尚待本分支提交触发。详见[本轮移植](archive/research/2026-11-08-lineage-pps-port.md)。
 
-本机新镜像 RAM 启动及 600 秒准备完成；维护者提前结束，日志观测约 25.5 秒受限启充、拔出停充、78% 电量下恢复正常策略。1524 条连续记录、覆盖 0、复读一致；温度 36°C，23 条稳定 FG 电流中位 −85,449 µA。不代表 600 秒超时、异常保护或快充已通过。
+WSL 81 项回归全过；Windows 42 通过、39 跳过。最终 L2 `boot.img` SHA-256 `d2d52ba8…76ad1c51`。快充、Type-C/I2C15、TLMM 与 VBUS 供给节点均禁用；板级参数缺失则拒绝 probe。**尚无 MiSeed 快充 L3，不可启用或声称快充可用。**
 
-设备仍在本次 RAM Linux、电脑 USB 在线；单次测试结束，额外 `charge-stop` 已成功，保持停充。未刷写或使用 adb root；原 Android 返回路径此前已验证，见[诊断往返](archive/hardware/2026-11-08-upstream-power-ramboot.md)。
+上一轮仅记录约 25.5 秒受限启充/拔出停充及 1524 条连续日志；600 秒期限未实测。最后记录已额外停充；本轮未连接设备、未 RAM 启动或修改供电。历史 PR #2 的修复/CI 和未合并结论见[复核](archive/reviews/2026-11-08-pr2-coderabbit.md)，不代替本分支证据。
 
 ## 近期优先级
 
-1. 闭合快充 PD/PPS 控制、板级采样/保护与 GPIO 接线；当前不直接启泵，RISK-004 保留。
-2. 消除重复 PMIC（RISK-010），锁定安全 GPIO 后恢复 TLMM（TD-002）。
-3. 补齐 60/600 秒到期、SOC 边界、温控/过压/过流、watchdog 真机证据和独立复核；不把短时插拔扩大为长期验收。
+1. 核实实际泵 ID、采样/热敏/保护参数与 watchdog 完整语义，完成 PPS 专项复核；RISK-004 保留。
+2. 消除重复 PMIC（RISK-010），锁定 GPIO/供电路径后恢复 TLMM（TD-002）及 PD PHY 接线。
+3. 获得明确授权及回退方案后，分阶段补齐 60/600 秒、SOC、温控/过压/过流、watchdog 与 PPS 真机证据；不继承来源内核验收。
 
 ## 最近验证
 
-[PR #2 CodeRabbit 复核 L1/L2](archive/reviews/2026-11-08-pr2-coderabbit.md)；[此前 L1/L2/L3 与 CI](archive/reviews/2026-11-08-fastcharge-ci.md)；[此前受限 L3](archive/hardware/2026-11-08-umi-runtime-power.md)；[来源锁](../manifests/sources.lock.json)。
+[本轮 L0/L1/L2](archive/research/2026-11-08-lineage-pps-port.md)；[既有受限 L3](archive/reviews/2026-11-08-fastcharge-ci.md)；[来源锁](../manifests/sources.lock.json)。
