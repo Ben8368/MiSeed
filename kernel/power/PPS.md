@@ -61,6 +61,6 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
-- 本机 L3：GPIO allowlist 镜像已 RAM 启动；救援台 PMIC/充电遥测可读，但 `pps-status` 无控制器，USB supply 类型仍为 `Unknown [SDP] DCP CDP`。用户新照片显示充电器端 PD 5.2 V / 2.8 A（约 14.6 W），不代表设备侧 PD 合约/PPS APDO 已确认。含只读 I2C 驱动与 Type-C 枚举的诊断镜像 SHA-256 `f13d367585f96486e665219fd956d35447cc20e7a1df8ace167e87241c34c313` 已 L2，未真机启动。重连设备后通过 `status` 核对 Type-C/TCPM、I2C15、GPIO68 绑定；再按 [QUALITY](../../docs/QUALITY.md) 验证保护、温度标度、停止恢复与拔插。
+- 本机 L3：诊断镜像 SHA-256 `f13d367585f96486e665219fd956d35447cc20e7a1df8ace167e87241c34c313` 已 RAM 启动。`status` 显示 Type-C `port0`/partner 存在，但 `/sys/bus/i2c/devices` 为空；`pps-status` 无控制器。只读充电日志的 USB supply 类型为 `Unknown [SDP] DCP CDP`，输入约 4.52 V / 0.55 A。内核记录 PMIC Type-C hard-reset。用户照片显示充电器端 PD 5.2 V / 2.8 A，不证明设备侧 PD 合约/PPS APDO。准确命令与范围见[诊断镜像 L3 记录](../../docs/archive/hardware/2026-11-08-umi-pps-diagnostic-ramboot.md)。下一步定位 I2C15/GENI 控制器运行时未注册原因；绑定成功后再验证保护、温度标度、停止恢复与拔插。
 
 来源、PMIC 隔离、最小 GPIO 配置与 PD PHY 电源补齐见[续查记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可在后续授权采集时补充已有启动日志中的芯片 ID 与缓存 PDO，不把 standalone 名称当成芯片型号。软件侧自动策略已对齐；sink-only 硬件节点已启用；设备侧 PD/PPS 控制器绑定及保护/回退 L3 仍待完成。
