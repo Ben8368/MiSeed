@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "lock_date": "2026-11-08",
-  "lock_status": "revision-pinned; opt-in 600-second SOC-bypass diagnostic L2; prior bounded charging L3 remains image-specific; fast charge blocked",
+  "lock_status": "revision-pinned; opt-in 600-second SOC-bypass diagnostic L2 and user-terminated short insertion L3; actual timeout/protection qualification open; fast charge not enabled",
   "scope": "Reviewed upstream identities, selected reference snapshots and exact local diagnostic build inputs. Device capability and validation status are maintained in docs/platforms.md and its evidence links; this lock does not replace those records.",
   "build_profiles": [
     {
@@ -62,7 +62,7 @@
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
       "build": "Pinned Linux 6.18.60, Umi CSOT ABL header v2, FG/SMB5/ADC5 built-in, rescue RAM logger and explicit 60/600-second bounded charge tests; no BQ25970 or Type-C source initialization; probe starts inhibited.",
-      "status": "Current 600-second opt-in diagnostic build L2 and 68 Linux offline regressions passed; no new L3. Prior 60-second build 10ec0d0e...d9ce7c4 retains its separately scoped one-insertion L3 evidence. Fast-charge pump/PD/PPS not enabled. Current assessment: docs/archive/reviews/2026-11-08-fastcharge-ci.md.",
+      "status": "Current opt-in 600-second diagnostic build L2 and 68 Linux offline regressions passed. Source HEAD c8bb079 remote CI six jobs passed; hosted/local image hashes match. Current image L3: RAM boot, inhibited start, 600-second preparation, user-terminated 25.536-second sampled insertion, unplug stop and 1524 retained/replayed records. Timeout/fault/long-term qualification open; fast charge not enabled. Evidence: docs/archive/reviews/2026-11-08-fastcharge-ci.md.",
       "dtbo_symbol_reference": {
         "origin": "Local Xiaomi UMI MIUI OS1.0.7.0.TJBCNXM package, firmware-update/dtbo.img",
         "sha256": "d6a6f4c07d7ce88f6213cfed0cee26d55f908e8eff38675faadc6f6e4671eee6",
@@ -109,7 +109,7 @@
           "normal_voltage_ceiling_uv": 4450000,
           "diagnostic_input_and_fcc_cap_ua": 500000
         },
-        "evidence": "docs/archive/hardware/2026-11-08-umi-runtime-power.md",
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md",
         "active_charging_tested": true,
         "test_windows_seconds": [
           60,
@@ -143,6 +143,28 @@
         "final_state": "Android 16 boot completed; ADB uid=2000(shell)"
       },
       "runtime_evidence": {
+        "date": "2026-11-08",
+        "image_sha256": "793ca218ce21e8c51f597356e940a9bbfb33aeb56267b0d2a5d6b91a957030c5",
+        "evidence": "docs/archive/reviews/2026-11-08-fastcharge-ci.md",
+        "scope": "RAM boot, explicit 600-second preparation, one 25.536-second sampled charger insertion terminated by user unplug, restored SOC policy and retained/replayed RAM logs",
+        "charging_control_tested": true,
+        "protection_faults_tested": false,
+        "configured_window_seconds": 600,
+        "timeout_tested": false,
+        "records": 1524,
+        "replay_records": 1525,
+        "identical_replay_overlap": 1524,
+        "overwritten": 0,
+        "enabled_samples": 24,
+        "steady_current_samples": 23,
+        "steady_current_median_ua": -85449,
+        "temperature_range_decic": [
+          360,
+          360
+        ],
+        "final_state": "RAM Linux, computer USB reconnected, test consumed on unplug, SOC 78% and enabled=0; charge-stop acknowledged for explicit cleanup"
+      },
+      "runtime_evidence_previous_bounded_charging": {
         "date": "2026-11-08",
         "image_sha256": "10ec0d0ee1a8255e14db31e0cc0f112dfbe310541a16eabc8992be4bdd9ce7c4",
         "evidence": "docs/archive/hardware/2026-11-08-umi-runtime-power.md",

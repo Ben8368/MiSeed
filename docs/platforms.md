@@ -55,4 +55,4 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | CSOT 显示 / 触控 / USB | 本轮诊断 Image 的 macOS ACM/version/status/日志已 L3；既有 rotate:3 显示为 L3，本轮未复测显示；TLMM 禁用、触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 充电日志 / 管理 | `10ec0d0e…d9ce7c4` 单次受限启充、拔出停充、恢复 70/65、1004 条日志 L3；新 `793ca218…7030c5` 的显式 600 秒窗口仅 L2；快充未接通 | [原 L3](archive/hardware/2026-11-08-umi-runtime-power.md) / [600 秒及快充核查](archive/reviews/2026-11-08-fastcharge-ci.md)；RISK-004 |
+| 充电日志 / 管理 | `793ca218…7030c5` 的 600 秒准备、约 25.5 秒受限启充、拔出停充、恢复策略、1524 条日志/复读 L3；600 秒到期未测，快充未接通 | [本轮](archive/reviews/2026-11-08-fastcharge-ci.md) / [原 L3](archive/hardware/2026-11-08-umi-runtime-power.md)；RISK-004 |

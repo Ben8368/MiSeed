@@ -53,8 +53,53 @@ PR HEAD `a176b3c31982da625c40914a37df8ecb4453eee4` 的 [run 42445350685](https:/
 
 完整输入与其余产物哈希见来源锁；镜像留在忽略目录，不进入 Git。
 
-## 本轮设备观测与未执行项
+## 启动前设备观测
 
 只运行 `python3 tools/collect_charge_log.py --port /dev/cu.usbmodem101 --output .work/fastcharge-20261108/baseline.log --timeout 30`，退出 0，导出 4378 条、覆盖 0。最后样本仍为旧镜像：SOC 77%、34°C、约 4.126 V、`enabled=0`、`rc=0`、`test_armed=0`、`test_active=0`，窗口 60 秒。
 
-本轮尚未重启、启动新镜像、准备 600 秒测试、修改当前手机的策略或执行插拔。没有刷写、分区/格式化、身份/NV 访问或 adb root。新镜像仅 L2；拟用回退仍为串口 `bootloader` → 原生 Fastboot → `fastboot reboot`，失联时电源＋音量下恢复 Fastboot，既有回退依据见上面的旧镜像 L3。
+此阶段尚未重启、启动新镜像、准备 600 秒测试、修改当前手机的策略或执行插拔。拟用回退为串口 `bootloader` → 原生 Fastboot → `fastboot reboot`，失联时电源＋音量下恢复 Fastboot，既有回退依据见上面的旧镜像 L3。
+
+## 授权后的提交、远端 CI 与新镜像启动
+
+维护者明确授权提交并推送 PR #2，同时要求先测试采集数据。工作分支创建提交 `c8bb079dc0fb0c6c9e90459593e65357a00d3875`，保留维护者主作者和 Codex trailer；以完整 SHA 运行新提交署名检查通过，再快进推送至 PR #2 的既有 `codex/fastboot-charging-governance` 分支。没有强推、主分支操作、合并或发布。
+
+[run 42446747077](https://github.com/Ben8368/MiSeed/actions/runs/42446747077) 的六项约定 job 全部 completed/success，包括此前失败的 Windows job。Boot L2 job `128627154824` 的 Linux、编译器及 Image / initramfs / boot.img 哈希均与本地一致；boot.img 为 `793ca218…7030c5`。远端成功仅对应此 HEAD。
+
+本机操作按预先保存的唯一设备 A 执行，不公开序列号：
+
+1. 串口 `status` 核实 PON `mode-bootloader=2` 及驱动已绑定；重启前日志末样本 77%、35°C、`enabled=0`、`rc=0`。
+2. 仅发送一次串口 `bootloader`；Fastboot 核实唯一设备 A、`product=umi`、`unlocked=yes`、`is-userspace=no`。
+3. 再核验完整镜像 SHA-256，执行一次 `fastboot -s <设备A> boot <已锁定boot.img>`，退出 0；没有重试或刷写。
+4. 新 USB ACM 出现，串口 `version` / `status` 核实 Linux 6.18.60 与 PON；基线导出 107 条。最近三个 controller 样本均电池在位、health Good、`enabled=0`、`rc=0`，FCC/ICL 500000 µA、FV 4400000 µV。
+5. 串口 `charge-test-10min` 响应明确 600 秒；紧接导出的旧 controller 样本尚未更新，未据此重复准备。随后只读导出 227 条，确认 `armed=1 active=0 seconds_max=600`、`enabled=0`、`rc=0`，SOC 78%、36°C。准备事件的 boot_ms 为 32017。
+
+已通知维护者完成电脑 → 充电器约 11 分钟 → 电脑，以观察 600 秒超时及策略恢复。维护者随后明确回复“已提前结束并接回 USB”，实际结果如下。未写分区、格式化、访问身份/NV 或使用 adb root；原始结果保留于忽略的 `.work/fastcharge-20261108/`。
+
+## 提前结束后的真机结果
+
+同次 RAM 启动执行以下只读导出，均退出 0：
+
+```sh
+python3 tools/collect_charge_log.py --port /dev/cu.usbmodem101 --output .work/fastcharge-20261108/after-charger.log --timeout 30
+python3 tools/collect_charge_log.py --port /dev/cu.usbmodem101 --output .work/fastcharge-20261108/after-replay.log --timeout 30
+```
+
+第一份 1524 条（seq 0..1523），第二份 1525 条；同一 boot session、覆盖均为 0。准备后的 227 条原记录完整保留；第二份覆盖第一份的全部 1524 条且逐字一致，多一条来自后台继续记录，不要求两次读取停止采集。未见序号缺失、重复或重排。
+
+| 日志 boot_ms | 观测 |
+| ---: | --- |
+| 32017 / 32420 | 准备 600 秒 / worker 确认 armed=1、active=0、enabled=0 |
+| 375500 | 拔电脑：input=0，保持停充并等待接入 |
+| 379660 / 379724 | 600 秒窗口开始事件 / 首个 active=1、enabled=1 样本 |
+| 405260 | 拔充电器：input=0、enabled=0、armed=0、active=0 |
+| 415529 | 重连电脑：input=1，SOC 78%，恢复正常策略并保持停充 |
+| 428005 | 第一份导出末个 controller 样本仍停充、rc=0 |
+| 465104 | 额外发送 `charge-stop`，rc=0，显式锁定停充作为测试清理 |
+
+按首个 active 样本到拔出样本计算约 **25.536 秒**；这是采样观测区间，不是精密插拔计时。共 24 条 active/enabled 样本，均 `rc=0`；首行电流在 enable 写入前读到，不作稳定充电证据。后续 **23/23** 电池电流为负，范围 **−92,285..−20,996 µA**、中位 **−85,449 µA**；电池电压 **4.131092..4.141835 V**，温度 **36°C**，SOC **78%**。仅支持本次 FG 观测下存在电池净充入；0.5 A 是编程上限，不是实测净充电流或适配器功率，未用外接表校准。
+
+启动约 6 秒时有一条原始电流 −1,070,311 µA 触发 `rc=-75`，当时尚未准备测试，保持 `enabled=0`；后续正常读数才准备。该启动瞬态不能证明实际电池过流，也不扩大为硬件保护故障验收。测试活动期间无读取错误，最大相邻 active 记录间隔约 2.014 秒。
+
+测试清理另运行串口 `charge-stop`，明确响应成功，再导出 `final-stopped.log`（1650 条），保留停充命令及之前 `hw_phase=disabled chg_enable=0` 的只读硬件观察。设备留在本次 RAM Linux、电脑 USB 已连接；单次测试已结束，不自动重新准备。
+
+本哈希的 RAM 启动、显式 600 秒准备、短时受限启充、拔出停充、高 SOC 下恢复正常策略、断线日志保留及复读取得 L3。**600 秒到期仍未实测**，也未覆盖 SOC 真实跨越 70/65、极端温度、真实过压/过流、watchdog 到期、长期供电、BQ/PD/PPS 快充或独立专项复核。原计划的 10 分钟充电未完成，不将提前结束写成通过。
