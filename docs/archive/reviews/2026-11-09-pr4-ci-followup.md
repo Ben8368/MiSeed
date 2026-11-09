@@ -13,4 +13,8 @@ PR：https://github.com/Ben8368/MiSeed/pull/4
 - 使用仓库现有 Ubuntu 24.04 ARM64 Colima 镜像（Python 3.12）重跑同一 L1 命令，136 项全部通过，无跳过；无需安装新的宿主软件。
 - `python3 -X utf8 tools/check_repo.py`、`python3 tools/check_build_lock.py` 与 `git diff --check` 通过。
 
-修复后的托管 CI 结果须在新 HEAD 运行结束后补记；不得将本地回归结果表述为 GitHub CI 通过。
+本地结果与 GitHub 托管结果分开记录；GitHub 状态以精确 HEAD 的 Actions run 为准。
+
+## 修复提交托管 CI
+
+修复提交 `26a6f058ec98a382223b1f2f745c4cfcbd1b1950` 的 [GitHub Actions run 62](https://github.com/Ben8368/MiSeed/actions/runs/42641991134) completed/success。Boot L2、PR commits、Ubuntu 24.04 Python 3.11/3.14、macOS 26 Python 3.14、Windows 2025 Python 3.14 六项 job 全部成功。
