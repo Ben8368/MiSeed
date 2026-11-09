@@ -18,6 +18,7 @@ REQUIRED_INPUTS = {
     "tools/extract_boot_v2_dtb.py", "tools/isolate_abl_targets.py",
     "tools/apply_power_observer.py", "tools/apply_power_port.py",
     "tools/apply_pd_diagnostics.py", "tools/make_initramfs.py",
+    "tools/apply_nfc_port.py",
     "tools/pack_android_boot_v2.py", "tests/test_abl_isolation.py",
     "kernel/umi-csot.dts", "kernel/umi-csot-dtbo-targets.txt",
     "kernel/umi-l2.config", "kernel/rescue_init.c", "kernel/charge_log.h",
@@ -27,6 +28,8 @@ REQUIRED_INPUTS = {
     "kernel/power/umi_pps.c", "kernel/power/umi_pps_policy.h",
     "kernel/power/umi_smb5.h", "kernel/power/umi-pps.dtsi",
     "kernel/power/pmic_pdphy_receive.inc",
+    "kernel/nfc/nq-nci.c", "kernel/nfc/nq-nci.h",
+    "kernel/nfc/nfcinfo-uapi.h",
     "LICENSES/BSD-3-Clause.txt", "LICENSES/GPL-2.0-only.txt",
 }
 
@@ -103,6 +106,20 @@ def check_build_lock(root, actual=None):
                 errors.append(f"build script/lock mismatch: {key}")
             if actual is not None and actual.get(key) != value:
                 errors.append(f"executing build/lock mismatch: {key}")
+        nfc_reference = profile.get("nfc_driver_reference")
+        if not isinstance(nfc_reference, str) or "@" not in nfc_reference:
+            raise ValueError("invalid nfc_driver_reference")
+        nfc_identity, nfc_revision = nfc_reference.split("@")
+        nfc_source = sources[nfc_identity]
+        if (not re.fullmatch(r"[0-9a-f]{40}", nfc_revision)
+                or nfc_source.get("revision") != nfc_revision
+                or nfc_source.get("url") != "https://github.com/LineageOS/android_kernel_xiaomi_sm8250.git"
+                or nfc_source.get("license") != "GPL-2.0-only"):
+            raise ValueError("invalid pinned NQ-NCI source identity")
+        nfc_source_revision = re.findall(
+            r'^readonly nfc_source_revision="([0-9a-f]{40})"$', script, re.M)
+        if nfc_source_revision != [nfc_revision]:
+            errors.append("build script/lock mismatch: nfc_source_revision")
         inputs = profile["project_inputs"]
         hashes = profile["input_sha256"]
         if (not isinstance(inputs, dict) or not inputs

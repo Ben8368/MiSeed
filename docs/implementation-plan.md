@@ -14,6 +14,7 @@
 | WP7 Fastboot 包 | WP6 | 设备/槽位/输入校验与恢复说明；L1 打包、L2 固定构建、独立授权 L3 安装/恢复 |
 | WP8 EDL 可行性 | WP7、外部前提 | 证明 Programmer 来源/授权/兼容性后才实现包格式；无前提则仅研究 |
 | WP9 USB 启动状态与基本供电 | WP1、WP2 | 放大横屏日志、USB 控制、Linux→Bootloader Fastboot→RAM Linux 往返及返回 Android，分项记录 L2/L3 和板级限制。基于匹配本机数据实现电源/充电，完成过流、过压、过温、故障保护审查、独立复核及授权 L3；保护不完整时不充电。任何 BCB/misc 写入须另行授权和回退方案；当前能力见 [platforms](platforms.md) |
+| WP10 Android 兼容 NFC / eSE | 内核接口与真机 probe 阶段完成；完整 Android HAL 需 Android 用户空间基座 | 已固定并移植 NQ-NCI `/dev/nq-nci` 和 ioctl ABI、设备树/I²C/GPIO 资源，L2 构建及 Linux RAM boot/NFCC probe L3 完成；完整 Android NFC 仍需固定 HAL、eSE middleware、配置和固件许可闭包，并在目标 Android 用户空间验证 discovery/NDEF/HCE/eSE。当前边界见 [NFC](NFC.md) 和 [L3 记录](archive/hardware/2026-11-09-umi-nfc-l2-ramboot.md) |
 
 WP2、WP3 可独立推进，WP4 汇合两条路径。工作包不授权设备操作或发布；未实现的构建 CLI 不写成可用命令。
 

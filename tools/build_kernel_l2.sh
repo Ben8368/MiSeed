@@ -5,6 +5,7 @@ readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly kernel_url="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 readonly kernel_revision="f45ed76d6791cf72ff1265ee93511175bbbc2f18"
 readonly reference_revision="cf83073887899f485a5c606f9842c5e691ea796c"
+readonly nfc_source_revision="6fcac56423a078c7bd180e8d2c626c7d66bf1677"
 readonly boot_url="https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img"
 # Same GitHub release asset; API endpoint avoids failing public release redirects.
 readonly boot_api_url="https://api.github.com/repos/misaka-link/umi-linux/releases/assets/592897637"
@@ -113,6 +114,7 @@ readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
 python3 "$observer_applier" --source "$source_tree"
 python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_pd_diagnostics.py" --source "$source_tree"
+python3 "$repo_root/tools/apply_nfc_port.py" --source "$source_tree" --project-root "$repo_root"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
 python3 "$repo_root/tools/extract_abl_anchors.py" \
@@ -130,7 +132,7 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
 for option in BATTERY_MISEED_QCOM_FG CHARGER_MISEED_PM8150B; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "runtime power driver must be built-in: ${option}"
 done
-for option in MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5; do
+for option in MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5 GPIOLIB MISEED_NFC_NQ; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "power compile test lost CONFIG_${option}"
 done
 for option in CHARGER_MISEED_UMI_PPS I2C_QCOM_GENI TYPEC_TCPM TYPEC_QCOM_PMIC REGULATOR_QCOM_USB_VBUS USB; do
@@ -139,7 +141,7 @@ done
 for option in MEMFD_CREATE FILE_LOCKING; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "RAM recorder lost CONFIG_${option}"
 done
-for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL_SM8250 COMMON_CLK_QCOM SM_GCC_8250 QCOM_CLK_RPMH QCOM_RPMHPD PM_OPP QCOM_GDSC HWSPINLOCK QCOM_SMEM QCOM_LLCC INTERCONNECT INTERCONNECT_QCOM INTERCONNECT_QCOM_SM8250 INTERCONNECT_QCOM_OSM_L3 IOMMU_SUPPORT ARM_SMMU SPMI QCOM_PDC SPMI_MSM_PMIC_ARB MFD_SPMI_PMIC POWER_RESET_QCOM_PON BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE SERIAL_EARLYCON CMDLINE_FORCE FRAMEBUFFER_CONSOLE_ROTATION FONTS FONT_TER16x32 QCOM_COMMAND_DB QCOM_RPMH USB_GADGET USB_DWC3 USB_DWC3_QCOM USB_DWC3_GADGET USB_CONFIGFS USB_CONFIGFS_ACM U_SERIAL_CONSOLE PHY_QCOM_USB_SNPS_FEMTO_V2 REGULATOR REGULATOR_FIXED_VOLTAGE REGULATOR_QCOM_RPMH; do
+for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL_SM8250 COMMON_CLK_QCOM SM_GCC_8250 QCOM_CLK_RPMH QCOM_RPMHPD PM_OPP QCOM_GDSC HWSPINLOCK QCOM_SMEM QCOM_LLCC INTERCONNECT INTERCONNECT_QCOM INTERCONNECT_QCOM_SM8250 INTERCONNECT_QCOM_OSM_L3 IOMMU_SUPPORT ARM_SMMU SPMI QCOM_PDC SPMI_MSM_PMIC_ARB MFD_SPMI_PMIC POWER_RESET_QCOM_PON BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE SERIAL_EARLYCON CMDLINE_FORCE FRAMEBUFFER_CONSOLE_ROTATION FONTS FONT_TER16x32 QCOM_COMMAND_DB QCOM_RPMH USB_GADGET USB_DWC3 USB_DWC3_QCOM USB_DWC3_GADGET USB_CONFIGFS USB_CONFIGFS_ACM U_SERIAL_CONSOLE PHY_QCOM_USB_SNPS_FEMTO_V2 REGULATOR REGULATOR_FIXED_VOLTAGE REGULATOR_QCOM_RPMH I2C I2C_QCOM_GENI GPIOLIB MISEED_NFC_NQ; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "resolved config lost CONFIG_${option}"
 done
 grep -Fqx 'CONFIG_ARM64_VA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit virtual addresses"
@@ -148,6 +150,9 @@ grep -Fqx 'CONFIG_CMDLINE="console=ttyMSM0,115200n8 console=tty0 loglevel=8 keep
 
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
     -j"$jobs" Image qcom/umi-csot.dtb modules
+
+[[ -s "$build_tree/drivers/nfc/nq-nci.o" ]] || fail "NQ-NCI compatibility driver object missing"
+install -m 0644 "$build_tree/drivers/nfc/nq-nci.o" "$output_root/nq-nci.o"
 
 # Runtime drivers must be built-in; the rescue image needs no module loader.
 for driver in qcom_fg qcom_pm8150b_charger umi_pps; do
@@ -158,7 +163,7 @@ install -m 0644 "$source_tree/.miseed-pd-diagnostics.json" "$output_root/pd-diag
 install -m 0644 "$build_tree/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.o" "$output_root/qcom_pmic_typec_pdphy.o"
 cp "$build_tree/.config" "$output_root/resolved.config"
 aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
-for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr; do
+for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr nqx_probe; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
@@ -170,6 +175,15 @@ python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb"
 for label in umi_pps pm8150b_typec i2c15 qupv3_id_2 pm8150b_vbus; do
     node="$(fdtget "$dtb" /__symbols__ "$label")"
     [[ "$(fdtget "$dtb" "$node" status)" == okay ]] || fail "Umi PD/PPS test node is not enabled: ${label}"
+done
+readonly nfc_node="$(fdtget "$dtb" /__symbols__ umi_nfc)"
+[[ "$(fdtget "$dtb" "$nfc_node" compatible)" == "qcom,nq-nci" ]] || fail "Umi NQ-NCI DT compatible mismatch"
+[[ "$(fdtget -t x "$dtb" "$nfc_node" reg)" == "28" ]] || fail "Umi NQ-NCI I2C address mismatch"
+for pin in qcom,nq-irq:6f qcom,nq-ven:53 qcom,nq-firm:6e qcom,nq-clkreq:7; do
+    property="${pin%%:*}"
+    expected_gpio="${pin#*:}"
+    read -r _ gpio _ <<< "$(fdtget -t x "$dtb" "$nfc_node" "$property")"
+    [[ "$gpio" == "$expected_gpio" ]] || fail "Umi NQ-NCI GPIO mismatch: ${property}"
 done
 # Verify both Type-C supplies by phandle, not by similarly named nodes.
 typec_node="$(fdtget "$dtb" /__symbols__ pm8150b_typec)"

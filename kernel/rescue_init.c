@@ -670,7 +670,12 @@ static void report_runtime_status(void) {
         "/sys/firmware/devicetree/base/soc@0/spmi@c440000/pmic@0/pon@800/mode-bootloader");
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
     report_platform_driver("PON", "qcom,pm8998-pon");
+    report_platform_driver("QUP wrapper", "qcom,geni-se-qup");
+    report_platform_driver("NFC I2C controller", "qcom,geni-i2c");
     report_i2c_devices();
+    report_dt_string("NFC device-tree compatible",
+        "/sys/firmware/devicetree/base/soc@0/geniqup@9c0000/i2c@984000/nfc@28/compatible");
+    report_path("/dev/nq-nci");
     report_power_supply_diagnostics();
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();

@@ -66,8 +66,10 @@ def verify(dtb):
         raise ValueError("allowlisted Umi TLMM is not enabled")
     ranges = subprocess.check_output(
         ["fdtget", "-t", "u", str(dtb), tlmm, "gpio-reserved-ranges"], text=True).split()
-    if ranges != ["0", "34", "36", "8", "46", "22", "69", "112"]:
-        raise ValueError("TLMM must expose only Umi UART12, I2C15, and BQ IRQ GPIOs")
+    if ranges != ["0", "4", "6", "1", "8", "26", "36", "8",
+                  "46", "22", "69", "14", "84", "26", "112", "69"]:
+        raise ValueError(
+            "TLMM must expose only Umi UART12, I2C15, BQ IRQ, and NQ NFC GPIOs")
     print("verified isolated soc/SPMI/TLMM overlay targets; live phandles retained")
 
 

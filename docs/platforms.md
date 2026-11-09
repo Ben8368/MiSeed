@@ -55,5 +55,6 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | UEFI → Linux | 设计中 | 无 L2/L3 |
 | CSOT 显示 / 触控 / USB | 本轮诊断 Image 的 macOS ACM/version/status/日志已 L3；既有 rotate:3 显示为 L3，本轮未复测显示；旧镜像 TLMM 禁用；当前 PPS 配置开放 UART34/35、I2C44/45、IRQ68，15-0066 绑定及充电已 L3；保护专项开放，触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
+| NFC / eSE | NQ-NCI `/dev/nq-nci` 驱动、SN100 共用 VEN 与 Umi I2C/GPIO 设备树已通过 L2 和 L3 RAM boot probe/node 验证；Android NXP HAL、eSE middleware、NFC service/framework 与许可审查固件未集成 | [NFC 移植记录](NFC.md)；[L3 记录](archive/hardware/2026-11-09-umi-nfc-l2-ramboot.md)；RISK-011 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
 | 充电日志 / 管理 | `44854093` PD/PPS 各约 10 分钟已稳定；`4f923319` PPS 约 81 秒正常收尾转 PD 继续净充。保护专项、串口偶发丢行与旧故障开放 | [稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [本轮](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)；RISK-004 |
