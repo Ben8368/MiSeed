@@ -156,11 +156,31 @@ class SourceCacheTests(unittest.TestCase):
             stub.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(output) + "\n")
             stub.chmod(0o755)
         script = (ROOT / "tools/build_kernel_l2.sh").read_text()
+        inputs = self.root / "inputs"
+        record = json.loads((ROOT / "manifests/sources.lock.json").read_text())
+        profile = record["build_profiles"][0]
+        for name in set(profile["input_sha256"]) | set(profile["host_tools"]):
+            destination = inputs / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, destination)
+        script = script.replace('readonly kernel_revision="' +
+                                record["sources"][0]["revision"] + '"',
+                                'readonly kernel_revision="' + self.revision + '"')
+        script = script.replace('readonly boot_sha256="' + profile["boot_header_template"]["sha256"] + '"',
+                                'readonly boot_sha256="' + hashlib.sha256(template).hexdigest() + '"')
+        (inputs / "tools/build_kernel_l2.sh").write_text(script, encoding="utf-8", newline="\n")
+        record["sources"][0]["revision"] = self.revision
+        profile["kernel_source"] = "linux-stable@" + self.revision
+        profile["boot_header_template"]["sha256"] = hashlib.sha256(template).hexdigest()
+        profile["input_sha256"]["tools/build_kernel_l2.sh"] = hashlib.sha256(
+            (inputs / "tools/build_kernel_l2.sh").read_bytes()).hexdigest()
+        (inputs / "manifests").mkdir()
+        (inputs / "manifests/sources.lock.json").write_text(json.dumps(record), encoding="utf-8")
         script = script[:script.index("readonly qcom_dts_dir=")]
         lines = script.splitlines()
         for index, line in enumerate(lines):
             if line.startswith("readonly repo_root="):
-                lines[index] = "readonly repo_root=" + shlex.quote(str(ROOT))
+                lines[index] = "readonly repo_root=" + shlex.quote(str(inputs))
             elif line.startswith("readonly kernel_revision="):
                 lines[index] = "readonly kernel_revision=" + self.revision
             elif line.startswith("readonly boot_sha256="):

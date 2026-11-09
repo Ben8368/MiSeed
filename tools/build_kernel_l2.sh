@@ -40,6 +40,12 @@ cleanup_fallback_trees() {
 }
 trap cleanup_fallback_trees EXIT
 
+require python3
+python3 "$repo_root/tools/check_build_lock.py" --root "$repo_root" \
+    --kernel-url "$kernel_url" --kernel-revision "$kernel_revision" \
+    --reference-revision "$reference_revision" --boot-url "$boot_url" \
+    --boot-sha256 "$boot_sha256"
+
 for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget fdtput fdtoverlay; do require "$tool"; done
 require nproc
 readonly jobs="${MISEED_JOBS:-$(nproc)}"

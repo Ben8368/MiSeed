@@ -49,9 +49,9 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 0x2b 的 bit3 不写入，读回必须保持本机 Android `0xd0` 对应的 0；翻转即拒绝继续。此不变量不构成 VOUT_OVP 极性、阈值和失效动作的完整证明。
 
-测试 profile 按 LOS 开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 未接入 LOS 的 VBUS-disable 行为。`9e065431…acfcea` 已证实 RPMh provider、I2C15 和 `umi-bq25970-pps` 绑定。四轮 RAM 测试取得 Source_Capabilities 中 5–11 V / 5 A APDO、8.8 V / 3 A PPS 合约；`50be50c1…f9aaf465` 曾启泵并读到 switching=1，之后被额外电流门控退出并恢复固定 PD/SMB5。第四版 `464f8c1b…b8cd0b89` 已在 SOC 90% RAM 测试，因两路 VBAT 差 54 mV 未启泵并恢复主充。采样等待修复随草稿 PR 提交；`49b1f406` 已完整 L2 及 RAM/USB 诊断 L3，初始 PPS 等待且无错误，充电器日志待取，见[本版记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)。既有四轮 L3 详见[真机证据](../../docs/archive/hardware/2026-11-08-umi-pps-ams-retry.md)。
+测试 profile 按 LOS 开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 未接入 LOS 的 VBUS-disable 行为。早期绑定、协商/启泵/回退和采样门控修正见[历史真机证据](../../docs/archive/hardware/2026-11-08-umi-pps-ams-retry.md)；`49b1f406` 后的 L2/L3 演进见[本轮记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)。历史待办及错误值不作为当前运行状态。
 
-活动类型支持列表不证明合约；Source_Capabilities、APDO Request、Accept/PS_RDY、ADC、switching 与净充电分别核实。`tcpm-log` 显式读取 `/sys/kernel/debug/usb/tcpm-*/log`，会消费协议环，最多显示内核环的 1024 条；不自动并入 `status`。旧 `-95` 可来自接回 Mac 后仅固定 PDO 的会话，不能代替充电器会话的错误。共享 VBUS 仍 sink/device-only。PD 与 PPS 充电均已在本机分别约 10 分钟 L3 通过并宣告稳定；保护/温控/恢复分项、GPIO8、RISK-010、温度标度及主机串口完整导出仍待独立专项复核。
+活动类型支持列表不证明合约；Source_Capabilities、APDO Request、Accept/PS_RDY、ADC、switching 与净充电分别核实。`tcpm-log` 显式读取 `/sys/kernel/debug/usb/tcpm-*/log`，会消费协议环，读取至 EOF，内核环容量为 262144 条；不自动并入 `status`。旧 `-95` 可来自接回 Mac 后仅固定 PDO 的会话，不能代替充电器会话的错误。共享 VBUS 仍 sink/device-only。PD 与 PPS 充电均已在本机分别约 10 分钟 L3 通过并宣告稳定；保护/温控/恢复分项、GPIO8、RISK-010、温度标度及主机串口完整导出仍待独立专项复核。
 
 ## 诊断接口
 

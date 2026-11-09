@@ -38,8 +38,8 @@
       "host": "WSL2 Ubuntu 24.04 x86_64; GitHub Actions ubuntu-24.04 runner",
       "target": "Linux v6.18.60 arm64 uncompressed Image, MiSeed CSOT DTB with ABL symbols, static rescue initramfs and Android boot header v2 image (128 MiB cap)",
       "install": "CI pins versioned and generic AArch64 GCC entry points, binutils, make, bc, bison, flex, libssl-dev, libelf-dev, libc6-dev-arm64-cross and device-tree-compiler; transitive package hashes are pending.",
-      "verification": "tools/build_kernel_l2.sh verifies the Linux commit, cross GCC 13.3.0 and make 4.3; current local WSL2 L2 uses uncompressed Image. Earlier hosted run 42046511356 covered the prior Image.gz artifact only. Resolve runner image and transitive package hashes before claiming a fully reproducible environment.",
-      "status": "Local WSL2 raw-Image boot L2 compiled; raw-Image profile CI, device boot, hosted runner digest and full apt package hash closure remain unverified."
+      "verification": "tools/build_kernel_l2.sh checks the Linux commit, GCC 13.3.0, make 4.3 and reviewed local inputs before build. L2/L3 evidence is maintained in docs/platforms.md; hosted runner identity and transitive package hashes remain open under TD-001.",
+      "status": "Boot L2 tool versions selected; validation belongs to docs/platforms.md; full hosted runner and apt package hash closure incomplete"
     },
     {
       "id": "python-host",
@@ -116,11 +116,11 @@
     }
   ],
   "reproducibility_gaps": [
-    "Debian container image digest and complete transitive .deb hash closure",
+    "Candidate Debian container digest and complete transitive .deb hash closure; the local Ubuntu Dockerfile has its own pinned base digest",
     "EDK II/Mu manifest-selected dependencies and pip wheel hashes",
     "Linux patch hashes/order/config and successful applicability to v6.18.60",
     "Cargo.lock and crate license inventory",
     "rootfs package list and package hashes",
-    "Independent exact artifact reproduction of the MiSeed board-config L2 build; host-specific compiler, linker, dtc and transitive package closure"
+    "Current-input independent reproduction after build changes; first Boot L2 hosted/local reproduction is archived in docs/TECH_DEBT.md. Host-specific compiler, linker, dtc and transitive package closure remains open"
   ]
 }

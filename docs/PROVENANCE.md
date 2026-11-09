@@ -14,6 +14,8 @@
 
 WP1 先维护人工审查的 `manifests/sources.lock.json` 版本锁。构建器/schema 接入后必须校验 id/url/revision/license/paths、子模块、补丁、工具链及 rootfs snapshot 的完整闭包；未通过前锁文件不可自动消费。候选 revision 为空或许可未审的来源不得自动下载执行。
 
+当前 [check_build_lock.py](../tools/check_build_lock.py) 仅做一致性检查：核对 Boot L2 的来源身份、脚本固定值及完整列举的本地输入哈希；仓库检查和构建前均调用，异常即失败。它不从锁文件选择、下载或执行来源，不表示传递依赖或许可闭包已完成；新增构建依赖须人工审查并扩充清单。运行状态只维护在 platforms，历史镜像留在证据归档。
+
 ## 既有 fork 与验证记录
 
 RQ-03 的既有成果是优先核对的线索，不指定默认基线。先固定 fork 与对应上游的完整 commit，区分继承代码、个人修改及依赖；不能用领先提交数代替功能清单，也不能用对话中的短 SHA 或移动分支名锁定输入。
