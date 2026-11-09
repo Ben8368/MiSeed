@@ -33,7 +33,9 @@ class RepositoryChecks(unittest.TestCase):
     def test_bad_encoding_and_line_endings(self):
         for data, fragment in [(b"\xff", "UTF-8"), (b"line\r\n", "LF"),
                                (b"line \n", "whitespace"), (b"line", "newline"),
-                               (b"\xef\xbb\xbftext\n", "BOM")]:
+                               (b"\xef\xbb\xbftext\n", "BOM"),
+                               (b"\x08oot_id\n", "control character"),
+                               (b"\x0cirst\n", "control character")]:
             with self.subTest(fragment=fragment):
                 errors, _ = check_repo.text_errors("file.md", data)
                 self.assertTrue(any(fragment in item for item in errors))
@@ -94,8 +96,12 @@ class RepositoryChecks(unittest.TestCase):
 
     def test_extra_priorities(self):
         path = self.root / "docs/CONTEXT.md"
-        path.write_text(path.read_text(encoding="utf-8").replace(
-            "## 最近验证", "4. 额外任务\n\n## 最近验证"), encoding="utf-8", newline="\n")
+        content = path.read_text(encoding="utf-8")
+        marker = "## 近期优先级\n"
+        self.assertIn(marker, content, "priority fixture heading changed")
+        path.write_text(content.replace(
+            marker, marker + "4. 额外任务\n", 1),
+            encoding="utf-8", newline="\n")
         self.assertTrue(any("priorities" in error for error in self.errors()))
 
     def test_artifacts_and_sensitive_inputs(self):

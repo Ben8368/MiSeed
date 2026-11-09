@@ -21,6 +21,16 @@ shasum -a 256 ".work/boot-l2-${build_arch}/boot.img"
 
 首次构建需要网络拉取锁定的 Linux commit 和 Android v2 头模板。Dockerfile 固定多架构 Ubuntu 24.04 基础镜像 digest 与直接 apt 包版本；arm64/amd64 GCC 包版本按容器架构选择。apt 传递依赖哈希尚未闭合，不能宣称完整可复现。命令只构建主机产物；证据等级见 [CONTEXT](CONTEXT.md)。
 
+## Windows / WSL 离线验证
+
+本机便携 w64devkit 2.11.0（GCC 16.2.0）在 `.work/tools/w64devkit-2.11.0/w64devkit/bin/`，原生 DTC 1.7.0 的四项工具在 `.work/tools/dtc-1.7.0/`；来源、许可和哈希见[复核记录](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)。不改系统或用户 PATH。
+
+```powershell
+pwsh -NoProfile -File tools/test_host.ps1
+```
+
+入口只临时补齐进程 PATH，检查工具后分别运行 Windows 与 WSL Ubuntu-24.04 回归及 ShellCheck，任一步失败即退出。Windows 不具备的 Linux 伪终端、FIFO、权限、Bash 用例由 WSL 实际执行，不能把原生跳过计为通过。WSL 需 Python 3.11+、Git、gcc/cc、Bash、dtc/libfdt 工具及 ShellCheck；手机 ARM64 L2 仍用锁定交叉工具链。已有 Windows 原生协议/日志测试的来源见[本机记录](archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
+
 ## ADB / Fastboot 工具与连接
 
 安装 Google [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)（含 `adb`、`fastboot`），或用 Android Studio SDK Manager 安装。二进制放在忽略目录 `.work/host-tools/platform-tools/`，不要提交。当前 Mac 使用 37.0.2，官方 ZIP SHA-256：`de86d62321ad38049d488fb1854c7b9a29f7e1b17e8dfb597c304b038cc37ae7`。

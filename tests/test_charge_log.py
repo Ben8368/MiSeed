@@ -41,13 +41,13 @@ class ExportTests(unittest.TestCase):
                     b"seq=8 boot_ms=200 KERNEL charger removed\r\n"
                     b"CHARGE_LOG_END next=9\r\n")
         bounds, data = self.receive(b"MiSeed diagnostic\r\n" + snapshot + b"miseed> ")
-        self.assertEqual(bounds, (7, 9, 2, 7))
+        self.assertEqual(bounds, (7, 9, 2, 7, 0))
         self.assertEqual(data, snapshot.replace(b"\r\n", b"\n"))
 
     def test_empty_export_is_valid(self):
         bounds, _ = self.receive(b"CHARGE_LOG_BEGIN boot_id=test first=0 next=0 count=0 overwritten=0 ram_only=1\n"
                                  b"CHARGE_LOG_END next=0\n")
-        self.assertEqual(bounds, (0, 0, 0, 0))
+        self.assertEqual(bounds, (0, 0, 0, 0, 0))
 
     def test_gaps_duplicates_wrong_footer_disconnect_and_unavailable_fail(self):
         begin = b"CHARGE_LOG_BEGIN boot_id=test first=0 next=2 count=2 overwritten=0 ram_only=1\n"

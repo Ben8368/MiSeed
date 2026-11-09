@@ -9,6 +9,11 @@ import subprocess
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+if __package__:
+    from .check_build_lock import check_build_lock
+else:
+    from check_build_lock import check_build_lock
+
 
 BUDGETS = {
     "AGENTS.md": (45, 2200),
@@ -25,10 +30,10 @@ REQUIRED = (
     "docs/QUALITY.md", "docs/GOVERNANCE.md", "docs/AI_RULES.md",
     "docs/RISK_REGISTER.md", "docs/TECH_DEBT.md",
     "docs/implementation-plan.md", "docs/ADR/README.md",
-    "manifests/sources.json", ".github/workflows/ci.yml",
+    "manifests/sources.json", "manifests/sources.lock.json", ".github/workflows/ci.yml",
 )
 EXCLUDED = {".git", ".work", "out", "local", ".venv", "__pycache__"}
-TEXT_SUFFIXES = {".md", ".py", ".json", ".yml", ".yaml", ".toml", ".sh"}
+TEXT_SUFFIXES = {".md", ".py", ".json", ".yml", ".yaml", ".toml", ".sh", ".ps1"}
 FORBIDDEN_SUFFIXES = {
     ".img", ".bin", ".elf", ".dtb", ".dtbo", ".cpio", ".log", ".pem", ".key",
     ".pyc", ".pyo",
@@ -68,6 +73,8 @@ def text_errors(name, data):
         errors.append(f"{name}: UTF-8 BOM is forbidden")
     if "\r" in content:
         errors.append(f"{name}: use LF line endings")
+    if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in content):
+        errors.append(f"{name}: forbidden control character")
     if content and not content.endswith("\n"):
         errors.append(f"{name}: missing final newline")
     for number, line in enumerate(content.splitlines(), 1):
@@ -193,6 +200,7 @@ def check_repository(root):
             errors.extend(sources_errors(json.loads(manifest)))
         except json.JSONDecodeError as exc:
             errors.append(f"sources.json: invalid JSON: {exc}")
+    errors.extend(check_build_lock(root))
     errors.extend(adr_errors(root, texts))
     context = texts.get("docs/CONTEXT.md", "")
     priorities = re.search(r"## 近期优先级\n(.*?)(?=\n## |\Z)", context, re.DOTALL)
@@ -210,7 +218,7 @@ def main():
         print("ERROR:", error)
     if errors:
         return 1
-    print("PASS: repository text, links, budgets, ADRs and source candidates (L0 only)")
+    print("PASS: repository text, links, budgets, ADRs, candidates and Boot L2 lock (L0 only)")
     return 0
 
 

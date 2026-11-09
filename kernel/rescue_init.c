@@ -25,15 +25,17 @@ static void mount_virtual(const char *source, const char *target,
         fprintf(stderr, "mount %s failed: %s\n", target, strerror(errno));
 }
 
-static void print_file(const char *path) {
+static int print_file(const char *path) {
     FILE *file = fopen(path, "r");
     char buffer[512];
     if (!file) {
         printf("cannot read %s: %s\n", path, strerror(errno));
-        return;
+        return -1;
     }
     while (fgets(buffer, sizeof(buffer), file)) fputs(buffer, stdout);
-    fclose(file);
+    int failed = ferror(file) || ferror(stdout);
+    if (fclose(file)) failed = 1;
+    return failed ? -1 : 0;
 }
 
 static void report_dt_string(const char *label, const char *path) {
@@ -161,6 +163,10 @@ static void report_usb_kernel_messages(void) {
         int error_level;
 
         if (length < 0) {
+            if (errno == EPIPE) {
+                fprintf(stderr, "USB kernel ring overrun; continuing from retained cursor\n");
+                continue;
+            }
             if (errno != EAGAIN && errno != EINTR)
                 fprintf(stderr, "USB kernel log read failed: %s\n",
                         strerror(errno));
@@ -202,6 +208,60 @@ static void report_usb_kernel_messages(void) {
          i < (matches > LOG_COUNT ? matches % LOG_COUNT + LOG_COUNT : matches);
          i++)
         printf("Kernel diag %.228s\n", recent[i % LOG_COUNT]);
+}
+
+static void report_rpmh_kernel_messages(void) {
+    enum { LOG_COUNT = 32, LOG_LENGTH = 384 };
+    int fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    char message[2048];
+    char recent[LOG_COUNT][LOG_LENGTH];
+    unsigned int matches = 0;
+    unsigned int i;
+
+    if (fd < 0) {
+        fprintf(stderr, "RPMh kernel log unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while (1) {
+        ssize_t length = read(fd, message, sizeof(message) - 1);
+        char *content;
+
+        if (length < 0) {
+            if (errno == EPIPE) {
+                fprintf(stderr, "RPMh kernel ring overrun; continuing from retained cursor\n");
+                continue;
+            }
+            if (errno != EAGAIN && errno != EINTR)
+                fprintf(stderr, "RPMh kernel log read failed: %s\n",
+                        strerror(errno));
+            if (errno != EINTR) break;
+            continue;
+        }
+        if (!length) break;
+        message[length] = '\0';
+        content = strchr(message, ';');
+        if (content) content++;
+        else content = message;
+        if (contains_case_insensitive(content, "rpmh") ||
+            contains_case_insensitive(content, "cmd-db") ||
+            contains_case_insensitive(content, "cmd_db") ||
+            contains_case_insensitive(content, "power-controller") ||
+            contains_case_insensitive(content, "power domain")) {
+            size_t copy_length = strnlen(content, LOG_LENGTH - 1);
+            memcpy(recent[matches % LOG_COUNT], content, copy_length);
+            recent[matches % LOG_COUNT][copy_length] = '\0';
+            matches++;
+        }
+    }
+    close(fd);
+    if (!matches) {
+        puts("No RPMh/CMD DB/power-domain kernel messages retained");
+        return;
+    }
+    for (i = matches > LOG_COUNT ? matches % LOG_COUNT : 0;
+         i < (matches > LOG_COUNT ? matches % LOG_COUNT + LOG_COUNT : matches);
+         i++)
+        printf("Kernel RPMh diag %.340s\n", recent[i % LOG_COUNT]);
 }
 
 static void report_usb_probe_devices(void) {
@@ -297,6 +357,64 @@ static int report_platform_driver(const char *label, const char *compatible) {
     if (!found) printf("%s compatible device missing: %s\n", label,
                        compatible);
     return bound;
+}
+
+static void report_i2c_devices(void) {
+    const char *root = "/sys/bus/i2c/devices";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    char path[512];
+    char driver[256];
+    char compatible[256];
+    unsigned int count = 0;
+
+    if (!dir) {
+        printf("I2C device list unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        ssize_t length;
+        int fd;
+
+        if (entry->d_name[0] == '.') continue;
+        if (count++ == 64) {
+            puts("I2C device list truncated after 64 entries");
+            break;
+        }
+        if (snprintf(path, sizeof(path), "%s/%s/driver", root,
+                     entry->d_name) >= (int)sizeof(path))
+            continue;
+        length = readlink(path, driver, sizeof(driver) - 1);
+        if (length < 0) strcpy(driver, "unbound");
+        else {
+            driver[length] = '\0';
+        }
+
+        if (snprintf(path, sizeof(path), "%s/%s/of_node/compatible", root,
+                     entry->d_name) >= (int)sizeof(path))
+            continue;
+        fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            printf("I2C device %s driver=%s compatible=unavailable\n",
+                   entry->d_name, driver);
+            continue;
+        }
+        length = read(fd, compatible, sizeof(compatible) - 1);
+        close(fd);
+        if (length < 0) {
+            printf("I2C device %s driver=%s compatible=read-error\n",
+                   entry->d_name, driver);
+            continue;
+        }
+        for (ssize_t i = 0; i < length; i++)
+            if (compatible[i] == '\0') compatible[i] = ' ';
+        compatible[length] = '\0';
+        printf("I2C device %s driver=%s compatible=%s\n",
+               entry->d_name, driver, compatible);
+    }
+    closedir(dir);
+    if (!count) puts("I2C device list empty");
+    list_directory("Type-C class devices", "/sys/class/typec");
 }
 
 static void report_spmi_devices(void) {
@@ -428,12 +546,132 @@ static void report_spmi_dt_nodes(void) {
     closedir(dir);
 }
 
+static void report_power_supply_diagnostics(void) {
+    static const char *const properties[] = {
+        "type", "online", "status", "usb_type", "voltage_now",
+        "current_now", "voltage_max", "current_max", "pd_current_max",
+        "input_current_limit", "charge_type", "scope"
+    };
+    const char *root = "/sys/class/power_supply";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    unsigned int count = 0;
+
+    if (!dir) {
+        printf("Power supply list unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        size_t i;
+        int found = 0;
+
+        if (entry->d_name[0] == '.') continue;
+        if (count++ == 32) {
+            puts("Power supply list truncated after 32 entries");
+            break;
+        }
+        printf("Power supply %s:", entry->d_name);
+        for (i = 0; i < sizeof(properties) / sizeof(properties[0]); i++) {
+            char path[512];
+            char value[160];
+            ssize_t length;
+            size_t j;
+            int fd;
+
+            if (snprintf(path, sizeof(path), "%s/%s/%s", root,
+                         entry->d_name, properties[i]) >= (int)sizeof(path))
+                continue;
+            fd = open(path, O_RDONLY | O_CLOEXEC);
+            if (fd < 0) continue;
+            length = read(fd, value, sizeof(value) - 1);
+            close(fd);
+            if (length <= 0) continue;
+            value[length] = '\0';
+            while (length > 0 && (value[length - 1] == '\n' ||
+                                  value[length - 1] == '\r'))
+                value[--length] = '\0';
+            for (j = 0; j < (size_t)length; j++)
+                if (!isprint((unsigned char)value[j])) value[j] = '?';
+            printf("%s %s=%s", found ? "," : "", properties[i], value);
+            found = 1;
+        }
+        puts(found ? "" : " no diagnostic properties");
+    }
+    closedir(dir);
+}
+
+/* TCPM's debugfs reader advances its in-kernel ring buffer. Keep this behind
+ * an explicit console command so routine status sampling does not consume it.
+ */
+static void report_tcpm_logs(void) {
+    const char *root = "/sys/kernel/debug/usb";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    unsigned int ports = 0;
+
+    if (!dir) {
+        printf("TCPM debug log unavailable: %s\n", strerror(errno));
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        char path[512];
+        char line[512];
+        FILE *file;
+        int fd;
+        uint64_t lines = 0;
+
+        if (strncmp(entry->d_name, "tcpm-", 5)) continue;
+        if (ports++ == 8) {
+            puts("TCPM log listing truncated after 8 ports");
+            break;
+        }
+        if (snprintf(path, sizeof(path), "%s/%s/log", root,
+                     entry->d_name) >= (int)sizeof(path))
+            continue;
+        fd = open(path, O_RDONLY | O_CLOEXEC);
+        if (fd < 0) {
+            printf("TCPM log %s unavailable: %s\n", entry->d_name,
+                   strerror(errno));
+            continue;
+        }
+        file = fdopen(fd, "r");
+        if (!file) {
+            int error = errno;
+            close(fd);
+            printf("TCPM log %s unavailable: %s\n", entry->d_name,
+                   strerror(error));
+            continue;
+        }
+        printf("TCPM protocol log %s (read drains kernel ring):\n",
+               entry->d_name);
+        printf("TCPM_LOG_BEGIN port=%s\n", entry->d_name);
+        while (fgets(line, sizeof(line), file)) {
+            fputs(line, stdout);
+            lines++;
+        }
+        if (ferror(file)) puts("TCPM log read failed; snapshot incomplete");
+        if (!lines) puts("TCPM log empty");
+        printf("TCPM_LOG_END port=%s lines=%" PRIu64 " complete=%u\n", entry->d_name,
+               lines, (unsigned int)!ferror(file));
+        fclose(file);
+    }
+    closedir(dir);
+    if (!ports) puts("No TCPM debug log ports found");
+}
+
 static void report_runtime_status(void) {
     report_platform_driver("PDC", "qcom,sm8250-pdc");
+    report_platform_driver("RPMh RSC", "qcom,rpmh-rsc");
+    report_platform_driver("RPMh power-domain provider", "qcom,sm8250-rpmhpd");
+    list_directory("RPMh power-domain driver",
+                   "/sys/bus/platform/drivers/qcom-rpmhpd");
+    report_rpmh_kernel_messages();
     report_dt_u32("PON mode-bootloader",
         "/sys/firmware/devicetree/base/soc@0/spmi@c440000/pmic@0/pon@800/mode-bootloader");
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
     report_platform_driver("PON", "qcom,pm8998-pon");
+    report_i2c_devices();
+    report_power_supply_diagnostics();
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
     report_spmi_devices();
@@ -580,6 +818,39 @@ static int reopen_usb_console(void) {
     return 0;
 }
 
+/* Locate exactly one bound PPS controller; never infer an I2C bus number. */
+static int pps_control_path(char *path, size_t size) {
+    const char *base = "/sys/bus/i2c/drivers/umi-bq25970-pps";
+    DIR *dir = opendir(base);
+    struct dirent *entry;
+    struct stat st;
+    char candidate[512];
+    int found = 0;
+    if (!dir) return -1;
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') continue;
+        int n = snprintf(candidate, sizeof(candidate), "%s/%s/fastcharge_test", base, entry->d_name);
+        if (n < 0 || (size_t)n >= sizeof(candidate)) continue;
+        if (stat(candidate, &st) || !S_ISREG(st.st_mode)) continue;
+        if (++found != 1 || (size_t)n >= size) { found = -1; break; }
+        memcpy(path, candidate, (size_t)n + 1);
+    }
+    closedir(dir);
+    if (found != 1) { errno = found < 0 ? EEXIST : ENODEV; return -1; }
+    return 0;
+}
+
+static int pps_control(const char *value) {
+    char path[512];
+    int rc = pps_control_path(path, sizeof(path));
+    if (!rc) {
+        if (value) rc = write_value(path, value);
+        else rc = print_file(path);
+    }
+    if (value) charge_log_append("CONTROL", "pps_control action=%s rc=%d", value, rc);
+    return rc;
+}
+
 static void usb_console(void) {
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -587,9 +858,10 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, reboot, bootloader");
+        puts("Commands: help, status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
+        puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
             sleep(1);
@@ -599,6 +871,7 @@ static void usb_console(void) {
         line[strcspn(line, "\r\n")] = '\0';
         if (!strcmp(line, "help")) continue;
         if (!strcmp(line, "status")) report_runtime_status();
+        else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");
         else if (!strcmp(line, "cmdline")) print_file("/proc/cmdline");
@@ -611,10 +884,20 @@ static void usb_console(void) {
                                  extended ? "arm-10min" : "arm");
             charge_log_append("CONTROL", "charge_test_arm seconds=%u rc=%d", extended ? 600U : 60U, rc);
             if (rc) puts("Charge test arm failed; inspect logs.");
-            else printf("Test armed: disconnect computer, attach charger. Ends on unplug or after %u seconds; 0.5 A cap and safety gates stay active.\n",
+            else printf("Test armed: disconnect computer, attach charger. Ends on unplug or after %u seconds; LOS limits and safety checks stay active.\n",
                         extended ? 600U : 60U);
+        } else if (!strcmp(line, "pps-status")) {
+            if (pps_control(NULL)) puts("PPS controller unavailable or ambiguous; board qualification may be incomplete.");
+        } else if (!strcmp(line, "pps-stop")) {
+            puts(pps_control("stop") ? "PPS stop unavailable/failed; disconnect charger." : "PPS stopped; SMB5 fallback policy resumed.");
         } else if (!strcmp(line, "charge-stop")) {
+            /* Also stop PPS when present, before releasing the ordinary charger. */
+            char path[512];
+            int pps_rc = pps_control_path(path, sizeof(path));
+            if (!pps_rc) pps_rc = write_value(path, "stop");
+            else if (errno == ENOENT || errno == ENODEV) pps_rc = 0;
             int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_test", "stop");
+            if (pps_rc) rc = pps_rc;
             charge_log_append("CONTROL", "charge_test_stop rc=%d", rc);
             puts(rc ? "Charge stop failed; disconnect the charger." : "Charging inhibited; test cancelled.");
         } else if (!strcmp(line, "reboot")) {

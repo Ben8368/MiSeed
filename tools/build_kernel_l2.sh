@@ -6,6 +6,8 @@ readonly kernel_url="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linu
 readonly kernel_revision="f45ed76d6791cf72ff1265ee93511175bbbc2f18"
 readonly reference_revision="cf83073887899f485a5c606f9842c5e691ea796c"
 readonly boot_url="https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img"
+# Same GitHub release asset; API endpoint avoids failing public release redirects.
+readonly boot_api_url="https://api.github.com/repos/misaka-link/umi-linux/releases/assets/592897637"
 readonly boot_sha256="a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a"
 readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
@@ -38,7 +40,13 @@ cleanup_fallback_trees() {
 }
 trap cleanup_fallback_trees EXIT
 
-for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget; do require "$tool"; done
+require python3
+python3 "$repo_root/tools/check_build_lock.py" --root "$repo_root" \
+    --kernel-url "$kernel_url" --kernel-revision "$kernel_revision" \
+    --reference-revision "$reference_revision" --boot-url "$boot_url" \
+    --boot-sha256 "$boot_sha256"
+
+for tool in git make tar sha256sum python3 aarch64-linux-gnu-gcc aarch64-linux-gnu-nm dtc fdtget fdtput fdtoverlay; do require "$tool"; done
 require nproc
 readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
@@ -50,11 +58,8 @@ grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must 
 
 mkdir -p "$work_root" "$output_root"
 if [[ ! -f "$template" ]]; then
-    python3 - "$boot_url" "$template" <<'PY'
-import sys
-from urllib.request import urlretrieve
-urlretrieve(sys.argv[1], sys.argv[2])
-PY
+    python3 "$repo_root/tools/download_locked.py" --url "$boot_url" \
+        --fallback-url "$boot_api_url" --sha256 "$boot_sha256" --output "$template"
 fi
 [[ "$(sha256sum "$template" | awk '{print $1}')" == "$boot_sha256" ]] || fail "locked Android header-v2 template SHA-256 mismatch"
 
@@ -100,11 +105,14 @@ if [[ "$source_verified" != true ]]; then
 fi
 
 readonly qcom_dts_dir="$source_tree/arch/arm64/boot/dts/qcom"
+# The L2 environment has libfdt tools; exercise overlay failure cases here too.
+(cd "$repo_root" && python3 -m unittest discover -s tests -p test_abl_isolation.py -v)
 readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
 readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
 python3 "$observer_applier" --source "$source_tree"
 python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
+python3 "$repo_root/tools/apply_pd_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
 python3 "$repo_root/tools/extract_abl_anchors.py" \
@@ -125,10 +133,13 @@ done
 for option in MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "power compile test lost CONFIG_${option}"
 done
+for option in CHARGER_MISEED_UMI_PPS I2C_QCOM_GENI TYPEC_TCPM TYPEC_QCOM_PMIC REGULATOR_QCOM_USB_VBUS USB; do
+    grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "PPS compile coverage lost CONFIG_${option}"
+done
 for option in MEMFD_CREATE FILE_LOCKING; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "RAM recorder lost CONFIG_${option}"
 done
-for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL_SM8250 COMMON_CLK_QCOM SM_GCC_8250 QCOM_CLK_RPMH QCOM_RPMHPD QCOM_GDSC HWSPINLOCK QCOM_SMEM QCOM_LLCC INTERCONNECT INTERCONNECT_QCOM INTERCONNECT_QCOM_SM8250 INTERCONNECT_QCOM_OSM_L3 IOMMU_SUPPORT ARM_SMMU SPMI QCOM_PDC SPMI_MSM_PMIC_ARB MFD_SPMI_PMIC POWER_RESET_QCOM_PON BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE SERIAL_EARLYCON CMDLINE_FORCE FRAMEBUFFER_CONSOLE_ROTATION FONTS FONT_TER16x32 QCOM_COMMAND_DB QCOM_RPMH USB_GADGET USB_DWC3 USB_DWC3_QCOM USB_DWC3_GADGET USB_CONFIGFS USB_CONFIGFS_ACM U_SERIAL_CONSOLE PHY_QCOM_USB_SNPS_FEMTO_V2 REGULATOR REGULATOR_FIXED_VOLTAGE REGULATOR_QCOM_RPMH; do
+for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL_SM8250 COMMON_CLK_QCOM SM_GCC_8250 QCOM_CLK_RPMH QCOM_RPMHPD PM_OPP QCOM_GDSC HWSPINLOCK QCOM_SMEM QCOM_LLCC INTERCONNECT INTERCONNECT_QCOM INTERCONNECT_QCOM_SM8250 INTERCONNECT_QCOM_OSM_L3 IOMMU_SUPPORT ARM_SMMU SPMI QCOM_PDC SPMI_MSM_PMIC_ARB MFD_SPMI_PMIC POWER_RESET_QCOM_PON BINFMT_ELF BLK_DEV_INITRD RD_GZIP DEVTMPFS PROC_FS SYSFS OF_OVERLAY QCOM_GENI_SE SERIAL_QCOM_GENI SERIAL_QCOM_GENI_CONSOLE SERIAL_EARLYCON CMDLINE_FORCE FRAMEBUFFER_CONSOLE_ROTATION FONTS FONT_TER16x32 QCOM_COMMAND_DB QCOM_RPMH USB_GADGET USB_DWC3 USB_DWC3_QCOM USB_DWC3_GADGET USB_CONFIGFS USB_CONFIGFS_ACM U_SERIAL_CONSOLE PHY_QCOM_USB_SNPS_FEMTO_V2 REGULATOR REGULATOR_FIXED_VOLTAGE REGULATOR_QCOM_RPMH; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "resolved config lost CONFIG_${option}"
 done
 grep -Fqx 'CONFIG_ARM64_VA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit virtual addresses"
@@ -139,17 +150,35 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
     -j"$jobs" Image qcom/umi-csot.dtb modules
 
 # Runtime drivers must be built-in; the rescue image needs no module loader.
-for driver in qcom_fg qcom_pm8150b_charger; do
+for driver in qcom_fg qcom_pm8150b_charger umi_pps; do
     [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"
     install -m 0644 "$build_tree/drivers/power/supply/${driver}.o" "$output_root/${driver}.o"
 done
+install -m 0644 "$source_tree/.miseed-pd-diagnostics.json" "$output_root/pd-diagnostics-inputs.json"
+install -m 0644 "$build_tree/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.o" "$output_root/qcom_pmic_typec_pdphy.o"
 cp "$build_tree/.config" "$output_root/resolved.config"
 aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
-for symbol in qcom_fg_probe smb5_probe; do
+for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
-readonly dtb="$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb"
+readonly dtb="$output_root/umi-csot.dtb"
+# Work on a copy: every build starts with dtc's original symbol identities.
+install -m 0644 "$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb" "$dtb"
+python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb"
+# The Umi L3 test image intentionally enables the sink-only PD/PPS profile.
+for label in umi_pps pm8150b_typec i2c15 qupv3_id_2 pm8150b_vbus; do
+    node="$(fdtget "$dtb" /__symbols__ "$label")"
+    [[ "$(fdtget "$dtb" "$node" status)" == okay ]] || fail "Umi PD/PPS test node is not enabled: ${label}"
+done
+# Verify both Type-C supplies by phandle, not by similarly named nodes.
+typec_node="$(fdtget "$dtb" /__symbols__ pm8150b_typec)"
+for pair in vdd-pdphy:vreg_l2a_3p1 vdd-vbus:pm8150b_vbus; do
+    supply_node="$(fdtget "$dtb" /__symbols__ "${pair#*:}")"
+    [[ "$(fdtget -t x "$dtb" "$typec_node" "${pair%%:*}-supply")" == \
+       "$(fdtget -t x "$dtb" "$supply_node" phandle)" ]] || fail "Type-C supply mismatch: $pair"
+done
+[[ "$(fdtget "$dtb" "$typec_node/connector" power-role)" == sink ]] || fail "Type-C must remain sink-only"
 readonly symbols="$(fdtget "$dtb" /__symbols__ arch_timer 2>/dev/null || true)"
 [[ "$symbols" == "/timer" ]] || fail "DTB lacks overlay symbols (__symbols__.arch_timer=$symbols)"
 readonly anchor_count="$(fdtget -l "$dtb" /abl_ovf | wc -l)"
@@ -173,13 +202,17 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
 
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
-    "$repo_root/tools/extract_boot_v2_dtb.py" "$config_fragment" \
+    "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
     "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
     "$observer_source" "$observer_applier" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \
     "$repo_root/kernel/power/Kconfig" "$repo_root/kernel/power/umi_charge_policy.h" \
     "$repo_root/kernel/power/umi-pm8150b.dtsi" "$repo_root/tools/apply_power_port.py" \
-    "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
+    "$repo_root/kernel/power/umi_pps.c" "$repo_root/kernel/power/umi_pps_policy.h" \
+    "$repo_root/kernel/power/umi_smb5.h" "$repo_root/kernel/power/umi-pps.dtsi" \
+    "$output_root/umi_pps.o" "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
+    "$repo_root/tools/apply_pd_diagnostics.py" "$repo_root/kernel/power/pmic_pdphy_receive.inc" \
+    "$output_root/pd-diagnostics-inputs.json" "$output_root/qcom_pmic_typec_pdphy.o" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \
     "$build_tree/.config" "$kernel_image" "$initramfs" "$dtb" "$output_root/boot.img"
 printf '\nLinux revision: %s\nReference report revision: %s\n' "$kernel_revision" "$reference_revision"

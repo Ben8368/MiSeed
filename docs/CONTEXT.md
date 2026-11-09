@@ -1,17 +1,11 @@
 # 当前状态
 
-日期：2026-11-08。PR #2 已推送 CodeRabbit 复核修复（commit `6b40cf1`），未合并。修复后 macOS 本地 L2 构建成功，`boot.img` SHA-256 `4396142a…b3ca6c`；75 项回归中 61 项通过，14 项因 Linux 专属环境跳过。GitHub CI run `42454735733` 在 PR HEAD `1c2fdefbe59639ab19e3fa427ac187e0bea25d29` 成功，PR 与 base 同步且显示可合并；GitHub review 列表没有本轮修复的独立人工专项复核，故暂不合并。逐项结论与验证见[PR #2 CodeRabbit 复核](archive/reviews/2026-11-08-pr2-coderabbit.md)。此前真机结果和原发布 HEAD CI 记录见[本轮核查](archive/reviews/2026-11-08-fastcharge-ci.md)。
+日期：2026-11-09。分支 `codex/umi-pd-pps-fastcharge`，PR #3 待审查、不合并。本地 `4f923319…8540601f` 已 RAM/USB/PPS L3，约 81 秒后按收尾条件转 PD；复核修复纳入 PR #3，见[本轮记录](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)。
 
-本机新镜像 RAM 启动及 600 秒准备完成；维护者提前结束，日志观测约 25.5 秒受限启充、拔出停充、78% 电量下恢复正常策略。1524 条连续记录、覆盖 0、复读一致；温度 36°C，23 条稳定 FG 电流中位 −85,449 µA。不代表 600 秒超时、异常保护或快充已通过。
-
-设备仍在本次 RAM Linux、电脑 USB 在线；单次测试结束，额外 `charge-stop` 已成功，保持停充。未刷写或使用 adb root；原 Android 返回路径此前已验证，见[诊断往返](archive/hardware/2026-11-08-upstream-power-ramboot.md)。
+镜像 `44854093…e98a89f94c`：维护者宣告 PD 与 PPS 充电均已稳定——二者分别约 10 分钟真机测试均无充电中故障。PPS：连续 RUN 约 12 分钟、2400 条样本；固定 PD/SMB5：约 10 分钟、SOC 70%→83%、净充约 2.3–2.4 A（无 APDO 时 `error=-95` 为预期退出）。主机串口导出偶发丢行仍开放。见[PPS L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md#长日志镜像-pps-稳定运行-l3)、[固定 PD L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md#固定-pd-约-10-分钟验证-l3)。
 
 ## 近期优先级
 
-1. 闭合快充 PD/PPS 控制、板级采样/保护与 GPIO 接线；当前不直接启泵，RISK-004 保留。
-2. 消除重复 PMIC（RISK-010），锁定安全 GPIO 后恢复 TLMM（TD-002）。
-3. 补齐 60/600 秒到期、SOC 边界、温控/过压/过流、watchdog 真机证据和独立复核；不把短时插拔扩大为长期验收。
-
-## 最近验证
-
-[PR #2 CodeRabbit 复核 L1/L2](archive/reviews/2026-11-08-pr2-coderabbit.md)；[此前 L1/L2/L3 与 CI](archive/reviews/2026-11-08-fastcharge-ci.md)；[此前受限 L3](archive/hardware/2026-11-08-umi-runtime-power.md)；[来源锁](../manifests/sources.lock.json)。
+1. 修复/检测 Windows 串口导出丢行，按时段采集。
+2. 跟进旧镜像 BQ 故障与间歇性 `-ENOTCONN`，独立专项复核与精确 HEAD CI；PR 待审查，不合并。
+3. 保护/停机路径与温度标度分项 L3，与已宣告稳定的 PD/PPS 运行分开记录。见 [PPS](../kernel/power/PPS.md)、[RISK-004](RISK_REGISTER.md#risk-004-p0-供电发布)。

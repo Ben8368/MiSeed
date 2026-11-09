@@ -8,13 +8,22 @@
 #include <sys/mman.h>
 #include <time.h>
 
-#ifndef CHARGE_LOG_CAPACITY
-#define CHARGE_LOG_CAPACITY 8192
+#ifndef CHARGE_LOG_INITIAL_CAPACITY
+#ifdef CHARGE_LOG_CAPACITY
+#define CHARGE_LOG_INITIAL_CAPACITY CHARGE_LOG_CAPACITY
+#else
+#define CHARGE_LOG_INITIAL_CAPACITY 8192U
+#endif
 #endif
 #define CHARGE_LOG_LINE 768
+#ifndef CHARGE_LOG_MAX_BYTES
+#define CHARGE_LOG_MAX_BYTES (64U * 1024U * 1024U)
+#endif
 
 struct charge_log_header {
     uint64_t total;
+    uint64_t capacity;
+    uint64_t storage_errors;
     char boot_id[40];
 };
 
@@ -52,13 +61,16 @@ static uint64_t charge_boot_ms(void) {
 }
 
 static int charge_log_init(void) {
-    struct charge_log_header header = { .boot_id = "unavailable" };
+    struct charge_log_header header = {
+        .capacity = CHARGE_LOG_INITIAL_CAPACITY,
+        .boot_id = "unavailable"
+    };
     int fd;
     ssize_t n;
     charge_log_fd = memfd_create("miseed-charge-log", MFD_CLOEXEC);
     if (charge_log_fd < 0) return -1;
     if (ftruncate(charge_log_fd, sizeof(header) +
-                  CHARGE_LOG_CAPACITY * sizeof(struct charge_log_record))) goto fail;
+                  CHARGE_LOG_INITIAL_CAPACITY * sizeof(struct charge_log_record))) goto fail;
     fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_CLOEXEC);
     if (fd >= 0) {
         n = read(fd, header.boot_id, sizeof(header.boot_id) - 1);
@@ -99,51 +111,66 @@ static void charge_log_append(const char *kind, const char *format, ...) {
     }
     snprintf(record.text, sizeof(record.text), "seq=%" PRIu64 " boot_ms=%" PRIu64
              " %s %s\n", header.total, charge_boot_ms(), kind, message);
-    offset = sizeof(header) + (header.total % CHARGE_LOG_CAPACITY) * sizeof(record);
+    if (header.total == header.capacity) {
+        uint64_t new_capacity = header.capacity <= UINT64_MAX / 2 ?
+                                header.capacity * 2 : UINT64_MAX;
+        uint64_t max_capacity = ((uint64_t)CHARGE_LOG_MAX_BYTES - sizeof(header)) /
+                                sizeof(record);
+        if (new_capacity > max_capacity) new_capacity = max_capacity;
+        if (new_capacity <= header.capacity ||
+            ftruncate(charge_log_fd, (off_t)(sizeof(header) +
+                      new_capacity * sizeof(record)))) {
+            header.storage_errors++;
+            (void)charge_log_io(&header, sizeof(header), 0, 1);
+            goto unlock;
+        }
+        header.capacity = new_capacity;
+    }
+    offset = sizeof(header) + header.total * sizeof(record);
     rc = charge_log_io(&record, sizeof(record), offset, 1);
     if (!rc) {
         header.total++;
+        (void)charge_log_io(&header, sizeof(header), 0, 1);
+    } else {
+        header.storage_errors++;
         (void)charge_log_io(&header, sizeof(header), 0, 1);
     }
 unlock:
     (void)charge_log_lock(F_UNLCK);
 }
 
-/* Copy while locked, then release before USB output can block or disconnect. */
+/* Published records are append-only: capture bounds while locked, then read
+ * their immutable prefix with one record of memory and no lock during USB I/O.
+ */
 static void charge_log_export(unsigned int recent) {
     struct charge_log_header header;
-    struct charge_log_record *snapshot;
+    struct charge_log_record record;
     uint64_t first, count, i;
-    int failed = 0;
     if (charge_log_fd < 0) { puts("CHARGE_LOG_UNAVAILABLE recorder_not_started"); return; }
-    snapshot = malloc(CHARGE_LOG_CAPACITY * sizeof(*snapshot));
-    if (!snapshot) { puts("CHARGE_LOG_UNAVAILABLE snapshot_allocation_failed"); return; }
-    if (charge_log_lock(F_RDLCK)) { free(snapshot); puts("CHARGE_LOG_UNAVAILABLE lock_failed"); return; }
-    if (charge_log_io(&header, sizeof(header), 0, 0)) {
-        (void)charge_log_lock(F_UNLCK);
-        free(snapshot);
-        puts("CHARGE_LOG_UNAVAILABLE header_read_failed");
-        return;
-    }
-    count = header.total < CHARGE_LOG_CAPACITY ? header.total : CHARGE_LOG_CAPACITY;
+    if (charge_log_lock(F_RDLCK)) { puts("CHARGE_LOG_UNAVAILABLE lock_failed"); return; }
+    int failed = charge_log_io(&header, sizeof(header), 0, 0);
+    (void)charge_log_lock(F_UNLCK);
+    if (failed) { puts("CHARGE_LOG_UNAVAILABLE header_read_failed"); return; }
+    count = header.total;
     if (recent && count > recent) count = recent;
     first = header.total - count;
-    for (i = 0; i < count; i++) {
-        off_t offset = sizeof(header) + ((first + i) % CHARGE_LOG_CAPACITY) * sizeof(*snapshot);
-        if (charge_log_io(&snapshot[i], sizeof(*snapshot), offset, 0)) { failed = 1; break; }
+    /* Preflight the tail before publishing BEGIN; no retained record changes. */
+    if (count && charge_log_io(&record, sizeof(record),
+            sizeof(header) + (header.total - 1) * sizeof(record), 0)) {
+        puts("CHARGE_LOG_UNAVAILABLE snapshot_read_failed"); return;
     }
-    (void)charge_log_lock(F_UNLCK);
-    if (failed) { free(snapshot); puts("CHARGE_LOG_UNAVAILABLE snapshot_read_failed"); return; }
     printf("CHARGE_LOG_BEGIN boot_id=%s first=%" PRIu64 " next=%" PRIu64
-           " count=%" PRIu64 " overwritten=%" PRIu64 " ram_only=1\n",
-           header.boot_id, first, header.total, count,
-           header.total > CHARGE_LOG_CAPACITY ? header.total - CHARGE_LOG_CAPACITY : 0);
+           " count=%" PRIu64 " storage_errors=%" PRIu64 " ram_only=1\n",
+           header.boot_id, first, header.total, count, header.storage_errors);
     for (i = 0; i < count; i++) {
-        snapshot[i].text[CHARGE_LOG_LINE - 1] = '\0';
-        if (fputs(snapshot[i].text, stdout) == EOF) break;
+        if (charge_log_io(&record, sizeof(record),
+                sizeof(header) + (first + i) * sizeof(record), 0)) {
+            puts("CHARGE_LOG_UNAVAILABLE snapshot_read_failed"); return;
+        }
+        record.text[CHARGE_LOG_LINE - 1] = '\0';
+        if (fputs(record.text, stdout) == EOF) return;
     }
     if (!ferror(stdout)) printf("CHARGE_LOG_END next=%" PRIu64 "\n", header.total);
-    free(snapshot);
 }
 
 static int charge_read_value(const char *path, char *value, size_t size) {
@@ -209,7 +236,7 @@ static void charge_snapshot(void) {
 
 static int charge_kernel_message(const char *content) {
     static const char * const terms[] = {
-        "miseed-power", "charg", "battery", "power_supply", "smb5", "smb2",
+        "miseed-power", "miseed-pps", "charg", "battery", "power_supply", "smb5", "smb2",
         "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic",
     };
     for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); i++)

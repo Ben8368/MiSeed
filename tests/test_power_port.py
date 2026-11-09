@@ -26,6 +26,13 @@ class PowerPortTests(unittest.TestCase):
         self.target.mkdir(parents=True)
         for name in ("Makefile", "Kconfig"):
             (self.target / name).write_text("# fixture\n")
+        self.rpmhpd_kconfig = self.source / "drivers/pmdomain/qcom/Kconfig"
+        self.rpmhpd_kconfig.parent.mkdir(parents=True)
+        self.rpmhpd_kconfig.write_text(
+            'config QCOM_RPMHPD\n'
+            '\ttristate "Qualcomm RPMh Power domain driver"\n'
+            '\tdepends on QCOM_RPMH && QCOM_COMMAND_DB\n'
+        )
 
     def stage(self):
         apply_power_port.stage(self.source, ROOT / "kernel/power")
@@ -33,9 +40,12 @@ class PowerPortTests(unittest.TestCase):
     def test_restage_replaces_stale_generated_driver_without_duplicate_rules(self):
         self.stage()
         snapshot = {p.name: p.read_bytes() for p in self.target.iterdir()}
+        rpmhpd_snapshot = self.rpmhpd_kconfig.read_bytes()
+        self.assertIn(b"\tselect PM_OPP\n", rpmhpd_snapshot)
         (self.target / "qcom_fg.c").write_text("stale source\n")
         self.stage()
         self.assertEqual(snapshot, {p.name: p.read_bytes() for p in self.target.iterdir()})
+        self.assertEqual(rpmhpd_snapshot, self.rpmhpd_kconfig.read_bytes())
 
     def test_wrong_revision_does_not_mutate_tree(self):
         (self.source / ".miseed-source-revision").write_text("0" * 40)
@@ -94,7 +104,10 @@ class PowerPortTests(unittest.TestCase):
                 (self.source / ".config").write_text(
                     f"CONFIG_BATTERY_MISEED_QCOM_FG={state}\n"
                     f"CONFIG_CHARGER_MISEED_PM8150B={state}\n"
-                    "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n")
+                    "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n"
+                    "CONFIG_CHARGER_MISEED_UMI_PPS=y\nCONFIG_I2C_QCOM_GENI=y\n"
+                    "CONFIG_TYPEC_TCPM=y\nCONFIG_TYPEC_QCOM_PMIC=y\n"
+                    "CONFIG_REGULATOR_QCOM_USB_VBUS=y\nCONFIG_USB=y\n")
                 result = subprocess.run(["bash", "-c", check, "fixture", str(self.source)])
                 self.assertEqual(result.returncode, expected)
 
@@ -236,18 +249,18 @@ int main(void) {
         subprocess.run([str(binary)], check=True, timeout=10)
 
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
-    def test_test_mode_bypasses_soc_only_and_preserves_all_safety_boundaries(self):
+    def test_los_policy_has_no_artificial_soc_cap_and_preserves_safety_boundaries(self):
         harness = r'''
 #include <assert.h>
 #include "umi_charge_policy.h"
 #define D(on,p,h,t,v,s,old,test) umi_charge_policy(on,p,h,t,v,s,4400000,old,test)
 int main(void) {
  assert(D(1,1,1,300,4100000,65,0,0) == 1);
- assert(D(1,1,1,300,4100000,70,1,0) == 0);
- assert(D(1,1,1,300,4100000,68,0,0) == 0);
+ assert(D(1,1,1,300,4100000,70,1,0) == 1);
+ assert(D(1,1,1,300,4100000,68,0,0) == 1);
  assert(D(1,1,1,300,4100000,68,1,0) == 1);
  assert(D(1,1,1,300,4100000,78,0,1) == 1);
- assert(D(1,1,1,300,4100000,100,0,1) == 0);
+ assert(D(1,1,1,300,4100000,100,0,1) == 1);
  assert(D(0,1,1,300,4100000,60,1,1) == 0);
  assert(D(1,0,1,300,4100000,60,1,1) == 0);
  assert(D(1,1,0,300,4100000,60,1,1) == 0);
@@ -256,7 +269,10 @@ int main(void) {
  assert(D(1,1,1,450,4100000,60,1,1) == 1);
  assert(D(1,1,1,451,4100000,60,1,1) == 0);
  assert(D(1,1,1,-10000,4100000,60,1,1) == 0);
- assert(D(1,1,1,300,4400000,60,1,1) == 0);
+ /* The hardware FV regulator owns the boundary; a BMS sample at FV is not
+  * a global charge stop. Invalid telemetry remains fail-closed. */
+ assert(D(1,1,1,300,4400000,60,1,1) == 1);
+ assert(D(1,1,1,300,4500000,60,1,1) == 1);
  assert(D(1,1,1,300,-1,60,1,1) == 0);
  assert(D(1,1,1,300,4100000,-1,1,1) == 0);
  assert(D(1,1,1,300,4100000,101,1,1) == 0);
@@ -319,7 +335,7 @@ struct smb5_chip {
  unsigned int base, test_seconds;
  struct delayed_work status_change_work;
  int lock, max_fv_uv;
- bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
+ bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
  unsigned long test_deadline;
 };
 struct device { struct smb5_chip *chip; };
@@ -386,8 +402,8 @@ int main(void) {
  tick(&c, 602999, 1); assert(enabled && c.test_active);
  tick(&c, 603000, 1); assert(!enabled && !c.test_active && !c.test_armed);
  tick(&c, 604000, 1); assert(!enabled); /* 78% restores normal inhibition */
- assert(smb5_get_charge_control_threshold(&c, true) == UMI_CHARGE_UPPER_SOC);
- assert(smb5_get_charge_control_threshold(&c, false) == UMI_CHARGE_LOWER_SOC);
+ assert(smb5_get_charge_control_threshold(&c, true) == UMI_CHARGE_END_SOC);
+ assert(smb5_get_charge_control_threshold(&c, false) == UMI_CHARGE_START_SOC);
  arm(&c, "arm"); assert(c.test_seconds == 60);
  tick(&c, 605000, 0); tick(&c, 606000, 1); assert(enabled);
  tick(&c, 666000, 1); assert(!enabled && !c.test_armed);
@@ -422,17 +438,18 @@ int main(void) {
   if (fault == 1) battery_error = -EIO;
   if (fault == 2) usb_error = -EIO;
   if (fault == 3) limit_error = -EPERM;
-  if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = -500001;
+  if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = -6000001;
   tick(&c, 2000, 1);
   assert(!enabled && !c.test_active && !c.test_armed && c.inhibit && feeds == old_feeds);
   battery_error = usb_error = limit_error = 0; values[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
   tick(&c, 3000, 1); assert(!enabled);
  }
- /* Temperature/voltage/health gates remain effective within 600 seconds. */
+ /* Temperature/telemetry/health gates remain effective during auto charging. */
  arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 451; tick(&c, 2000, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 300;
- values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4400000; tick(&c, 3000, 1); assert(!enabled);
+ values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4400000; tick(&c, 3000, 1); assert(enabled);
+ values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 0; tick(&c, 3500, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4100000;
  health = 0; tick(&c, 4000, 1); assert(!enabled); health = 1;
  /* A failed stop uses input suspend and never feeds the watchdog. */
@@ -495,7 +512,7 @@ int main(void) {
  registers[0x1070] = 78;
  assert(!smb5_init_hw(&c));
  assert(c.max_fv_uv == 4380000 && registers[0x1070] == 78);
- assert(registers[0x1061] == 10 && registers[0x1370] == 10);
+ assert(registers[0x1061] == 120 && registers[0x1370] == 60);
  assert(registers[0x1653] & BIT(7));
  assert((registers[0x1651] & (BIT(0)|BIT(1)|BIT(6))) == (BIT(0)|BIT(1)|BIT(6)));
  assert(registers[0x1670] & BIT(0));

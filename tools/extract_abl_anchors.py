@@ -10,6 +10,8 @@ from pathlib import Path
 
 ALL_SYMBOL = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^\"]+)";\s*$')
 INCLUDE = re.compile(r'^\s*#include\s+"([^"]+)"|^\s*/include/\s+"([^"]+)"')
+ISOLATED_TARGETS = ("soc", "spmi_bus", "tlmm")
+
 LABEL = re.compile(r'(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:')
 
 
@@ -94,8 +96,13 @@ def main() -> int:
         "/* Empty ABL overlay targets; names extracted from the locked CSOT reference DTB and",
         " * the local UMI DTBO reference symbol list. No overlay properties or boot payloads included. */",
         "abl_ovf {",
+        '\t\tstatus = "disabled";',
     ]
     content.extend(f"\t\t{name}: ovf{i} {{ }};" for i, name in enumerate(missing_names))
+    # These downstream targets must never resolve to live mainline buses.
+    # Export is redirected after dtc; compiled mainline phandles stay intact.
+    for name in ISOLATED_TARGETS:
+        content.append(f'\t\tmiseed_dtbo_{name}: isolated-{name.replace("_", "-")} {{ status = "disabled"; }};')
     content.append("\t};")
     generated = "\n".join(content) + "\n"
     if len(sys.argv) == 7:

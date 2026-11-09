@@ -1,0 +1,133 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Umi wiring/limits: LineageOS 71b13e62f057a649b77fe4062feb73ee72ad609c,
+ * umi-sm8250.dtsi / umi-pinctrl.dtsi. Sink-only PPS test profile.
+ * See PPS.md: missing calibrated properties deliberately have NO defaults.
+ * GPIO68 is the LOS BQ fault IRQ. UART console uses GPIO34/35.
+ */
+#include <dt-bindings/usb/pd.h>
+
+&tlmm {
+	umi_bq_irq_default: umi-bq-irq-state {
+		pins = "gpio68";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+		input-enable;
+	};
+};
+
+/* Mainline keeps this wrapper disabled; enable its single qualified child. */
+&qupv3_id_2 {
+	status = "okay";
+};
+
+&i2c15 {
+	status = "okay";
+
+	umi_pps: charger@66 {
+		compatible = "miseed,umi-bq25970-pps";
+		reg = <0x66>;
+		status = "okay";
+		interrupt-parent = <&tlmm>;
+		interrupts = <68 IRQ_TYPE_EDGE_FALLING>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&umi_bq_irq_default>;
+		miseed,pd-source = <&pm8150b_typec>;
+		miseed,switch-charger = <&umi_charger>;
+		monitored-battery = <&umi_fg>;
+		io-channels = <&pm8150l_adc ADC5_AMUX_THM1_100K_PU>,
+			      <&pm8150b_adc ADC5_AMUX_THM3_100K_PU>,
+			      <&pm8150_adc ADC5_AMUX_THM1_100K_PU>,
+			      <&pm8150b_adc ADC5_AMUX_THM1_100K_PU>,
+			      <&pm8150l_adc ADC5_AMUX_THM2_100K_PU>;
+		io-channel-names = "cam_therm1", "conn_therm", "quiet_therm",
+				   "wireless_therm", "xo_therm";
+		/* This Android kernel has no board_sensor_temp_comp node. */
+		miseed,thermal-board-compensation-millicelsius = <0>;
+		ti,bat-ovp-millivolt = <4550>;
+		ti,bat-ovp-alarm-millivolt = <4525>;
+		ti,bus-ovp-millivolt = <12000>;
+		ti,bus-ovp-alarm-millivolt = <11000>;
+		ti,bus-ocp-milliamp = <3750>;
+		ti,bus-ocp-alarm-milliamp = <3500>;
+		ti,ac-ovp-volt = <14>;
+	};
+};
+
+/* Fixed LOS Umi ADC wiring. Conversion/scale is recorded during device L3. */
+&pm8150_adc {
+	channel@4d {
+		reg = <ADC5_AMUX_THM1_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "quiet_therm";
+	};
+};
+
+&pm8150b_adc {
+	channel@4d {
+		reg = <ADC5_AMUX_THM1_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "wireless_therm";
+	};
+	channel@4f {
+		reg = <ADC5_AMUX_THM3_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "conn_therm";
+	};
+};
+
+&pm8150l_adc {
+	channel@4d {
+		reg = <ADC5_AMUX_THM1_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "cam_therm1";
+	};
+	channel@4e {
+		reg = <ADC5_AMUX_THM2_100K_PU>;
+		qcom,pre-scaling = <1 1>;
+		qcom,hw-settle-time = <200>;
+		qcom,ratiometric;
+		label = "xo_therm";
+	};
+};
+
+&pm8150b_typec {
+	/* Both pinned Umi mainline trees use PM8150 L2 for the PD PHY. */
+	vdd-pdphy-supply = <&vreg_l2a_3p1>;
+	status = "okay";
+
+	connector {
+		compatible = "usb-c-connector";
+		label = "USB-C";
+		power-role = "sink";
+		data-role = "device";
+		/* Fixed fallback and LOS Umi USB input ceiling are 5 V / 3 A.
+		 * PPS ceiling follows the source policy; runtime caps at 9.5 V.
+		 */
+		sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
+			     PDO_PPS_APDO(3300, 11000, 3000)>;
+		/* Software operating floor: existing 7 V bus floor x 2 A PPS floor.
+		 * Do not reject valid thermal derating below the 15 W fixed PDO.
+		 */
+		op-sink-microwatt = <14000000>;
+	};
+};
+
+/* TCPM's required VBUS provider. This is the SOURCE/OTG boost regulator,
+ * not the incoming USB path or a PPS voltage request. Type-C remains sink-only;
+ * never mark this regulator boot-on/always-on.
+ * Limits agree in both pinned Umi mainline trees (see NOTICE.md).
+ */
+&pm8150b_vbus {
+	regulator-min-microamp = <500000>;
+	regulator-max-microamp = <3000000>;
+	status = "okay";
+};

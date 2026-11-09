@@ -1,0 +1,55 @@
+{
+  "date": "2026-11-08",
+  "scope": "Android read-only runtime metadata and host offline inspection; no MiSeed charging test",
+  "device": "umi",
+  "kernel": "4.19.325-cip131-st15-perf-g71b13e62f057",
+  "services": {
+    "mi_thermald": "running",
+    "android.hardware.thermal-service.qti": "running",
+    "thermal_sconfig": 0,
+    "root_override_directory": "/data/vendor/thermal/config",
+    "root_override_files_present": false,
+    "ordinary_user_override_read": "permission denied; superseded by root listing"
+  },
+  "daemon": {
+    "path": "/vendor/bin/mi_thermald",
+    "size_bytes": 101688,
+    "sha256": "5c942849b198416cf40d096de9faed0c6ca4dba552173c61274659d365743e3b",
+    "device_host_hash_match": true,
+    "executed_by_agent": false,
+    "redistributed": false,
+    "generic_set_level_address": "0xe7d8",
+    "generic_set_level_size": 512,
+    "screen_monitor_address": "0xe9d8",
+    "screen_state_global_address": "0x1896c",
+    "virtual_read_temp_address": "0xc11c",
+    "board_sensor_temp_comp_thread_address": "0x7cd8"
+  },
+  "offline_inference": {
+    "battery_target_below_100": "direct level",
+    "battery_target_at_least_100_screen_nonzero": "target / 100",
+    "battery_target_at_least_100_screen_zero": "target % 100",
+    "virtual_temperature": "sum(sensor_mc * weight) / 1000 + 4541 + board_comp_mc",
+    "method": "mini debug symbols and AArch64 disassembly; no daemon execution"
+  },
+  "runtime_inputs": {
+    "screen_state": 0,
+    "board_sensor_temp_comp_node_present": false,
+    "board_compensation_inference_mc": 0,
+    "mi_thermald_log_lines_captured": 0
+  },
+  "kernel_reference": {
+    "repository": "LineageOS/android_kernel_xiaomi_sm8250",
+    "revision": "71b13e62f057a649b77fe4062feb73ee72ad609c",
+    "path": "drivers/power/supply/qcom/smb5-lib.c",
+    "blob": "6372dab5db184e24251122e77a9dd15930e40024",
+    "sha256": "8f542b9679a95da4c5a1bdf1d622ea4e06ab31345b158c9a68bb7d7ff9edeb68",
+    "thermal_fcc_pps_bq_ma": [6000, 5700, 5475, 5250, 5025, 4800, 4575, 4350, 4100, 3500, 3000, 2400, 2000, 1500, 1000, 500]
+  },
+  "restored_non_root_adbd": true,
+  "limits": [
+    "No observed runtime thermal throttling event",
+    "No proof of physical sense resistor or thermistor wiring",
+    "No MiSeed L3 sensor-scale, power-path, protection or PPS test"
+  ]
+}

@@ -4,15 +4,23 @@
 
 import argparse
 import hashlib
+import json
 import os
 import stat
 import subprocess
 from pathlib import Path
 
+if __package__:
+    from . import apply_pd_diagnostics as pd
+    from .apply_power_port import RPMHPD_KCONFIG_RULE
+else:
+    import apply_pd_diagnostics as pd
+    from apply_power_port import RPMHPD_KCONFIG_RULE
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
     ".miseed-source-revision",
+    ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
     "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
     "drivers/mfd/miseed_power_observer.c",
@@ -21,6 +29,10 @@ GENERATED = {
     "drivers/power/supply/miseed-power.Kconfig",
     "drivers/power/supply/umi_charge_policy.h",
     "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
+    "arch/arm64/boot/dts/qcom/umi-pps.dtsi",
+    "drivers/power/supply/umi_pps.c",
+    "drivers/power/supply/umi_pps_policy.h",
+    "drivers/power/supply/umi_smb5.h",
 }
 OVERLAY_RULES = {
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
@@ -29,7 +41,8 @@ OVERLAY_RULES = {
         (b"\n", b"obj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o")],
     "drivers/power/supply/Makefile": [
         (b"\n", b"obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o")],
+        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o"),
+        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi_pps.o")],
     "drivers/power/supply/Kconfig": [
         (b"\n", b'source "drivers/power/supply/miseed-power.Kconfig"')],
 }
@@ -58,6 +71,19 @@ def verify_source(repository, revision, source):
         raise ValueError("cached Linux source revision marker mismatch")
     if git(repository, "rev-parse", revision + "^{commit}").decode().strip() != revision:
         raise ValueError("Linux revision mismatch")
+    patched_pd = {}
+    pd_marker = source / ".miseed-pd-diagnostics.json"
+    if pd_marker.exists() or pd_marker.is_symlink():
+        receive = (Path(__file__).resolve().parents[1] / "kernel/power/pmic_pdphy_receive.inc").read_text(encoding="utf-8")
+        for name, expected in pd.ORIGINAL.items():
+            original = git(repository, "show", revision + ":" + name)
+            if pd.digest(original) != expected:
+                raise ValueError(f"PD baseline mismatch: {name}")
+            patched_pd[name] = pd.transform(name, original.decode("utf-8"), receive).encode("utf-8")
+            if pd.regular_path(source, name).read_bytes() != patched_pd[name]:
+                raise ValueError(f"cached PD overlay changed: {name}")
+        if json.loads(pd.regular_path(source, ".miseed-pd-diagnostics.json").read_text()) != pd.manifest_for(patched_pd, receive):
+            raise ValueError("cached PD diagnostic manifest changed")
     tracked = set()
     records = git(repository, "ls-tree", "-rz", "--full-tree", revision)
     for record in records.split(b"\0"):
@@ -84,6 +110,13 @@ def verify_source(repository, revision, source):
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
             actual = digest.hexdigest()
+            if name in patched_pd and path.read_bytes() == patched_pd[name]:
+                continue
+            if actual != oid and name == "drivers/pmdomain/qcom/Kconfig":
+                original = git(repository, "show", revision + ":" + name).decode("utf-8")
+                base = RPMHPD_KCONFIG_RULE.removesuffix("\n\tselect PM_OPP")
+                if original.count(base) == 1 and path.read_bytes() == original.replace(base, RPMHPD_KCONFIG_RULE, 1).encode("utf-8"):
+                    continue
             if actual != oid and name in OVERLAY_RULES:
                 original = git(repository, "show", revision + ":" + name)
                 expected = original

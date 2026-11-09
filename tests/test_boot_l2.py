@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from tools import verify_kernel_source as verifier
@@ -53,12 +54,56 @@ class SourceCacheTests(unittest.TestCase):
 
     def test_pristine_and_known_project_overlays(self):
         self.verify()
-        for name in verifier.GENERATED - {".miseed-source-revision"}:
+        for name in verifier.GENERATED - {".miseed-source-revision", ".miseed-pd-diagnostics.json"}:
             (self.source / name).parent.mkdir(parents=True, exist_ok=True)
             (self.source / name).write_text("generated\n")
         with (self.source / verifier.MAKEFILE).open("a", newline="\n") as stream:
             stream.write("\ndtb-y += umi-csot.dtb\nDTC_FLAGS_umi-csot += -@\n")
         self.verify()
+
+    def test_pd_cache_and_manifest_are_rederived_from_git_not_trusted_hashes(self):
+        name = verifier.pd.PDPHY
+        original = b"pinned original\n"
+        target = self.repo / name
+        target.parent.mkdir(parents=True)
+        target.write_bytes(original)
+        self.git("add", name)
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "PD fixture")
+        self.revision = self.git("rev-parse", "HEAD").strip()
+        (self.source / ".miseed-source-revision").write_text(self.revision)
+        target = self.source / name
+        target.parent.mkdir(parents=True)
+        target.write_bytes(original + b"reviewed overlay\n")
+        receive = (ROOT / "kernel/power/pmic_pdphy_receive.inc").read_text()
+        with patch.object(verifier.pd, "ORIGINAL", {name: hashlib.sha256(original).hexdigest()}), patch.object(
+                verifier.pd, "transform", side_effect=lambda n, text, r: text + "reviewed overlay\n"):
+            record = verifier.pd.manifest_for({name: target.read_bytes()}, receive)
+            marker = self.source / ".miseed-pd-diagnostics.json"
+            marker.write_text(json.dumps(record))
+            self.verify()
+            target.write_bytes(b"tampered\n")
+            record["outputs"][name] = hashlib.sha256(target.read_bytes()).hexdigest()
+            marker.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, "PD overlay changed"):
+                self.verify()
+
+    def test_rpmh_overlay_allows_only_exact_reviewed_change(self):
+        name = "drivers/pmdomain/qcom/Kconfig"
+        base = verifier.RPMHPD_KCONFIG_RULE.removesuffix("\n\tselect PM_OPP")
+        target = self.repo / name
+        target.parent.mkdir(parents=True)
+        target.write_text(base + "\n", encoding="utf-8", newline="\n")
+        self.git("add", name)
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "RPMh fixture")
+        self.revision = self.git("rev-parse", "HEAD").strip()
+        (self.source / ".miseed-source-revision").write_text(self.revision)
+        target = self.source / name
+        target.parent.mkdir(parents=True)
+        target.write_text(verifier.RPMHPD_KCONFIG_RULE + "\n", encoding="utf-8", newline="\n")
+        self.verify()
+        target.write_text("unreviewed\n")
+        with self.assertRaisesRegex(ValueError, "differs from pinned"):
+            self.verify()
 
     def test_mfd_observer_rule_is_allowed_but_other_edits_are_rejected(self):
         path = self.source / "drivers/mfd/Makefile"
@@ -151,16 +196,36 @@ class SourceCacheTests(unittest.TestCase):
         tools.mkdir()
         for name, output in [("aarch64-linux-gnu-gcc", "13.3.0"), ("aarch64-linux-gnu-nm", ""),
                              ("make", "GNU Make 4.3"),
-                             ("dtc", ""), ("fdtget", "")]:
+                             ("dtc", ""), ("fdtget", ""), ("fdtput", ""), ("fdtoverlay", "")]:
             stub = tools / name
             stub.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(output) + "\n")
             stub.chmod(0o755)
         script = (ROOT / "tools/build_kernel_l2.sh").read_text()
+        inputs = self.root / "inputs"
+        record = json.loads((ROOT / "manifests/sources.lock.json").read_text())
+        profile = record["build_profiles"][0]
+        for name in set(profile["input_sha256"]) | set(profile["host_tools"]):
+            destination = inputs / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / name, destination)
+        script = script.replace('readonly kernel_revision="' +
+                                record["sources"][0]["revision"] + '"',
+                                'readonly kernel_revision="' + self.revision + '"')
+        script = script.replace('readonly boot_sha256="' + profile["boot_header_template"]["sha256"] + '"',
+                                'readonly boot_sha256="' + hashlib.sha256(template).hexdigest() + '"')
+        (inputs / "tools/build_kernel_l2.sh").write_text(script, encoding="utf-8", newline="\n")
+        record["sources"][0]["revision"] = self.revision
+        profile["kernel_source"] = "linux-stable@" + self.revision
+        profile["boot_header_template"]["sha256"] = hashlib.sha256(template).hexdigest()
+        profile["input_sha256"]["tools/build_kernel_l2.sh"] = hashlib.sha256(
+            (inputs / "tools/build_kernel_l2.sh").read_bytes()).hexdigest()
+        (inputs / "manifests").mkdir()
+        (inputs / "manifests/sources.lock.json").write_text(json.dumps(record), encoding="utf-8")
         script = script[:script.index("readonly qcom_dts_dir=")]
         lines = script.splitlines()
         for index, line in enumerate(lines):
             if line.startswith("readonly repo_root="):
-                lines[index] = "readonly repo_root=" + shlex.quote(str(ROOT))
+                lines[index] = "readonly repo_root=" + shlex.quote(str(inputs))
             elif line.startswith("readonly kernel_revision="):
                 lines[index] = "readonly kernel_revision=" + self.revision
             elif line.startswith("readonly boot_sha256="):

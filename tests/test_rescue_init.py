@@ -25,16 +25,24 @@ HARNESS = r"""
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #define CHARGE_LOG_CAPACITY 8
+#define CHARGE_LOG_MAX_BYTES (sizeof(struct charge_log_header) + 16 * sizeof(struct charge_log_record))
 
 static int test_open(const char *path, int flags, ...);
 static DIR *test_opendir(const char *path);
+static int test_stat(const char *path, struct stat *st);
 static ssize_t test_read(int fd, void *buffer, size_t size);
+static ssize_t test_readlink(const char *path, char *buffer, size_t size);
+static FILE *test_fopen(const char *path, const char *mode);
 static unsigned int test_sleep(unsigned int seconds);
 static long test_reboot_syscall(long number, ...);
 #define open test_open
 #define opendir test_opendir
+#define stat(...) test_stat(__VA_ARGS__)
 #define read test_read
+#define readlink test_readlink
+#define fopen test_fopen
 #define sleep test_sleep
 #define syscall test_reboot_syscall
 #define main miseed_pid1_main
@@ -42,7 +50,10 @@ static long test_reboot_syscall(long number, ...);
 #undef main
 #undef open
 #undef opendir
+#undef stat
 #undef read
+#undef readlink
+#undef fopen
 #undef sleep
 #undef syscall
 
@@ -58,6 +69,37 @@ static long test_reboot_syscall(long number, ...) {
     reboot_calls++;
     errno = EPERM;
     return -1;
+}
+
+static const char *pps_prefix = "/sys/bus/i2c/drivers/umi-bq25970-pps";
+static ssize_t test_readlink(const char *path, char *buffer, size_t size) {
+    char mapped[1024];
+    if (getenv("TEST_I2C_ROOT") && !strncmp(path, "/sys/bus/i2c/devices/", 21)) {
+        snprintf(mapped, sizeof(mapped), "%s/%s", getenv("TEST_I2C_ROOT"), path + 21);
+        path = mapped;
+    }
+    return readlink(path, buffer, size);
+}
+static FILE *test_fopen(const char *path, const char *mode) {
+    char mapped[1024];
+    if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
+        path = mapped;
+        if (getenv("TEST_PPS_READ_FAIL")) path = getenv("TEST_PPS_ROOT");
+    }
+    return fopen(path, mode);
+}
+static int test_stat(const char *path, struct stat *st) {
+    char mapped[1024];
+    if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
+        return stat(mapped, st);
+    }
+    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb", 21)) {
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 21);
+        return stat(mapped, st);
+    }
+    return stat(path, st);
 }
 
 static int test_open(const char *path, int flags, ...) {
@@ -80,6 +122,21 @@ static int test_open(const char *path, int flags, ...) {
         snprintf(mapped, sizeof(mapped), "%s/%s", getenv("TEST_POWER_ROOT"), path + 24);
         return open(mapped, flags, mode);
     }
+    if (getenv("TEST_I2C_ROOT") && !strncmp(path, "/sys/bus/i2c/devices/", 21)) {
+        char mapped[1024];
+        snprintf(mapped, sizeof(mapped), "%s/%s", getenv("TEST_I2C_ROOT"), path + 21);
+        return open(mapped, flags, mode);
+    }
+    if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
+        char mapped[1024];
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
+        return open(mapped, flags, mode);
+    }
+    if (getenv("TEST_TCPM_ROOT") && !strncmp(path, "/sys/kernel/debug/usb", 21)) {
+        char mapped[1024];
+        snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_TCPM_ROOT"), path + 21);
+        return open(mapped, flags, mode);
+    }
     return open(path, flags, mode);
 }
 
@@ -92,6 +149,11 @@ static DIR *test_opendir(const char *path) {
     if (!path) { errno = ENOENT; return NULL; }
     if (!strcmp(path, "/sys/class/power_supply") && getenv("TEST_POWER_ROOT"))
         path = getenv("TEST_POWER_ROOT");
+    if (getenv("TEST_I2C_ROOT") && !strcmp(path, "/sys/bus/i2c/devices"))
+        path = getenv("TEST_I2C_ROOT");
+    if (getenv("TEST_PPS_ROOT") && !strcmp(path, pps_prefix)) path = getenv("TEST_PPS_ROOT");
+    if (getenv("TEST_TCPM_ROOT") && !strcmp(path, "/sys/kernel/debug/usb"))
+        path = getenv("TEST_TCPM_ROOT");
     return opendir(path);
 }
 
@@ -114,6 +176,7 @@ static ssize_t test_read(int fd, void *buffer, size_t size) {
         "6,15,0,-;PSCI ready\n",
         "6,16,0,-;miseed-power usb_present=1 hw_phase=fullon\n",
         "6,17,0,-;battery temperature unavailable\n",
+        "6,18,0,-;rpmh provider ready\n",
     };
     static size_t index;
     if (fd == kmsg_fd) {
@@ -152,10 +215,18 @@ static unsigned int test_sleep(unsigned int seconds) {
 int main(int argc, char **argv) {
     if (argc != 2) return 2;
     if (!strcmp(argv[1], "logs")) report_usb_kernel_messages();
+    else if (!strcmp(argv[1], "rpmh-overrun")) { kmsg_overrun=1; report_rpmh_kernel_messages(); }
+    else if (!strcmp(argv[1], "i2c-report")) report_i2c_devices();
+    else if (!strcmp(argv[1], "tcpm-log")) report_tcpm_logs();
     else if (!strcmp(argv[1], "bind")) {
         delayed_udc = 1;
         wait_for_usb_acm();
         if (retries != 2) return 3;
+    } else if (!strcmp(argv[1], "pps-discovery")) {
+        char path[512];
+        int ret = pps_control_path(path, sizeof(path));
+        printf("discovery=%d errno=%d\n", ret, errno);
+        if (!ret && pps_control(NULL)) return 23;
     } else if (!strcmp(argv[1], "console")) usb_console();
     else if (!strcmp(argv[1], "console-record")) {
         pid_t child;
@@ -180,6 +251,11 @@ int main(int argc, char **argv) {
         for (int i = 0; i < CHARGE_LOG_CAPACITY + 3; i++)
             charge_log_append("SAMPLE", "sample=%d", i);
         charge_log_export(0);
+        charge_log_export(0);
+    }
+    else if (!strcmp(argv[1], "log-limit")) {
+        if (charge_log_init()) return 12;
+        for (int i=0; i<20; i++) charge_log_append("SAMPLE", "sample=%d", i);
         charge_log_export(0);
     }
     else if (!strcmp(argv[1], "log-unavailable")) charge_log_export(0);
@@ -263,6 +339,57 @@ class RescueInitTests(unittest.TestCase):
                       "PMIC", "PDC", "PSCI", "failed", "could not", "error", "critical message"]:
             self.assertIn(token, result.stdout)
         self.assertNotIn("unrelated information", result.stdout)
+
+    def test_i2c_report_shows_driver_and_device_tree_compatible(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            device = root / "15-0066"
+            (device / "of_node").mkdir(parents=True)
+            (device / "of_node/compatible").write_bytes(b"miseed,umi-bq25970-pps\0")
+            (device / "driver").symlink_to("../../drivers/umi-bq25970-pps")
+            env = dict(os.environ, TEST_I2C_ROOT=str(root))
+            result = subprocess.run([self.program, "i2c-report"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("I2C device 15-0066", result.stdout)
+            self.assertIn("driver=../../drivers/umi-bq25970-pps", result.stdout)
+            self.assertIn("compatible=miseed,umi-bq25970-pps", result.stdout)
+
+    def test_tcpm_log_exports_all_lines_without_a_count_limit(self):
+        for count in (1500, 8191, 8200, 20000):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                port = root / "tcpm-test"
+                port.mkdir()
+                (port / "log").write_text("".join(f"[{i}] frame\n" for i in range(count)))
+                env = dict(os.environ, TEST_TCPM_ROOT=str(root))
+                result = subprocess.run([self.program, "tcpm-log"], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(sum(line.endswith(" frame") for line in result.stdout.splitlines()), count)
+                self.assertIn(f"lines={count} complete=1", result.stdout)
+                self.assertNotIn("limit reached", result.stdout)
+
+    def test_tcpm_log_reports_advertised_pdos_only_on_explicit_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unrelated").mkdir()
+            port = root / "tcpm-c440000.typec"
+            port.mkdir()
+            (port / "log").write_text(
+                "[  0.000000] older record\n" * 150 +
+                "[  1.000000] PD state change SNK_READY -> SNK_WAIT_CAPABILITIES\n"
+                "[  1.100000] PDO 0: type 3, 5000 mV, 3000 mA [U]\n"
+                "[  1.200000] PDO 1: type 3, 3300-11000 mV, 3000 mA\n"
+            )
+            env = dict(os.environ, TEST_TCPM_ROOT=str(root))
+            result = subprocess.run([self.program, "tcpm-log"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("read drains kernel ring", result.stdout)
+            self.assertNotIn("unrelated", result.stdout)
+            self.assertNotIn("truncated", result.stdout)
+            self.assertIn("PDO 1: type 3, 3300-11000 mV, 3000 mA", result.stdout)
 
     def test_unbound_pon_refuses_without_reboot_syscall(self):
         result = subprocess.run([self.program, "bootloader-unbound"],
@@ -367,12 +494,88 @@ class RescueInitTests(unittest.TestCase):
                 process.wait(timeout=5)
                 os.close(master)
 
-    def test_ram_ring_reports_overwrite_and_replay_does_not_consume(self):
+    def test_pps_discovery_refuses_missing_or_ambiguous_devices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = dict(os.environ, TEST_PPS_ROOT=str(root))
+            self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            first = root / "15-0066"
+            first.mkdir()
+            control = first / "fastcharge_test"
+            control.touch()
+            self.assertIn("discovery=0", self.run_log("pps-discovery", env))
+            self.assertEqual(control.read_text(), "")
+            second = root / "16-0066"
+            second.mkdir()
+            (second / "fastcharge_test").touch()
+            control.write_text("keep")
+            self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            self.assertEqual(control.read_text(), "keep")
+
+    def test_pps_console_automatic_status_and_unified_stop(self):
+        import pty
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            pump = root / "pps" / "15-0066"
+            pump.mkdir(parents=True)
+            control = pump / "fastcharge_test"
+            control.touch()
+            supply = root / "pm8150b-charger"
+            supply.mkdir()
+            normal = supply / "charge_test"
+            normal.touch()
+            master, slave = pty.openpty()
+            env = dict(os.environ, TEST_TTY=os.ttyname(slave), TEST_POWER_ROOT=str(root),
+                       TEST_PPS_ROOT=str(root / "pps"))
+            process = subprocess.Popen([self.program, "console"], env=env,
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            os.close(slave)
+            try:
+                self.read_until(master, b"miseed> ")
+                for command, value, message in (
+                    (b"pps-status\n", "state=3 error=0\n", b"state=3 error=0"),
+                    (b"pps-stop\n", "stop", b"PPS stopped; SMB5 fallback policy resumed."),
+                    (b"charge-stop\n", "stop", b"test cancelled"),
+                ):
+                    control.write_text(value if command == b"pps-status\n" else "")
+                    os.write(master, command)
+                    self.read_until(master, message)
+                    self.assertEqual(control.read_text(), value)
+                self.assertEqual(normal.read_text(), "stop")
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                os.close(master)
+
+    def test_ram_log_grows_without_overwrite_and_replay_does_not_consume(self):
         output = self.run_log("log-ring")
         self.assertEqual(output.count("CHARGE_LOG_BEGIN"), 2)
-        self.assertEqual(output.count("first=3 next=11 count=8 overwritten=3"), 2)
-        self.assertNotIn("sample=2\n", output)
+        self.assertEqual(output.count("first=0 next=11 count=11 storage_errors=0"), 2)
+        self.assertEqual(output.count("sample=2\n"), 2)
         self.assertEqual(output.count("sample=10\n"), 2)
+
+    def test_memory_budget_preserves_prefix_and_reports_drops(self):
+        output = self.run_log("log-limit")
+        self.assertIn("first=0 next=16 count=16 storage_errors=4", output)
+        self.assertIn("sample=0\n", output)
+        self.assertNotIn("sample=16\n", output)
+
+    def test_rpmh_messages_after_overrun_are_retained(self):
+        result = subprocess.run([self.program, "rpmh-overrun"], capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ring overrun", result.stderr)
+        self.assertIn("rpmh provider ready", result.stdout)
+
+    def test_pps_status_read_error_is_not_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "15-0066").mkdir()
+            (root / "15-0066/fastcharge_test").write_text("state=3\n")
+            env = dict(os.environ, TEST_PPS_ROOT=str(root), TEST_PPS_READ_FAIL="1")
+            result = subprocess.run([self.program, "pps-discovery"], env=env, capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 23)
 
     def test_unavailable_and_incomplete_snapshots_are_explicit(self):
         self.assertIn("recorder_not_started", self.run_log("log-unavailable"))

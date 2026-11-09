@@ -88,6 +88,22 @@
       "status": "candidate",
       "revision": null,
       "license_review": "pending"
+    },
+    {
+      "id": "micode-umi-kernel-reference",
+      "url": "https://github.com/MiCode/Xiaomi_Kernel_OpenSource",
+      "purpose": "小米官方 umi-q-oss 充电实现交叉核对，仅资料参考",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
+    },
+    {
+      "id": "micode-umi-dts-reference",
+      "url": "https://github.com/MiCode/kernel_devicetree",
+      "purpose": "小米官方 umi-q-oss 板级 GPIO 与保护参数核对，仅资料参考",
+      "status": "candidate",
+      "revision": null,
+      "license_review": "pending"
     }
   ]
 }
