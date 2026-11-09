@@ -14,7 +14,7 @@ ORIGINAL = {
     PDPHY: "c154e44c1a9b6437ec379bf48505f75c50dcfcebd102f8057f4d666d774f473d",
     TCPM: "6837c4131c2c06b37818416d83778a1251833b23149995cb382bb94d01d06f42",
 }
-LOG_ENTRIES = 8192
+LOG_ENTRIES = 262144
 
 
 def digest(data):
@@ -36,7 +36,7 @@ def transform(name, text, receive):
     text = text[:start] + receive.rstrip() + "\n" + text[end:]
     text = replace_once(text,
         "case PMIC_PDPHY_SIG_RX_IRQ:\n\t\tschedule_work",
-        'case PMIC_PDPHY_SIG_RX_IRQ:\n\t\tdev_info_ratelimited(dev, "miseed-pdphy rx_reset_signal\\n");\n\t\tschedule_work')
+        'case PMIC_PDPHY_SIG_RX_IRQ:\n\t\tdev_info_ratelimited(dev, "miseed-pdphy rx_irq_signal\\n");\n\t\tschedule_work')
     text = replace_once(text,
         '\tdev_vdbg(dev, "pd_transmit_signal: type %d negotiate_rev %d send %d\\n",',
         '\tdev_info_ratelimited(dev, "miseed-pdphy tx_reset_signal type=%d revision=%u rc=%d\\n",\n\t\t\t     type, negotiated_rev, ret);\n\tdev_vdbg(dev, "pd_transmit_signal: type %d negotiate_rev %d send %d\\n",')

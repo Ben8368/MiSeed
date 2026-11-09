@@ -593,7 +593,6 @@ static void report_power_supply_diagnostics(void) {
 /* TCPM's debugfs reader advances its in-kernel ring buffer. Keep this behind
  * an explicit console command so routine status sampling does not consume it.
  */
-#define TCPM_LOG_LINES 8192U
 static void report_tcpm_logs(void) {
     const char *root = "/sys/kernel/debug/usb";
     DIR *dir = opendir(root);
@@ -609,7 +608,7 @@ static void report_tcpm_logs(void) {
         char line[512];
         FILE *file;
         int fd;
-        unsigned int lines = 0;
+        uint64_t lines = 0;
 
         if (strncmp(entry->d_name, "tcpm-", 5)) continue;
         if (ports++ == 8) {
@@ -635,16 +634,15 @@ static void report_tcpm_logs(void) {
         }
         printf("TCPM protocol log %s (read drains kernel ring):\n",
                entry->d_name);
-        printf("TCPM_LOG_BEGIN port=%s limit=%u\n", entry->d_name, TCPM_LOG_LINES);
-        while (lines < TCPM_LOG_LINES && fgets(line, sizeof(line), file)) {
+        printf("TCPM_LOG_BEGIN port=%s\n", entry->d_name);
+        while (fgets(line, sizeof(line), file)) {
             fputs(line, stdout);
             lines++;
         }
-        if (lines == TCPM_LOG_LINES) puts("TCPM log output limit reached; snapshot may be incomplete");
         if (ferror(file)) puts("TCPM log read failed; snapshot incomplete");
         if (!lines) puts("TCPM log empty");
-        printf("TCPM_LOG_END port=%s lines=%u complete=%u\n", entry->d_name,
-               lines, (unsigned int)(lines < TCPM_LOG_LINES && !ferror(file)));
+        printf("TCPM_LOG_END port=%s lines=%" PRIu64 " complete=%u\n", entry->d_name,
+               lines, (unsigned int)!ferror(file));
         fclose(file);
     }
     closedir(dir);

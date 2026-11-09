@@ -323,8 +323,8 @@ class RescueInitTests(unittest.TestCase):
             self.assertIn("I2C device 15-0066", result.stdout)
             self.assertIn("umi-bq25970-pps", result.stdout)
 
-    def test_tcpm_log_exports_more_than_1024_lines_and_marks_limit(self):
-        for count in (1500, 8191, 8200):
+    def test_tcpm_log_exports_all_lines_without_a_count_limit(self):
+        for count in (1500, 8191, 8200, 20000):
             with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 port = root / "tcpm-test"
@@ -334,9 +334,9 @@ class RescueInitTests(unittest.TestCase):
                 result = subprocess.run([self.program, "tcpm-log"], env=env,
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(sum(line.endswith(" frame") for line in result.stdout.splitlines()), min(count,8192))
-                self.assertIn(f"lines={min(count,8192)} complete={int(count<8192)}", result.stdout)
-                self.assertEqual("limit reached" in result.stdout, count>=8192)
+                self.assertEqual(sum(line.endswith(" frame") for line in result.stdout.splitlines()), count)
+                self.assertIn(f"lines={count} complete=1", result.stdout)
+                self.assertNotIn("limit reached", result.stdout)
 
     def test_tcpm_log_reports_advertised_pdos_only_on_explicit_command(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -517,11 +517,11 @@ class RescueInitTests(unittest.TestCase):
                 process.wait(timeout=5)
                 os.close(master)
 
-    def test_ram_ring_reports_overwrite_and_replay_does_not_consume(self):
+    def test_ram_log_grows_without_overwrite_and_replay_does_not_consume(self):
         output = self.run_log("log-ring")
         self.assertEqual(output.count("CHARGE_LOG_BEGIN"), 2)
-        self.assertEqual(output.count("first=3 next=11 count=8 overwritten=3"), 2)
-        self.assertNotIn("sample=2\n", output)
+        self.assertEqual(output.count("first=0 next=11 count=11 storage_errors=0"), 2)
+        self.assertEqual(output.count("sample=2\n"), 2)
         self.assertEqual(output.count("sample=10\n"), 2)
 
     def test_unavailable_and_incomplete_snapshots_are_explicit(self):

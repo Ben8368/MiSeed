@@ -186,3 +186,37 @@ TCPM 在 29.305862 s 完成 8880 mV / 3000 mA 合约，而随后泵端 ADC 8676 
 该 L3 证明本次合约、启泵和约 82.3 秒短期连续调节，不证明长期稳定或完整保护/温控已验收；保留类型 0x16 和发送失败来源仍开放。协议环中约 254 次 APDO 请求多为运行期间约 0.3 秒一次，后续应评估调节频率及其对链路稳定性的影响，不能为了维持 PPS 而忽略异常控制报文或削弱保护。
 
 准备 PR #3 收尾时，在 Windows x64 / PowerShell 7.6.9 重跑 `python -X utf8 -m unittest discover -s tests -v`：116 项、退出 0，39 项因 POSIX/Linux/设备树工具等平台条件跳过；同一原生 `cc` 环境下相关 18 项专项全部实际执行、退出 0。WSL Ubuntu-24.04 重跑完整 116 项（21.536 秒）、退出 0、零跳过；`shellcheck --severity=error`、`python -X utf8 tools/check_repo.py`、`git diff --check` 均退出 0。核对当前基线、12 项源码输入、5 项 L2 输出以及 build.status=0 均与此镜像原始记录吻合。上述是本地证据，不替代推送后精确 HEAD CI、独立专项复核和更长时段 L3；PR 保持草稿，RISK-004 继续阻断合并。
+
+## 短时掉功率与诊断优化
+
+维护者在最新临时日志镜像 `2841c4d84b2efc2ae54e9d3aa12b66bc04a500c7d4aeac08ac069bf0d2b11791` 报告数分钟 PPS 充电中出现两次短暂由约 16 W 降至约 1 W 后恢复，仪表仍显示 PPS。设备接回诊断口后，只读导出充电 RAM 日志、TCPM 环和 `pps-status`，没有发送充电控制/停充/重启命令。记录由 `boot_id=b7a2f5ea-f705-4941-8d16-942d158d2ab5` 标识，`first=0 next=2720 count=2720 storage_errors=0`，序号连续；当前 `pps-status` 为 `state=1 error=-34 requested_mv=9160 requested_ma=2050 stop_pending=0`，表示已离开 PPS 状态，`-34` 是历史错误，不代表仍在运行。
+
+日志中 RUN 阶段在 187.807、268.508、300.113 秒三次返回 `-107/ENOTCONN`，对应样本均为 `fault=0 switching=1`；随后记录 PPS_FAULT 并约 1–2 秒内重新进入 SETTLE/RUN。这与掉功率后自动恢复相符，但维护者报告的两次仪表事件没有逐一时间戳，不能把三条软件事件强行映射为两次。另在 328.645 秒有一次不同故障：`-34/ERANGE`、`fault=1`、`switching=0`、`bus_low=bus_high=alarm=0`，BMS/泵 VBAT 为 4339/4308 mV，泵 VBUS/IBUS 为 5322 mV / 945 mA；随后停泵并回退。旧日志只留汇总布尔位，无法判别 BQ 哪个原始故障/锁存寄存器触发。`rx_reset_signal` 的插桩实际挂在 `PMIC_PDPHY_SIG_RX_IRQ`，表示 RX 中断，不等同于 reset。
+
+TCPM 导出 8191 行且 `complete=1`，但日志内容含 `[334.149505] overflow`；它只保留至约 150 秒的逐条协议状态，未覆盖三个后续 `-ENOTCONN` 事件。因此不能据此确认后续是充电器 hard reset、CC detach 还是 TCPM 属性瞬时不可用。原始导出留在忽略目录 `.work/ram-run-vbat-20261109/charging-session-20261109-round1-{charge-log,tcpm-log,pps-status}.log`；TCPM 读取会消费协议环。
+
+对照 PR #3 中“首次 PPS 降流请求收到保留控制类型 `0x16`，TCPM 软复位、`-71/EPROTO`，启泵前回退；重新插拔后由 TCPM 处理并重试成功”的事件，最新会话**不是已证实的同一问题**：其 TCPM 环保留到了约 150 秒，之后在 334.149505 秒记录 overflow，所以没有覆盖 187.807、268.508、300.113 秒三次 `-107/ENOTCONN`。日志能确认另一个、较早且不同的中断：44.475427 秒 APDO 请求 8.92 V/2.05 A，TX complete status=0；44.540581 秒收到 Hard Reset，44.564 秒 VBUS 关闭且 CC 进入 disconnected，45.321 秒重新 attach，之后重建 PD/PPS。这个链条不是旧记录中 `0x16` 控制报文触发的 SOFT_RESET；两者仍可能共享高频 APDO 请求期间链路不稳定这一更宽泛的诱因，但旧/新日志不足以证明因果关系。掉功率时段的 TCPM 证据缺失，因此不能排除其他 PD 复位/脱离，也不能把 `-ENOTCONN` 等同于旧 `-EPROTO`；三次故障只证明控制路径暂时不可用后软件重进 PPS，不足以解释仪表报告的两次掉功率。
+
+基于调查，没有移除任何停止或保护条件。对源码的诊断优化为：只在目标电压变化或 8 秒 keep-alive 到期时发送 PPS Request，变化仍立即发送；异常记录同时输出 BQ fault/latched/alarm/status/watchdog/control 原始值；将 PHY 记录重命名为 `rx_irq_signal`；TCPM 日志容量从 8192 持续提高至 262144 项。按本次旧环约 55 条/秒的峰值日志速率估算，262144 条约可覆盖 79 分钟；8 秒 PPS 刷新也会显著降低稳定充电时日志速率。充电 RAM 日志改为启动后按需扩容并保留全部序号，不设置条数上限；存储失败会计数，不冒称日志完整。电脑导出器的单次原始接收预算也由 16 MiB 提高到 256 MiB，可容纳 262144 个 768-byte 日志槽的最坏大小；USB/磁盘异常仍保留 `.partial`，完整序号校验后才发布最终文件。USB-IF PPS 需要周期性 Request 的 10 秒窗口，采用 8 秒为其留出调度余量。Linux 全量 118 项、Windows 全量 118 项（48 项因平台条件跳过）均退出 0；Windows 原生编译相关日志/诊断用例 20 项全部执行通过，L2 完整构建退出 0。新镜像 7,811,072 bytes，SHA-256 `44854093bb63ddc45b60ee8c9940fb9114815cb7829fd16ee02150e98a89f94c`；尚未用于新一轮真机 L3。完整性检查通过，shellcheck 在本次构建容器不可用；更长时间稳定性、BQ fault 根因和 `-ENOTCONN` 的协议来源仍开放。
+
+## 长日志镜像 Fastboot RAM 启动
+
+维护者确认设备已重启至 Fastboot 并要求启动本轮新镜像。启动前核验唯一枚举设备 `product=umi`、`unlocked=yes`、`is-userspace=no`；核验镜像 SHA-256 `44854093bb63ddc45b60ee8c9940fb9114815cb7829fd16ee02150e98a89f94c`，构建输入清单含 `tcpm_log_entries=262144`。只发送一次 `fastboot boot`，Sending 与 Booting 均 OKAY，总耗时 0.302 秒；未刷写分区。启动后 fastboot/adb 均未枚举设备，Windows 端仅有 COM1，未检测到 MiSeed 诊断串口；因此只确认 Bootloader 接受 RAM 镜像，Linux 启动与新日志功能的 L3 尚未确认。原始命令记录 `.work/boot-l2-amd64/fastboot-boot-20261109.log`、状态 `.work/boot-l2-amd64/fastboot-boot-20261109.status`。
+
+## 长日志镜像 PPS 稳定运行 L3
+
+维护者报告新镜像充电约 10 分钟，未观察到断充/复位。连接电脑后，通过校验 VID/PID 与控制台身份的只读导出器取得 RAM 日志：`boot_id=2a53626b-665f-4537-813a-6e181b024f9b`，`first=0 next=5206 count=5206 storage_errors=0`；记录未覆盖，开始至结束约 819 秒。PPS RUN 连续样本 2400 条，从 16.017 秒至 745.096 秒，最长样本间隔约 1.1 秒；没有充电阶段 `miseed-pps failure` 或 PPS_FAULT。样本显示请求电压随电池电压从约 8.12V 调至 9.16V，电流请求保持 2.05A；745.096 秒末样本 VBUS 8.912V / IBUS 1.600A、BMS VBAT 4.359V / IBAT 净充 2.565A、温度上限折算约 4.10A。该 Umi/CSOT 设备在此 RAM 镜像、SOC 71–77% 与本次温度/适配器条件下，真机 PPS 连续运行约 12 分钟（维护者按约 10 分钟档验收）、充电中无故障。维护者宣告：本机条件下 PPS 充电稳定。保护故障注入、温控标度与主机 TCPM 完整导出另项开放，不回写否定本轮结论。
+
+唯一 PPS_FAULT 行在 `boot_ms=746151`：`-34/ERANGE`、state=RUN，约 3ms 前 TCPM 已在 745.308794 秒记录 VBUS off，随后 CC detached；USB UDC configured 记录早于断开约 0.16 秒，之后观察到 USB present=0 和电池转 Discharging。该时序与维护者所述拔掉充电器、接电脑采集日志吻合。该行 BQ `fault=0x00 latched=0x00 status=0x00 watchdog=0x44 control=0x07`，控制 0x07 未置 BQ pump enable（bit 7）；`alarm=0x02` 是配置要求的 battery OVP alarm-disable 位，不是活动报警（活动报警掩码为高 nibble）。`pps-status state=1 error=-34` 是拔线后状态及历史错误，不表示采集时仍在 PPS。故该条应归为断开时序竞态/正常停止窗口，不是充电期间观察到的失效；不把用户的拔插原因作为物理实验证实之外的唯一解释。
+
+本轮 TCPM 环内部报告 `lines=2928 complete=1` 且没有 overflow，但主机保存文件只能解析到 2824 条时间戳记录，其中 491.863 秒附近一条记录拼接异常；APDO 请求常见间隔约 8.19 秒，但该处表观最大间隔 16.396 秒可能受主机串口丢字节影响，不能据此证明真实请求间隔或无瞬态协议事件。当前电池侧 RAM 采样连续且无 PPS 故障；下一次协议日志导出应核对接收记录数并修复主机端的串口丢行检测。原始 charge log 在 `.work/boot-l2-amd64/charge-log-20261109-10min.log`；version / pps-status / status / TCPM 导出在 `.work/ram-run-vbat-20261109/round3-10min-*.log`。TCPM 导出消费内核环。本 L3 的镜像哈希为 `44854093bb63ddc45b60ee8c9940fb9114815cb7829fd16ee02150e98a89f94c`。
+
+## 固定 PD 约 10 分钟验证 L3
+
+维护者授权启动同一镜像 44854093bb63ddc45b60ee8c9940fb9114815cb7829fd16ee02150e98a89f94c，自行约 10 分钟充电后接回电脑只读导出。启动证据：.work/ram-run-vbat-20261109/pd-verify-20261109/fastboot-boot.log，Sending/Booting OKAY，退出码 0；未刷写。
+
+完整充电 RAM 日志首次导出因主机串口丢行失败（序号 283→287），换名重试成功：pd-charge-log-retry1.log，oot_id=f780f535-5c38-4024-a6fe-8446a837d272，irst=0 next=2360 count=2360 storage_errors=0。另存 pd-version.log、pd-pps-status.log、pd-status.log、pd-tcpm-log.log。
+
+时间线：约 7.93 s 收到源能力，仅固定 PDO 5/9/12/15/20 V，无 APDO；协商并停留在 5000 mV / 3000 mA，SNK_READY。约 8.816 s miseed-pps failure error=-95 后 state=5 reason=-95 owned=0，属于无 PPS 能力时的预期退出，非充电中泵故障。此后至约 626.75 s 拔线前，SMB5 主充持续 enabled=1，电池净充约 2.3–2.4 A，SOC 70%→83%，温度约 39→37°C；无 miseed-pps RUN、无充电中 PPS_FAULT/-ENOTCONN/-EPROTO。约 626.75 s VBUS off；接电脑后约 631–633 s 出现能力等待超时与硬复位，属电脑 USB 会话。
+
+接回后 pps-status 为 state=1 error=-95（历史错误）。维护者宣告：该 Umi/CSOT 条件下固定 PD/SMB5 充电稳定；与同镜像 PPS 约 10 分钟档验收并列，PD 与 PPS 均已稳定。本轮未进入 PPS 是因为源端未提供 APDO。主机串口首次丢行仍开放。

@@ -112,8 +112,8 @@ class PdDiagnosticsTests(unittest.TestCase):
             with patch.object(applier,"ORIGINAL",hashes):
                 first=applier.stage(root);second=applier.stage(root)
                 self.assertEqual(first,second)
-                self.assertIn("8192",(root/applier.TCPM).read_text())
-                self.assertIn("miseed-pdphy rx_reset_signal",(root/applier.PDPHY).read_text())
+                self.assertIn("262144",(root/applier.TCPM).read_text())
+                self.assertIn("miseed-pdphy rx_irq_signal",(root/applier.PDPHY).read_text())
                 (root/applier.PDPHY).write_text("changed")
                 with self.assertRaisesRegex(ValueError,"patched PD source changed"):applier.stage(root)
 

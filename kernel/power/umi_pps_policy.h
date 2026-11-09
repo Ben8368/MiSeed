@@ -18,6 +18,8 @@
 #define UMI_PPS_TAPER_MA 2200
 #define UMI_PPS_TAPER_MS 10000
 #define UMI_PPS_PERIOD_MS 200
+/* USB-IF permits a 10 s SPR PPS request timeout; refresh with timing margin. */
+#define UMI_PPS_REFRESH_MS 8000
 #define UMI_PPS_START_MS 5000
 #define UMI_PPS_OPERATION_MS 10000
 #define UMI_PPS_MAX_SOC 95 /* LineageOS CAPACITY_TOO_HIGH_THR for Umi. */
@@ -99,6 +101,8 @@ struct umi_pps_sample {
 	int pump_vbat_mv;
 	int thermal_bat_ma;
 	int fault, alarm, bus_low, bus_high, switching;
+	unsigned int fault_raw, latched_raw, alarm_raw, status_raw;
+	unsigned int watchdog_raw, control_raw;
 };
 
 static inline int umi_pps_min(int a, int b) { return a < b ? a : b; }

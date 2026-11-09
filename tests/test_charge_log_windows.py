@@ -28,7 +28,14 @@ class ChunkTests(unittest.TestCase):
     def test_fragmented_lines_idle_reads_banner_and_prompt(self):
         wire = b"console banner\r\n" + SNAPSHOT.replace(b"\n", b"\r\n") + b"miseed> "
         chunks = [chunk for byte in wire for chunk in (None, bytes([byte]))]
-        self.assertEqual(self.receive(chunks), ((0, 2, 2, 0), SNAPSHOT))
+        self.assertEqual(self.receive(chunks), ((0, 2, 2, 0, 0), SNAPSHOT))
+
+    def test_accepts_growing_ram_log_header(self):
+        header = b"CHARGE_LOG_BEGIN boot_id=test first=0 next=2 count=2 storage_errors=0 ram_only=1\n"
+        snapshot = header + ROWS + END
+        bounds, output = self.receive([snapshot])
+        self.assertEqual(bounds, (0, 2, 2, 0, 0))
+        self.assertEqual(output, snapshot)
 
     def test_invalid_frames_and_early_disconnect(self):
         cases = {
@@ -67,7 +74,7 @@ class BufferedTests(unittest.TestCase):
             self.assertEqual(output.getvalue(), b"")
             return next(chunks, b"")
         bounds = collector.receive_buffered(read_chunk, output, 1)
-        self.assertEqual(bounds, (0, 2, 2, 0))
+        self.assertEqual(bounds, (0, 2, 2, 0, 0))
         self.assertEqual(output.getvalue(), SNAPSHOT)
 
     def test_corrupt_frame_preserves_full_raw_response_including_later_rows(self):
@@ -106,8 +113,11 @@ class BufferedTests(unittest.TestCase):
         chunks = iter(raw[i:i+65536] for i in range(0, len(raw), 65536))
         output = io.BytesIO()
         self.assertEqual(collector.receive_buffered(lambda remaining: next(chunks,b""),output,2),
-                         (0,count,count,0))
+                         (0,count,count,0,0))
         self.assertEqual(output.getvalue(),raw)
+
+    def test_receive_limit_covers_maximum_tcpmlog_sized_charge_snapshot(self):
+        self.assertGreaterEqual(collector.MAX_BYTES, 262144 * 768)
 
 
 class WindowsTests(unittest.TestCase):

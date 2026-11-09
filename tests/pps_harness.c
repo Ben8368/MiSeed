@@ -252,6 +252,14 @@ int main(void) {
  reset();pd.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3000000;run();
  assert(current_requests==0);
  clock_ms+=200;tick();assert(c.state==PPS_RUN && current_requests==0 && voltage_requests>=2);
+ /* Keep the control loop fast, but avoid repeated identical APDO requests.
+  * Refresh at eight seconds while any voltage/current change remains immediate.
+  */
+ reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-5850000;adc(0,2850);
+ int stable_requests=voltage_requests;clock_ms+=200;tick();
+ assert(c.state==PPS_RUN && voltage_requests==stable_requests);
+ clock_ms=c.last_pps_request_ms+UMI_PPS_REFRESH_MS;tick();
+ assert(c.state==PPS_RUN && voltage_requests==stable_requests+1);
  reset();busy_prop=POWER_SUPPLY_PROP_VOLTAGE_NOW;busy_count=100;begin();
  assert(c.state==PPS_FAULT && !enable_count && !claim_owned && voltage_requests==4 && retry_sleeps==3);
  reset();busy_prop=POWER_SUPPLY_PROP_VOLTAGE_NOW;busy_count=100;busy_delay_ms=10000;begin();

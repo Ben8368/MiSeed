@@ -13,10 +13,10 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BEGIN = re.compile(rb"^CHARGE_LOG_BEGIN boot_id=\S+ first=(\d+) next=(\d+) count=(\d+) overwritten=(\d+) ram_only=1$")
+BEGIN = re.compile(rb"^CHARGE_LOG_BEGIN boot_id=\S+ first=(\d+) next=(\d+) count=(\d+) (?:overwritten=(\d+)|storage_errors=(\d+)) ram_only=1$")
 END = re.compile(rb"^CHARGE_LOG_END next=(\d+)$")
 RECORD = re.compile(rb"^seq=(\d+) boot_ms=\d+ ")
-MAX_BYTES = 16 * 1024 * 1024
+MAX_BYTES = 256 * 1024 * 1024
 
 
 class ExportError(ValueError):
@@ -53,7 +53,7 @@ def receive_chunks(read_chunk, stream, timeout):
             raise ExportError("USB serial port closed before export completed")
         received += len(data)
         if received > MAX_BYTES:
-            raise ExportError("export exceeded the 16 MiB receive limit")
+            raise ExportError("export exceeded the 256 MiB receive limit")
         lines = (pending + data).split(b"\n")
         pending = lines.pop()
         for line in lines:
@@ -64,10 +64,12 @@ def receive_chunks(read_chunk, stream, timeout):
                     if line.startswith(b"CHARGE_LOG_UNAVAILABLE"):
                         raise ExportError(line.decode("ascii", errors="replace"))
                     continue
-                first, next_sequence, count, overwritten = map(int, match.groups())
+                first, next_sequence, count = map(int, match.groups()[:3])
+                overwritten = int(match.group(4) or b"0")
+                storage_errors = int(match.group(5) or b"0")
                 if next_sequence < first or next_sequence - first != count:
                     raise ExportError("invalid snapshot sequence bounds")
-                bounds = (first, next_sequence, count, overwritten)
+                bounds = (first, next_sequence, count, overwritten, storage_errors)
                 expected = first
                 stream.write(line + b"\n")
                 continue
@@ -112,7 +114,7 @@ def receive_buffered(read_chunk, stream, timeout):
                 raise ExportError("USB serial port closed before export completed")
             if len(data) + len(chunk) > MAX_BYTES:
                 data.extend(chunk[:MAX_BYTES - len(data)])
-                raise ExportError("export exceeded the 16 MiB receive limit")
+                raise ExportError("export exceeded the 256 MiB receive limit")
             data.extend(chunk)
             # Only inspect newly arrived bytes plus a possible split footer.
             marker = data.find(b"\nCHARGE_LOG_END next=", scan)
@@ -237,7 +239,8 @@ def main(argv=None):
         os.link(partial, output)
         partial.unlink()
         print(f"SAVED: {output}")
-        print(f"Records: {bounds[2]}; overwritten older records: {bounds[3]}; RAM log remains available.")
+        print(f"Records: {bounds[2]}; overwritten older records: {bounds[3]}; "
+              f"storage errors: {bounds[4]}; RAM log remains available.")
         return 0
     except (ExportError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

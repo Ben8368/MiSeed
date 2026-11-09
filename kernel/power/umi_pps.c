@@ -55,7 +55,7 @@ struct umi_pps {
 	unsigned int nprotection;
 	enum umi_pps_state state;
 	bool claimed, configured, pps, removing, stop_pending, manual_stop;
-	u64 deadline, start_deadline, taper_start;
+	u64 deadline, start_deadline, taper_start, last_pps_request_ms;
 	int request_mv, request_ma, max_bat_mv;
 	int last_error;
 };
@@ -366,31 +366,31 @@ static int umi_pps_adc(struct umi_pps *c, int channel, int *value)
 
 static int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 {
-	unsigned int fault, latched, alarm, state, wd, control;
 	int ret;
 
 	ret = umi_pps_verify(c);
 	if (!ret)
-		ret = regmap_read(c->map, 0x10, &fault);
+		ret = regmap_read(c->map, 0x10, &s->fault_raw);
 	if (!ret)
-		ret = regmap_read(c->map, 0x11, &latched);
+		ret = regmap_read(c->map, 0x11, &s->latched_raw);
 	if (!ret)
-		ret = regmap_read(c->map, 0x0d, &alarm);
+		ret = regmap_read(c->map, 0x0d, &s->alarm_raw);
 	if (!ret)
-		ret = regmap_read(c->map, 0x0a, &state);
+		ret = regmap_read(c->map, 0x0a, &s->status_raw);
 	if (!ret)
-		ret = regmap_read(c->map, BQ_WATCHDOG, &wd);
+		ret = regmap_read(c->map, BQ_WATCHDOG, &s->watchdog_raw);
 	if (!ret)
-		ret = regmap_read(c->map, BQ_CONTROL, &control);
+		ret = regmap_read(c->map, BQ_CONTROL, &s->control_raw);
 	if (ret)
 		return ret;
-	s->fault = fault || latched || (state & 0xcb) || !(wd & BQ_WD_DISABLED) ||
-		!(alarm & BIT(1)) || (c->state == PPS_RUN && !(control & BQ_ENABLE)) ||
-		(c->state == PPS_SETTLE && (control & BQ_ENABLE));
-	s->alarm = !!(alarm & 0xf0);
-	s->bus_low = !!(state & BIT(5));
-	s->bus_high = !!(state & BIT(4));
-	s->switching = !!(state & BIT(2));
+	s->fault = s->fault_raw || s->latched_raw || (s->status_raw & 0xcb) ||
+		!(s->watchdog_raw & BQ_WD_DISABLED) || !(s->alarm_raw & BIT(1)) ||
+		(c->state == PPS_RUN && !(s->control_raw & BQ_ENABLE)) ||
+		(c->state == PPS_SETTLE && (s->control_raw & BQ_ENABLE));
+	s->alarm = !!(s->alarm_raw & 0xf0);
+	s->bus_low = !!(s->status_raw & BIT(5));
+	s->bus_high = !!(s->status_raw & BIT(4));
+	s->switching = !!(s->status_raw & BIT(2));
 	ret = umi_pps_adc(c, 0, &s->ibus_ma);
 	if (!ret)
 		ret = umi_pps_adc(c, 1, &s->vbus_mv);
@@ -440,29 +440,34 @@ static int umi_pps_contract(struct umi_pps *c)
 
 static int umi_pps_request(struct umi_pps *c, int mv)
 {
-	int ret, ma;
+	int ret = 0, ma;
+	u64 now = umi_pps_now();
+	bool request = mv != c->request_mv || !c->last_pps_request_ms ||
+		now - c->last_pps_request_ms >= UMI_PPS_REFRESH_MS;
 
 	if (mv < c->caps.min_mv || mv > min(c->caps.max_mv, UMI_PPS_MAX_MV) ||
 	    mv % UMI_PPS_STEP_MV || c->request_ma > c->caps.max_ma)
 		return -ERANGE;
 	ret = umi_pps_check_deadline(c);
-	if (!ret)
+	if (ret)
+		return ret;
+	if (request) {
 		ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_VOLTAGE_NOW, mv * 1000);
-	if (!ret)
-		ret = umi_pps_check_deadline(c);
-	if (!ret)
-		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, &ma);
-	/* A voltage request already carries the negotiated current. Do not start
-	 * another AMS for an identical value; keep the voltage write as PPS refresh.
-	 */
-	if (!ret && ma != c->request_ma * 1000)
-		ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_CURRENT_NOW, c->request_ma * 1000);
-	if (!ret)
-		ret = umi_pps_check_deadline(c);
-	if (!ret) {
-		c->request_mv = mv;
-		ret = umi_pps_contract(c);
+		if (!ret)
+			ret = umi_pps_check_deadline(c);
+		if (!ret)
+			ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_CURRENT_NOW, &ma);
+		/* A voltage request carries the negotiated current too. */
+		if (!ret && ma != c->request_ma * 1000)
+			ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_CURRENT_NOW,
+						c->request_ma * 1000);
+		if (!ret) {
+			c->request_mv = mv;
+			c->last_pps_request_ms = umi_pps_now();
+		}
 	}
+	if (!ret)
+		ret = umi_pps_contract(c);
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
 	return ret;
@@ -510,6 +515,8 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 		min(UMI_PPS_MAX_MA, s->thermal_bat_ma / 2));
 	if (mv < 0 || c->request_ma < 0)
 		return -ERANGE;
+	/* Start a fresh keep-alive window for every PPS contract. */
+	c->last_pps_request_ms = 0;
 	ret = umi_pps_request(c, mv);
 	if (!ret) {
 		c->start_deadline = umi_pps_now() + UMI_PPS_START_MS;
@@ -643,6 +650,7 @@ static void umi_pps_work(struct work_struct *work)
 			ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_CURRENT_NOW, next * 1000);
 		if (!ret) {
 			c->request_ma = next;
+			c->last_pps_request_ms = umi_pps_now();
 			ret = umi_pps_contract(c);
 		}
 		if (!ret)
@@ -713,10 +721,12 @@ static void umi_pps_work(struct work_struct *work)
 		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
 	goto out;
 fail:
-	dev_info(c->dev, "miseed-pps failure state=%u error=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d\n",
+	dev_info(c->dev, "miseed-pps failure state=%u error=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
 		 c->state, ret, c->request_mv, c->request_ma, c->max_bat_mv,
 		 s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
-		 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high, s.switching);
+		 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high, s.switching,
+		 s.fault_raw, s.latched_raw, s.alarm_raw, s.status_raw,
+		 s.watchdog_raw, s.control_raw);
 	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {
 		/* Pre-negotiation telemetry faults are transient; keep polling without
 		 * taking ownership from the main charger.
