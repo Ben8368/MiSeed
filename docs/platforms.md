@@ -53,7 +53,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | --- | --- | --- |
 | Linux RAM bring-up / UEFI | `3e7083a7…383489f` RAM 启动、Linux→原生 Fastboot→Android 已 L3；PDC/SPMI/PON 绑定正常；UEFI 未测 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有往返](archive/hardware/2026-11-07-direct-fastboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | 本轮诊断 Image 的 macOS ACM/version/status/日志已 L3；既有 rotate:3 显示为 L3，本轮未复测显示；旧镜像 TLMM 禁用，新 UART-only 配置待 L3，触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
+| CSOT 显示 / 触控 / USB | 本轮诊断 Image 的 macOS ACM/version/status/日志已 L3；既有 rotate:3 显示为 L3，本轮未复测显示；旧镜像 TLMM 禁用；当前 PPS 配置开放 UART34/35、I2C44/45、IRQ68，15-0066 绑定及充电已 L3；保护专项开放，触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 充电日志 / 管理 | 当前镜像已 L2/RAM/USB；PD 与 PPS 均已分别约 10 分钟真机 L3 并宣告稳定。主机串口导出丢行、保护/停机专项与旧 `-ENOTCONN` 仍开放 | [既有 L3](archive/hardware/2026-11-08-umi-pps-ams-retry.md) / [本版证据](archive/hardware/2026-11-09-umi-pps-windows-l2.md)；RISK-004 |
+| 充电日志 / 管理 | `44854093` PD/PPS 各约 10 分钟已稳定；`4f923319` PPS 约 81 秒正常收尾转 PD 继续净充。保护专项、串口偶发丢行与旧故障开放 | [稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [本轮](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)；RISK-004 |

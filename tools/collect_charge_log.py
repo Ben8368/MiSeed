@@ -100,6 +100,7 @@ def receive_buffered(read_chunk, stream, timeout):
     deadline = time.monotonic() + timeout
     data = bytearray()
     scan = 0
+    unavailable_scan = 0
     try:
         while time.monotonic() < deadline:
             try:
@@ -116,6 +117,10 @@ def receive_buffered(read_chunk, stream, timeout):
                 data.extend(chunk[:MAX_BYTES - len(data)])
                 raise ExportError("export exceeded the 256 MiB receive limit")
             data.extend(chunk)
+            unavailable = b"CHARGE_LOG_UNAVAILABLE"
+            if data.find(unavailable, unavailable_scan) >= 0:
+                raise ExportError("charge log unavailable; raw response retained")
+            unavailable_scan = max(0, len(data) - len(unavailable) + 1)
             # Only inspect newly arrived bytes plus a possible split footer.
             marker = data.find(b"\nCHARGE_LOG_END next=", scan)
             if marker >= 0:
@@ -130,8 +135,6 @@ def receive_buffered(read_chunk, stream, timeout):
                 scan = marker
             else:
                 scan = max(0, len(data) - 24)
-            if data.startswith(b"CHARGE_LOG_UNAVAILABLE") or b"\nCHARGE_LOG_UNAVAILABLE" in data[-256:]:
-                raise ExportError("charge log unavailable; raw response retained")
         raise ExportError("export timed out; RAM log is retained on the running device")
     except (ExportError, OSError):
         stream.write(data)

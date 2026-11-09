@@ -114,7 +114,10 @@
 		 */
 		sink-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)
 			     PDO_PPS_APDO(3300, 11000, 3000)>;
-		op-sink-microwatt = <15000000>;
+		/* Software operating floor: existing 7 V bus floor x 2 A PPS floor.
+		 * Do not reject valid thermal derating below the 15 W fixed PDO.
+		 */
+		op-sink-microwatt = <14000000>;
 	};
 };
 

@@ -33,7 +33,9 @@ class RepositoryChecks(unittest.TestCase):
     def test_bad_encoding_and_line_endings(self):
         for data, fragment in [(b"\xff", "UTF-8"), (b"line\r\n", "LF"),
                                (b"line \n", "whitespace"), (b"line", "newline"),
-                               (b"\xef\xbb\xbftext\n", "BOM")]:
+                               (b"\xef\xbb\xbftext\n", "BOM"),
+                               (b"\x08oot_id\n", "control character"),
+                               (b"\x0cirst\n", "control character")]:
             with self.subTest(fragment=fragment):
                 errors, _ = check_repo.text_errors("file.md", data)
                 self.assertTrue(any(fragment in item for item in errors))

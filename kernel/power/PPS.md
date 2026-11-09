@@ -57,7 +57,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 控制状态位于唯一绑定 I2C 设备的 `fastcharge_test`。USB 诊断支持 `pps-status`、`pps-stop`；合格板级节点启用后，PPS 会在 USB-PD attach 自动进入；`charge-stop` 会先尝试停止已绑定 PPS，再停普通充电。当前测试镜像已启用相关节点，控制器已绑定；命令不会猜 I2C 总线编号。
 
-`miseed-pps` 状态、请求和错误进入已有断线 RAM 日志。日志从启动后动态扩展，不设条数上限，不覆盖旧记录；分配/写入失败会累计 `storage_errors`，重启仍会清空 RAM 日志。相同电压/电流不再每个 200 ms 控制周期重复发送 APDO；参数变化立即请求，稳定时每 8 秒刷新，为 USB-IF 的 10 秒 SPR PPS 请求超时留出调度余量（[USB-IF overview](https://www.usb.org/sites/default/files/D2T2-1%20-%20USB%20Power%20Delivery.pdf)）。PD PHY 的 `rx_irq_signal` 只表示收到 RX 中断，不表示 reset；异常失败会记录 BQ 当前/锁存故障、报警、状态、看门狗和控制寄存器原值，保持原有停泵/回退行为。TCPM 环保留 262144 条，覆盖更长的协议时间线；它仍有界，`tcpm-log` 读到 EOF 也不代表环溢出前后的完整历史。详见[接收修正](../../docs/archive/research/2026-11-09-pd-receive-guard.md)。SMB5 配置沿用 LOS 3 A ICL、6 A FCC、4.45 V FV；PPS 占用期间拒绝并发普通充电命令，PPS 正常退出后恢复 SMB5 worker。挂起/关机/移除停止循环；无法安全停止时拒绝挂起。
+`miseed-pps` 状态、请求和错误进入已有断线 RAM 日志。日志从启动后动态扩展，RAM 文件预算为 64 MiB，不覆盖旧记录；预算用尽或分配/写入失败时丢弃新增记录并累计 `storage_errors`；导出读取不可变前缀，每次仅用一条记录缓冲，重启仍会清空 RAM 日志。相同电压/电流不再每个 200 ms 控制周期重复发送 APDO；参数变化立即请求，稳定时每 8 秒刷新，为 USB-IF 的 10 秒 SPR PPS 请求超时留出调度余量（[USB-IF overview](https://www.usb.org/sites/default/files/D2T2-1%20-%20USB%20Power%20Delivery.pdf)）。PD PHY 的 `rx_irq_signal` 只表示收到 RX 中断，不表示 reset；异常失败会记录 BQ 当前/锁存故障、报警、状态、看门狗和控制寄存器原值，保持原有停泵/回退行为。TCPM 指针表用可回退到非连续内存的 kvcalloc 分配，分配失败只停用日志；环保留 262144 条，覆盖更长的协议时间线；它仍有界，`tcpm-log` 读到 EOF 也不代表环溢出前后的完整历史。详见[接收修正](../../docs/archive/research/2026-11-09-pd-receive-guard.md)。SMB5 配置沿用 LOS 3 A ICL、6 A FCC、4.45 V FV；PPS 占用期间拒绝并发普通充电命令，PPS 正常退出后恢复 SMB5 worker。挂起/关机/移除停止循环；挂起失败拒绝休眠，恢复时仅重启原可运行会话，保留手动停止与故障状态；手动停止后继续只读观察拔线。SMB5 inhibit 时拒绝 PPS 接管。
 
 ## 验证入口
 

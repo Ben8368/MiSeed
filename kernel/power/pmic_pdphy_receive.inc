@@ -18,7 +18,7 @@ static void qcom_pmic_typec_pdphy_pd_receive(struct pmic_typec_pdphy *pmic_typec
 	ret = regmap_read(pmic_typec_pdphy->regmap,
 			  pmic_typec_pdphy->base + USB_PDPHY_RX_SIZE_REG, &size);
 	if (ret)
-		goto done;
+		goto release_rx;
 
 	/* Hardware encodes the wire length minus one. Never forward an unread
 	 * message on this error path, even if the register access succeeded.
@@ -34,13 +34,13 @@ static void qcom_pmic_typec_pdphy_pd_receive(struct pmic_typec_pdphy *pmic_typec
 			  pmic_typec_pdphy->base + USB_PDPHY_RX_STATUS_REG,
 			  &rx_status);
 	if (ret)
-		goto done;
+		goto release_rx;
 
 	ret = regmap_bulk_read(pmic_typec_pdphy->regmap,
 			       pmic_typec_pdphy->base + USB_PDPHY_RX_BUFFER_REG,
 			       (u8 *)&msg, size);
 	if (ret)
-		goto done;
+		goto release_rx;
 
 release_rx:
 	/* Release both a consumed valid frame and a rejected invalid length.
@@ -50,7 +50,6 @@ release_rx:
 			      pmic_typec_pdphy->base + USB_PDPHY_RX_ACKNOWLEDGE_REG, 0);
 	if (ack_ret)
 		ret = ack_ret;
-done:
 	spin_unlock_irqrestore(&pmic_typec_pdphy->lock, flags);
 
 	if (ret) {

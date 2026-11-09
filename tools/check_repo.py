@@ -33,7 +33,7 @@ REQUIRED = (
     "manifests/sources.json", "manifests/sources.lock.json", ".github/workflows/ci.yml",
 )
 EXCLUDED = {".git", ".work", "out", "local", ".venv", "__pycache__"}
-TEXT_SUFFIXES = {".md", ".py", ".json", ".yml", ".yaml", ".toml", ".sh"}
+TEXT_SUFFIXES = {".md", ".py", ".json", ".yml", ".yaml", ".toml", ".sh", ".ps1"}
 FORBIDDEN_SUFFIXES = {
     ".img", ".bin", ".elf", ".dtb", ".dtbo", ".cpio", ".log", ".pem", ".key",
     ".pyc", ".pyo",
@@ -73,6 +73,8 @@ def text_errors(name, data):
         errors.append(f"{name}: UTF-8 BOM is forbidden")
     if "\r" in content:
         errors.append(f"{name}: use LF line endings")
+    if any(ord(ch) < 32 and ch not in "\n\r\t" for ch in content):
+        errors.append(f"{name}: forbidden control character")
     if content and not content.endswith("\n"):
         errors.append(f"{name}: missing final newline")
     for number, line in enumerate(content.splitlines(), 1):

@@ -3,7 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import argparse
+import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 TARGETS = ("soc", "spmi_bus", "tlmm")
@@ -19,6 +22,15 @@ def put(dtb, node, prop, value):
 
 
 def isolate(dtb):
+    dtb = Path(dtb)
+    with tempfile.TemporaryDirectory(dir=dtb.parent) as directory:
+        staged = Path(directory) / dtb.name
+        shutil.copy2(dtb, staged)
+        _isolate(staged)
+        os.replace(staged, dtb)
+
+
+def _isolate(dtb):
     # Validate the complete plan before writing anything; refuse unknown DTBs.
     plan = []
     for name in TARGETS:

@@ -55,6 +55,7 @@ struct umi_pps {
 	unsigned int nprotection;
 	enum umi_pps_state state;
 	bool claimed, configured, pps, removing, stop_pending, manual_stop;
+	bool suspended, resume_pps;
 	u64 deadline, start_deadline, taper_start, last_pps_request_ms;
 	int request_mv, request_ma, max_bat_mv;
 	int last_error;
@@ -547,7 +548,7 @@ static void umi_pps_work(struct work_struct *work)
 	int ret = 0, online, next;
 
 	mutex_lock(&c->lock);
-	if (c->removing)
+	if (c->removing || c->suspended)
 		goto out;
 	if (c->stop_pending) {
 		umi_pps_stop(c, PPS_FAULT, c->last_error);
@@ -721,22 +722,22 @@ static void umi_pps_work(struct work_struct *work)
 		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
 	goto out;
 fail:
+	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {
+		if (ret != c->last_error)
+			dev_info(c->dev, "miseed-pps pre-claim error=%d\n", ret);
+		c->last_error = ret;
+		goto out;
+	}
 	dev_info(c->dev, "miseed-pps failure state=%u error=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
 		 c->state, ret, c->request_mv, c->request_ma, c->max_bat_mv,
 		 s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
 		 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high, s.switching,
 		 s.fault_raw, s.latched_raw, s.alarm_raw, s.status_raw,
 		 s.watchdog_raw, s.control_raw);
-	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {
-		/* Pre-negotiation telemetry faults are transient; keep polling without
-		 * taking ownership from the main charger.
-		 */
-		c->last_error = ret;
-		goto out;
-	}
 	umi_pps_stop(c, PPS_FAULT, ret);
 out:
-	if (!c->removing && (c->stop_pending || !c->manual_stop))
+	/* Keep observing unplug after manual stop without active requests. */
+	if (!c->removing && !c->suspended)
 		mod_delayed_work(system_wq, &c->work, msecs_to_jiffies(UMI_PPS_PERIOD_MS));
 	mutex_unlock(&c->lock);
 }
@@ -808,14 +809,30 @@ static int umi_pps_suspend(struct device *dev)
 	int ret;
 
 	mutex_lock(&c->lock);
-	ret = umi_pps_stop(c, PPS_OFF, 0);
+	c->resume_pps = !c->manual_stop && (c->state == PPS_WAIT_PLUG ||
+			c->state == PPS_SETTLE || c->state == PPS_RUN);
+	ret = umi_pps_stop(c, c->resume_pps ? PPS_OFF : c->state, c->last_error);
+	c->suspended = !ret;
 	mutex_unlock(&c->lock);
 	/* Refuse suspend if power could not be made safe; retry while awake. */
 	if (ret)
 		mod_delayed_work(system_wq, &c->work, 0);
 	return ret;
 }
-static DEFINE_SIMPLE_DEV_PM_OPS(umi_pps_pm, umi_pps_suspend, NULL);
+static int umi_pps_resume(struct device *dev)
+{
+	struct umi_pps *c = dev_get_drvdata(dev);
+
+	mutex_lock(&c->lock);
+	c->suspended = false;
+	if (c->resume_pps && !c->manual_stop && !c->stop_pending && c->state == PPS_OFF)
+		c->state = PPS_WAIT_PLUG;
+	c->resume_pps = false;
+	mod_delayed_work(system_wq, &c->work, 0);
+	mutex_unlock(&c->lock);
+	return 0;
+}
+static DEFINE_SIMPLE_DEV_PM_OPS(umi_pps_pm, umi_pps_suspend, umi_pps_resume);
 
 static const struct regmap_config umi_pps_regmap = {
 	.reg_bits = 8, .val_bits = 8, .max_register = 0x2e,

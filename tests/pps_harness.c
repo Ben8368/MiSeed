@@ -17,6 +17,8 @@ typedef int16_t s16;
 #define min(a,b) ((a) < (b) ? (a) : (b))
 #define container_of(p,t,m) ((t *)((char *)(p) - offsetof(t,m)))
 struct device { int unused; };
+static void *drvdata;
+static void *dev_get_drvdata(struct device *dev) { return drvdata; }
 struct mutex { int unused; };
 struct regmap { int unused; };
 struct iio_channel { int index; };
@@ -27,11 +29,12 @@ struct delayed_work { struct work_struct work; };
 #define to_delayed_work(p) container_of(p, struct delayed_work, work)
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
-#define dev_info(...) ((void)0)
+static int info_count, scheduled, check_operating_power;
+#define dev_info(...) (info_count++)
 #define dev_err_probe(d,e,...) (e)
 #define system_wq NULL
 #define msecs_to_jiffies(v) (v)
-#define mod_delayed_work(q,w,t) ((void)0)
+#define mod_delayed_work(q,w,t) (scheduled++)
 static u64 clock_ms;
 static int retry_sleeps;
 static void usleep_range(unsigned int low, unsigned int high) {
@@ -112,6 +115,8 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
                                     const union power_supply_propval *v) {
  int ret=io_fail(); if(ret) return ret;
  assert(p == &pd);
+ if (check_operating_power && ((prop==POWER_SUPPLY_PROP_CURRENT_NOW && (v->intval/1000)*(p->prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]/1000)/1000 < @OPERATING_SINK_MW@) ||
+     (prop==POWER_SUPPLY_PROP_VOLTAGE_NOW && (v->intval/1000)*(p->prop[POWER_SUPPLY_PROP_CURRENT_NOW]/1000)/1000 < @OPERATING_SINK_MW@))) return -EINVAL;
  if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) voltage_requests++;
  if (prop == POWER_SUPPLY_PROP_CURRENT_NOW) current_requests++;
  if (busy_count && prop == busy_prop) {
@@ -172,6 +177,8 @@ static int device_property_read_u32(struct device *d, const char *key, u32 *v) {
 
 static struct umi_pps c;
 static void reset(void) {
+ drvdata=&c;
+ info_count=scheduled=check_operating_power=0;
  memset(&c,0,sizeof(c));memset(regs,0,sizeof(regs));
  memset(&pd,0,sizeof(pd));memset(&bms,0,sizeof(bms));memset(&sw,0,sizeof(sw));
  c.pd=&pd;c.bms=&bms;c.sw=&sw;
@@ -208,6 +215,21 @@ static void run(void) {
  clock_ms+=200;tick(); assert(c.state==PPS_RUN && enable_count==1);
 }
 int main(void) {
+ reset();run();assert(!umi_pps_suspend(NULL) && c.suspended && c.state==PPS_OFF);
+ int previous_enable=enable_count;tick();assert(enable_count==previous_enable);
+ assert(!umi_pps_resume(NULL) && !c.suspended && c.state==PPS_WAIT_PLUG);
+ tick();assert(c.state==PPS_SETTLE);
+ reset();c.manual_stop=true;c.state=PPS_OFF;pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;
+ assert(!umi_pps_suspend(NULL) && !umi_pps_resume(NULL) && c.manual_stop && c.state==PPS_OFF);
+ tick();assert(scheduled && !enable_count);
+ pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();assert(!c.manual_stop && c.state==PPS_WAIT_PLUG);
+ reset();c.state=PPS_FAULT;c.last_error=-EIO;
+ assert(!umi_pps_suspend(NULL) && !umi_pps_resume(NULL) && c.state==PPS_FAULT);
+ reset();c.state=PPS_WAIT_PLUG;pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;fail_sensor=1;tick();int first_error=info_count;
+ tick();assert(first_error==1 && info_count==first_error && !claim_owned);
+ reset();run();check_operating_power=1;c.request_mv=7300;pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=7300000;adc(1,7300);
+ bms.prop[POWER_SUPPLY_PROP_TEMP]=400;for(int i=0;i<5;i++)thermal_mc[i]=40000;
+ tick();assert(c.state==PPS_RUN && c.request_ma==2050);
  struct umi_pps_thermal thermal={0};int temperatures[6]={30000,30000,30000,30000,30000,30000};
  assert(umi_pps_thermal_level(803,1)==8 && umi_pps_thermal_level(803,0)==3);
  assert(umi_pps_thermal_level(803,-1)==8 && umi_pps_thermal_level(1500,-1)==15);

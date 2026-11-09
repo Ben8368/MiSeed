@@ -64,6 +64,10 @@ def collect_power(adb, serial):
     if before["status"] != "ok" or after != before:
         pdos["status"] = "unavailable"
         pdos["error"] = "source_capabilities_changed_or_unavailable"
+    elif pdos["status"] == "ok":
+        # src_cap_id is not an attachment generation counter in pinned LOS.
+        pdos["status"] = "unverified"
+        pdos["qualification"] = "cached_pdos_attachment_continuity_unverified"
     return observations
 
 

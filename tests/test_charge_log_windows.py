@@ -67,6 +67,15 @@ class ChunkTests(unittest.TestCase):
 
 
 class BufferedTests(unittest.TestCase):
+    def test_unavailable_is_detected_inside_large_or_fragmented_chunks(self):
+        for chunks in ([b"banner\nCHARGE_LOG_UNAVAILABLE no_recorder\n" + b"x" * 400],
+                       [b"banner\nCHARGE_LOG_UNAV", b"AILABLE no_recorder\n" + b"x" * 400]):
+            chunks = iter(chunks)
+            output = io.BytesIO()
+            with self.assertRaisesRegex(collector.ExportError, "unavailable"):
+                collector.receive_buffered(lambda remaining: next(chunks, b""), output, 1)
+            self.assertIn(b"CHARGE_LOG_UNAVAILABLE", output.getvalue())
+
     def test_fragmented_footer_and_idle_reads_publish_only_after_receive(self):
         chunks = iter([None, b"banner\n", None] + [bytes([byte]) for byte in SNAPSHOT])
         output = io.BytesIO()

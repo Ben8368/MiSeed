@@ -541,7 +541,7 @@ int umi_smb5_claim(struct power_supply *psy)
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
-	if (chip->stopping || chip->pps_owned || chip->test_armed) {
+	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit) {
 		rc = -EBUSY;
 		goto out;
 	}

@@ -54,7 +54,8 @@ class DeviceCollection(unittest.TestCase):
             report = collect_device.collect_identity("adb", SERIAL, power=True)
         self.assertEqual(report["observations"]["pump_ids"]["value"], [16])
         self.assertNotIn(SERIAL, json.dumps(report))
-        self.assertEqual(report["collection_status"], "complete")
+        self.assertEqual(report["collection_status"], "partial")
+        self.assertEqual(report["observations"]["source_pdos"]["status"], "unverified")
         for call in run.call_args_list:
             self.assertIn(tuple(call.args[0][3:]), collect_device.QUERIES + collect_device.POWER_QUERIES)
 

@@ -25,15 +25,17 @@ static void mount_virtual(const char *source, const char *target,
         fprintf(stderr, "mount %s failed: %s\n", target, strerror(errno));
 }
 
-static void print_file(const char *path) {
+static int print_file(const char *path) {
     FILE *file = fopen(path, "r");
     char buffer[512];
     if (!file) {
         printf("cannot read %s: %s\n", path, strerror(errno));
-        return;
+        return -1;
     }
     while (fgets(buffer, sizeof(buffer), file)) fputs(buffer, stdout);
-    fclose(file);
+    int failed = ferror(file) || ferror(stdout);
+    if (fclose(file)) failed = 1;
+    return failed ? -1 : 0;
 }
 
 static void report_dt_string(const char *label, const char *path) {
@@ -161,6 +163,10 @@ static void report_usb_kernel_messages(void) {
         int error_level;
 
         if (length < 0) {
+            if (errno == EPIPE) {
+                fprintf(stderr, "USB kernel ring overrun; continuing from retained cursor\n");
+                continue;
+            }
             if (errno != EAGAIN && errno != EINTR)
                 fprintf(stderr, "USB kernel log read failed: %s\n",
                         strerror(errno));
@@ -221,6 +227,10 @@ static void report_rpmh_kernel_messages(void) {
         char *content;
 
         if (length < 0) {
+            if (errno == EPIPE) {
+                fprintf(stderr, "RPMh kernel ring overrun; continuing from retained cursor\n");
+                continue;
+            }
             if (errno != EAGAIN && errno != EINTR)
                 fprintf(stderr, "RPMh kernel log read failed: %s\n",
                         strerror(errno));
@@ -835,7 +845,7 @@ static int pps_control(const char *value) {
     int rc = pps_control_path(path, sizeof(path));
     if (!rc) {
         if (value) rc = write_value(path, value);
-        else print_file(path);
+        else rc = print_file(path);
     }
     if (value) charge_log_append("CONTROL", "pps_control action=%s rc=%d", value, rc);
     return rc;

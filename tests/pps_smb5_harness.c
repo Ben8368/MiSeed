@@ -49,6 +49,8 @@ int main(void) {
  struct desc d={.set_property=smb5_set_property};
  struct power_supply p={.desc=&d,.chip=&c};
  assert(umi_smb5_claim(NULL)==-ENODEV);
+ c.inhibit=true;assert(umi_smb5_claim(&p)==-EBUSY && !c.pps_owned);
+ c.inhibit=false;
  c.test_armed=true;assert(umi_smb5_claim(&p)==-EBUSY && !c.pps_owned);
  c.test_armed=false;c.stopping=true;assert(umi_smb5_claim(&p)==-EBUSY);
  c.stopping=false;charge=1;assert(!umi_smb5_claim(&p));

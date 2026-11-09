@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,9 +19,15 @@ class PpsTests(unittest.TestCase):
         # Compile the real parser, register I/O, negotiation and worker against
         # synthetic transports. No reimplementation of the tested state machine.
         source = source[:source.index("static irqreturn_t umi_pps_irq")]
+        full = (ROOT / "kernel/power/umi_pps.c").read_text()
+        for name in ("umi_pps_suspend", "umi_pps_resume"):
+            start = full.index("static int " + name + "(")
+            source += full[start:full.index("\n}\n", start) + 3]
         source = "\n".join(line for line in source.splitlines()
                            if not line.startswith("#include <linux/"))
         harness = (ROOT / "tests/pps_harness.c").read_text()
+        power = re.search(r"op-sink-microwatt = <(\d+)>", (ROOT / "kernel/power/umi-pps.dtsi").read_text()).group(1)
+        harness = harness.replace("@OPERATING_SINK_MW@", str(int(power) // 1000))
         harness = harness.replace("/* MISEED_DRIVER_UNDER_TEST */", source)
         with tempfile.TemporaryDirectory() as directory:
             entry = Path(directory) / "pps.c"

@@ -16,6 +16,9 @@
 #endif
 #endif
 #define CHARGE_LOG_LINE 768
+#ifndef CHARGE_LOG_MAX_BYTES
+#define CHARGE_LOG_MAX_BYTES (64U * 1024U * 1024U)
+#endif
 
 struct charge_log_header {
     uint64_t total;
@@ -111,7 +114,7 @@ static void charge_log_append(const char *kind, const char *format, ...) {
     if (header.total == header.capacity) {
         uint64_t new_capacity = header.capacity <= UINT64_MAX / 2 ?
                                 header.capacity * 2 : UINT64_MAX;
-        uint64_t max_capacity = ((uint64_t)INT64_MAX - sizeof(header)) /
+        uint64_t max_capacity = ((uint64_t)CHARGE_LOG_MAX_BYTES - sizeof(header)) /
                                 sizeof(record);
         if (new_capacity > max_capacity) new_capacity = max_capacity;
         if (new_capacity <= header.capacity ||
@@ -136,48 +139,38 @@ unlock:
     (void)charge_log_lock(F_UNLCK);
 }
 
-/* Copy while locked, then release before USB output can block or disconnect. */
+/* Published records are append-only: capture bounds while locked, then read
+ * their immutable prefix with one record of memory and no lock during USB I/O.
+ */
 static void charge_log_export(unsigned int recent) {
     struct charge_log_header header;
-    struct charge_log_record *snapshot = NULL;
+    struct charge_log_record record;
     uint64_t first, count, i;
-    int failed = 0;
     if (charge_log_fd < 0) { puts("CHARGE_LOG_UNAVAILABLE recorder_not_started"); return; }
     if (charge_log_lock(F_RDLCK)) { puts("CHARGE_LOG_UNAVAILABLE lock_failed"); return; }
-    if (charge_log_io(&header, sizeof(header), 0, 0)) {
-        (void)charge_log_lock(F_UNLCK);
-        puts("CHARGE_LOG_UNAVAILABLE header_read_failed");
-        return;
-    }
+    int failed = charge_log_io(&header, sizeof(header), 0, 0);
+    (void)charge_log_lock(F_UNLCK);
+    if (failed) { puts("CHARGE_LOG_UNAVAILABLE header_read_failed"); return; }
     count = header.total;
     if (recent && count > recent) count = recent;
     first = header.total - count;
-    if (count > SIZE_MAX / sizeof(*snapshot)) {
-        (void)charge_log_lock(F_UNLCK);
-        puts("CHARGE_LOG_UNAVAILABLE snapshot_too_large");
-        return;
+    /* Preflight the tail before publishing BEGIN; no retained record changes. */
+    if (count && charge_log_io(&record, sizeof(record),
+            sizeof(header) + (header.total - 1) * sizeof(record), 0)) {
+        puts("CHARGE_LOG_UNAVAILABLE snapshot_read_failed"); return;
     }
-    snapshot = malloc((size_t)count * sizeof(*snapshot));
-    if (!snapshot && count) {
-        (void)charge_log_lock(F_UNLCK);
-        puts("CHARGE_LOG_UNAVAILABLE snapshot_allocation_failed");
-        return;
-    }
-    for (i = 0; i < count; i++) {
-        off_t offset = sizeof(header) + (first + i) * sizeof(*snapshot);
-        if (charge_log_io(&snapshot[i], sizeof(*snapshot), offset, 0)) { failed = 1; break; }
-    }
-    (void)charge_log_lock(F_UNLCK);
-    if (failed) { free(snapshot); puts("CHARGE_LOG_UNAVAILABLE snapshot_read_failed"); return; }
     printf("CHARGE_LOG_BEGIN boot_id=%s first=%" PRIu64 " next=%" PRIu64
            " count=%" PRIu64 " storage_errors=%" PRIu64 " ram_only=1\n",
            header.boot_id, first, header.total, count, header.storage_errors);
     for (i = 0; i < count; i++) {
-        snapshot[i].text[CHARGE_LOG_LINE - 1] = '\0';
-        if (fputs(snapshot[i].text, stdout) == EOF) break;
+        if (charge_log_io(&record, sizeof(record),
+                sizeof(header) + (first + i) * sizeof(record), 0)) {
+            puts("CHARGE_LOG_UNAVAILABLE snapshot_read_failed"); return;
+        }
+        record.text[CHARGE_LOG_LINE - 1] = '\0';
+        if (fputs(record.text, stdout) == EOF) return;
     }
     if (!ferror(stdout)) printf("CHARGE_LOG_END next=%" PRIu64 "\n", header.total);
-    free(snapshot);
 }
 
 static int charge_read_value(const char *path, char *value, size_t size) {

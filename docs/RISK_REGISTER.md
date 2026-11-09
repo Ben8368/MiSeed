@@ -11,8 +11,8 @@
 | RISK-005 / P1 | 自有原创内容已按 ADR-0005 采用 AGPL-3.0-only；第三方逐文件许可、GPL-2.0-only 隔离、安装信息及适用网络源码义务仍需审查 | 第三方代码/固件导入与公开分发 | 保留来源/NOTICE，完成文件级兼容审查、对应源代码、安装信息和网络交互源码提供方案 |
 | RISK-006 / P2（维护者延期） | 保护 API 于 2026-11-05 返回 403 `Resource not accessible by integration`，当前仓库未启用分支保护。维护者决定等项目跑通并将仓库公开后再配置；届时以实际仓库套餐/规则能力复核 | 在配置前，不声称 PR 必需、检查必需或禁止绕过已生效；不阻断当前本地 L2 开发 | 项目跑通且仓库公开后，在 GitHub UI 配置并验证 Require PR、六项 CI、独立审查与更新后重审、禁止 Force Push/删除和未经授权绕过；记录实际规则与同 HEAD PR 结果 |
 | RISK-007 / P1 | EDL Programmer 的来源、签名、授权和兼容性未知 | 声称 9008 可刷或可恢复 | 外部前提可核实并有独立授权的设备验证，否则继续研究 |
-| RISK-009 / P2（历史设备标识） | PR1 记录的 4 处序列号已在工作区脱敏，但 `8f67d5f` 及已合并历史仍有副本，见[核实记录](archive/reviews/2026-11-06-pr1-coderabbit-verification.md) | 不宣称托管历史已脱敏；不得擅自改写已推送历史 | 维护者在公开分发前复核历史与导出副本并明确处理策略；历史清理须另行授权 |
+| RISK-009 / P2（历史设备标识） | PR1 的 4 处和 PR3 的 2 处设备序列号已在当前树脱敏，但 `8f67d5f` 及已合并历史仍有副本，见[核实记录](archive/reviews/2026-11-06-pr1-coderabbit-verification.md) | 不宣称托管历史已脱敏；不得擅自改写已推送历史 | 维护者在公开分发前复核历史与导出副本并明确处理策略；历史清理须另行授权 |
 
-| RISK-010 / P1（运行时 DTBO/PMIC 完整性） | 2026-11-07 诊断镜像已完成本机两轮直接 Fastboot 往返，但串口显示 ABL/DTBO 加入的下游命名 PMIC 节点与主线节点重复，SPMI 注册有 `-EEXIST`；PM8150/PON、USB 已绑定。证据与已关闭 RISK-008 见[本轮记录](archive/hardware/2026-11-07-direct-fastboot.md) | 不宣称 DTBO/全部 PMIC 子设备已正确适配；当前结果只覆盖该诊断镜像的 USB/PON 路径 | 已实现 soc/SPMI/TLMM overlay 入口隔离并保留主线 phandle，见[续查](archive/research/2026-11-08-pps-topology-followup.md)；仍须锁定本机 DTBO、完成新镜像启动/重启及受影响外设 L3 后关闭。TLMM 最小恢复另见 TD-002 |
+| RISK-010 / P1（运行时 DTBO/PMIC 完整性） | 2026-11-07 诊断镜像已完成本机两轮直接 Fastboot 往返，但串口显示 ABL/DTBO 加入的下游命名 PMIC 节点与主线节点重复，SPMI 注册有 `-EEXIST`；PM8150/PON、USB 已绑定。证据与已关闭 RISK-008 见[本轮记录](archive/hardware/2026-11-07-direct-fastboot.md) | 不宣称 DTBO/全部 PMIC 子设备已正确适配；当前结果只覆盖该诊断镜像的 USB/PON 路径 | 已隔离 soc/SPMI/TLMM 具名符号并保留主线 phandle；target-path/数值 phandle/别名不在覆盖内，见[续查](archive/research/2026-11-08-pps-topology-followup.md)；仍须锁定本机 DTBO、完成新镜像启动/重启及受影响外设 L3 后关闭。TLMM 最小恢复另见 TD-002 |
 
 关闭条目按 [GOVERNANCE](GOVERNANCE.md) 移入带日期归档，不以“已登记”解除阻断。

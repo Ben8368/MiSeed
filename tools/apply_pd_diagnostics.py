@@ -15,6 +15,19 @@ ORIGINAL = {
     TCPM: "6837c4131c2c06b37818416d83778a1251833b23149995cb382bb94d01d06f42",
 }
 LOG_ENTRIES = 262144
+TCPM_EDITS = (
+    ("u8 *logbuffer[LOG_BUFFER_ENTRIES];", "u8 **logbuffer;"),
+    ("\tmutex_lock(&port->logbuffer_lock);\n\tif (!port->logbuffer[port->logbuffer_head])",
+     "\tif (!port->logbuffer)\n\t\treturn;\n\tmutex_lock(&port->logbuffer_lock);\n\tif (!port->logbuffer[port->logbuffer_head])"),
+    ('\tsnprintf(name, NAME_MAX, "tcpm-%s", dev_name(port->dev));',
+     '\tport->logbuffer = kvcalloc(LOG_BUFFER_ENTRIES, sizeof(*port->logbuffer), GFP_KERNEL);\n'
+     '\tif (!port->logbuffer)\n\t\treturn;\n'
+     '\tsnprintf(name, NAME_MAX, "tcpm-%s", dev_name(port->dev));'),
+    ("\tint i;\n\n\tmutex_lock(&port->logbuffer_lock);",
+     "\tint i;\n\n\tif (!port->logbuffer)\n\t\treturn;\n\tdebugfs_remove(port->dentry);\n\tmutex_lock(&port->logbuffer_lock);"),
+    ("\tdebugfs_remove(port->dentry);\n}",
+     "\tkvfree(port->logbuffer);\n\tport->logbuffer = NULL;\n}"),
+)
 
 
 def digest(data):
@@ -29,8 +42,11 @@ def replace_once(text, old, new):
 
 def transform(name, text, receive):
     if name == TCPM:
-        return replace_once(text, "#define LOG_BUFFER_ENTRIES\t1024",
+        text = replace_once(text, "#define LOG_BUFFER_ENTRIES\t1024",
                             f"#define LOG_BUFFER_ENTRIES\t{LOG_ENTRIES}")
+        for old, new in TCPM_EDITS:
+            text = replace_once(text, old, new)
+        return text
     start = text.index("static void qcom_pmic_typec_pdphy_pd_receive(")
     end = text.index("\nstatic irqreturn_t", start)
     text = text[:start] + receive.rstrip() + "\n" + text[end:]
@@ -52,6 +68,13 @@ def regular_path(root, relative):
     if not current.is_file():
         raise ValueError(f"required source file missing: {relative}")
     return current
+
+
+def manifest_for(patches, receive):
+    return dict(revision=REVISION, receive_sha256=digest(receive.encode()),
+                applier_sha256=digest(Path(__file__).read_bytes()),
+                original=ORIGINAL, outputs={n: digest(b) for n, b in patches.items()},
+                tcpm_log_entries=LOG_ENTRIES)
 
 
 def stage(source, receive_path=ROOT / "kernel/power/pmic_pdphy_receive.inc"):
@@ -83,10 +106,7 @@ def stage(source, receive_path=ROOT / "kernel/power/pmic_pdphy_receive.inc"):
         if digest(data) != expected:
             raise ValueError(f"pinned source SHA-256 mismatch: {name}")
         patches[name] = transform(name, data.decode("utf-8"), receive).encode("utf-8")
-    saved = dict(revision=REVISION, receive_sha256=digest(receive.encode()),
-                 applier_sha256=digest(Path(__file__).read_bytes()),
-                 original=ORIGINAL, outputs={n: digest(b) for n, b in patches.items()},
-                 tcpm_log_entries=LOG_ENTRIES)
+    saved = manifest_for(patches, receive)
     for name, data in patches.items():
         regular_path(source, name).write_bytes(data)
     marker.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8", newline="\n")

@@ -39,7 +39,8 @@ static int regmap_read(void *m,int reg,unsigned int *v) {
 }
 static int regmap_bulk_read(void *m,int reg,u8 *data,int size) {
  int ret=io_fail();if(ret)return ret;reads++;
- memset(data,0x5a,size);data[0]=zero_header?0:3;data[1]=0;return 0;
+ memset(data,0x5a,size);data[0]=zero_header?0:3;
+ data[1]=zero_header?0:((size-2)/4)<<4;return 0;
 }
 static int regmap_write(void *m,int reg,int value) {
  ack++;assert(reg==4 && value==0);return io_fail();
@@ -63,6 +64,9 @@ int main(void) {
   if(size<1 || size>29) {
    assert(!forwarded && !reads && ack==1 && warnings>=1);
   } else {
+   /* 1+4*N encodes valid header/object lengths; other in-range lengths
+    * deliberately exercise malformed transport input left to TCPM validation.
+    */
    assert(forwarded==1 && reads==1 && ack==1 && !warnings);
    /* Bytes outside the actual wire message must not expose stack data. */
    for(unsigned int i=size+1;i<sizeof(delivered);i++)assert(((u8 *)&delivered)[i]==0);
@@ -71,7 +75,7 @@ int main(void) {
  for(int failure=1;failure<=4;failure++) {
   reset(5);fail_at=failure;qcom_pmic_typec_pdphy_pd_receive(&phy);
   assert(!forwarded && warnings>=1);
-  assert(ack==(failure==4));
+  assert(ack==1);
  }
  reset(0);fail_at=2;qcom_pmic_typec_pdphy_pd_receive(&phy);
  assert(!forwarded && !reads && ack==1 && warnings>=1);
@@ -100,7 +104,7 @@ class PdDiagnosticsTests(unittest.TestCase):
         (root / ".miseed-source-revision").write_text(applier.REVISION)
         originals={
             applier.PDPHY: 'static void qcom_pmic_typec_pdphy_pd_receive(void) {}\nstatic irqreturn_t stub;\ncase PMIC_PDPHY_SIG_RX_IRQ:\n\t\tschedule_work();\n\tdev_vdbg(dev, "pd_transmit_signal: type %d negotiate_rev %d send %d\\n",\n type, rev, ret);\n',
-            applier.TCPM: "#define LOG_BUFFER_ENTRIES\t1024\n",
+            applier.TCPM: "#define LOG_BUFFER_ENTRIES\t1024\n" + "\n".join(old for old, new in applier.TCPM_EDITS),
         }
         for name,text in originals.items():
             path=root / name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text,newline="\n")
@@ -113,6 +117,8 @@ class PdDiagnosticsTests(unittest.TestCase):
                 first=applier.stage(root);second=applier.stage(root)
                 self.assertEqual(first,second)
                 self.assertIn("262144",(root/applier.TCPM).read_text())
+                self.assertIn("kvcalloc",(root/applier.TCPM).read_text())
+                self.assertNotIn("*logbuffer[",(root/applier.TCPM).read_text())
                 self.assertIn("miseed-pdphy rx_irq_signal",(root/applier.PDPHY).read_text())
                 (root/applier.PDPHY).write_text("changed")
                 with self.assertRaisesRegex(ValueError,"patched PD source changed"):applier.stage(root)

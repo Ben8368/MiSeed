@@ -215,7 +215,7 @@ TCPM 导出 8191 行且 `complete=1`，但日志内容含 `[334.149505] overflow
 
 维护者授权启动同一镜像 44854093bb63ddc45b60ee8c9940fb9114815cb7829fd16ee02150e98a89f94c，自行约 10 分钟充电后接回电脑只读导出。启动证据：.work/ram-run-vbat-20261109/pd-verify-20261109/fastboot-boot.log，Sending/Booting OKAY，退出码 0；未刷写。
 
-完整充电 RAM 日志首次导出因主机串口丢行失败（序号 283→287），换名重试成功：pd-charge-log-retry1.log，oot_id=f780f535-5c38-4024-a6fe-8446a837d272，irst=0 next=2360 count=2360 storage_errors=0。另存 pd-version.log、pd-pps-status.log、pd-status.log、pd-tcpm-log.log。
+完整充电 RAM 日志首次导出因主机串口丢行失败（序号 283→287），换名重试成功：pd-charge-log-retry1.log，boot_id=f780f535-5c38-4024-a6fe-8446a837d272，first=0 next=2360 count=2360 storage_errors=0。另存 pd-version.log、pd-pps-status.log、pd-status.log、pd-tcpm-log.log。
 
 时间线：约 7.93 s 收到源能力，仅固定 PDO 5/9/12/15/20 V，无 APDO；协商并停留在 5000 mV / 3000 mA，SNK_READY。约 8.816 s miseed-pps failure error=-95 后 state=5 reason=-95 owned=0，属于无 PPS 能力时的预期退出，非充电中泵故障。此后至约 626.75 s 拔线前，SMB5 主充持续 enabled=1，电池净充约 2.3–2.4 A，SOC 70%→83%，温度约 39→37°C；无 miseed-pps RUN、无充电中 PPS_FAULT/-ENOTCONN/-EPROTO。约 626.75 s VBUS off；接电脑后约 631–633 s 出现能力等待超时与硬复位，属电脑 USB 会话。
 

@@ -55,7 +55,7 @@ class OverlayIsolationTests(unittest.TestCase):
         return output
 
     def cells(self, dtb, node, prop):
-        return subprocess.check_output(["fdtget", "-t", "x", str(dtb), node, prop])
+        return subprocess.check_output(["fdtget", "-t", "x", str(dtb), node, prop]).replace(b"\r\n", b"\n")
 
     def test_vendor_injection_reproduces_duplicate_without_isolation(self):
         merged = self.apply()
@@ -80,6 +80,13 @@ class OverlayIsolationTests(unittest.TestCase):
         isolation.put(self.base, "/abl_ovf/isolated-tlmm", "status", "okay")
         before = self.base.read_bytes()
         with self.assertRaisesRegex(ValueError, "not disabled"):
+            isolation.isolate(self.base)
+        self.assertEqual(before, self.base.read_bytes())
+
+    def test_failed_final_verification_leaves_original_unchanged(self):
+        isolation.put(self.base, "/abl_ovf", "status", "okay")
+        before = self.base.read_bytes()
+        with self.assertRaisesRegex(ValueError, "container must be disabled"):
             isolation.isolate(self.base)
         self.assertEqual(before, self.base.read_bytes())
 
