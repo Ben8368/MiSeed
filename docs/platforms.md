@@ -56,4 +56,4 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | CSOT 显示 / 触控 / USB | 本轮诊断 Image 的 macOS ACM/version/status/日志已 L3；既有 rotate:3 显示为 L3，本轮未复测显示；旧镜像 TLMM 禁用，新 UART-only 配置待 L3，触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [既有显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 充电日志 / 管理 | 自动 SMB5/PD 已 L3；sink-only PPS 测试节点已启用。四轮 RAM 测试取得 APDO、约 8.8 V / 3 A 合约；第三版 switching=1 后退出，第四版因 VBAT 差 54 mV 未启泵；最新启动采样等待修复完整 L2/L3 未完成，不代表持续快充可用 | [本轮](archive/hardware/2026-11-08-umi-pps-ams-retry.md) / [原 L3](archive/hardware/2026-11-08-umi-runtime-power.md)；RISK-004 |
+| 充电日志 / 管理 | 当前镜像已 L2/RAM/USB/短时 PPS L3；再次插入后启泵约 82.3 秒、净充电最高 3.263 A，1756 条 RAM 和 4946 行 TCPM 完整导出。协议异常来源、长期稳定/完整保护未验收 | [既有 L3](archive/hardware/2026-11-08-umi-pps-ams-retry.md) / [本版证据](archive/hardware/2026-11-09-umi-pps-windows-l2.md)；RISK-004 |

@@ -59,7 +59,7 @@ static enum power_supply_property busy_prop;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
 static unsigned int delayed_reg;
 static u64 read_delay_ms, request_delay_ms;
-static int voltage_requests, current_requests, pps_activations;
+static int voltage_requests, current_requests, pps_activations, pump_during_request, vbus_request_drop, bus_fault_during_request;
 static const char *missing_property;
 static int io_fail(void) { return ++io_count == fail_at ? -EIO : 0; }
 static int iio_read_channel_processed(struct iio_channel *chan, int *v) {
@@ -134,8 +134,12 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
   clock_ms += request_delay_ms; request_delay_ms=0;
  }
  if (hot_during_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) bms.prop[POWER_SUPPLY_PROP_TEMP]=451;
+ if (pump_during_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) adc(4,pump_during_request);
  if (!stale_contract) p->prop[prop]=v->intval;
- if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) adc(1,v->intval/1000);
+ if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) {
+  adc(1,v->intval/1000-vbus_request_drop);
+  regs[0x0a] |= bus_fault_during_request;
+ }
  return 0;
 }
 int umi_smb5_claim(struct power_supply *p) {
@@ -176,7 +180,8 @@ static void reset(void) {
  fail_pps_unsupported=0;
  busy_count=busy_delay_ms=retry_sleeps=0;busy_prop=POWER_SUPPLY_PROP_ONLINE;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
- missing_property=NULL;hot_during_request=0;
+ missing_property=NULL;hot_during_request=pump_during_request=0;
+ vbus_request_drop=bus_fault_during_request=0;
  delayed_reg=0;read_delay_ms=request_delay_ms=0;voltage_requests=current_requests=pps_activations=0;
  thermal_fail=thermal_delay_ms=0;
  for(int i=0;i<5;i++){thermal_channels[i].index=i;thermal_mc[i]=30000;c.thermal_channels[i]=&thermal_channels[i];}
@@ -254,7 +259,7 @@ int main(void) {
  reset();run();busy_prop=POWER_SUPPLY_PROP_VOLTAGE_NOW;busy_count=2;
  clock_ms+=200;tick();assert(c.state==PPS_RUN && retry_sleeps==2);
  /* PS_RDY may precede a fresh pump ADC sample. Wait without enabling or
-  * requesting more voltage; no relaxation for other faults or RUN samples.
+  * requesting more voltage; absolute faults still stop immediately.
   */
  reset();begin();adc(1,c.request_mv-282);int old_requests=voltage_requests;
  clock_ms+=200;tick();assert(c.state==PPS_SETTLE && !enable_count && voltage_requests==old_requests);
@@ -265,8 +270,61 @@ int main(void) {
  assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
  reset();begin();adc(1,c.request_mv+201);clock_ms+=200;tick();
  assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
- reset();run();adc(1,c.request_mv-282);clock_ms+=200;tick();
- assert(c.state==PPS_FAULT && !claim_owned);
+ /* No-load agreement remains exact at the 200/201mV boundary. */
+ for(int drop=200;drop<=201;drop++) {
+  reset();begin();adc(1,c.request_mv-drop);old_requests=voltage_requests;
+  clock_ms+=200;tick();
+  assert(c.state==(drop==200 ? PPS_RUN : PPS_SETTLE));
+  assert(enable_count==(drop==200) && voltage_requests==old_requests);
+ }
+ /* L3: a valid 8880mV contract with 8676mV at the loaded pump, +1796mA
+  * net battery charge and no bus fault used to abort just after a request.
+  * Exercise the real worker across both pre- and post-request sampling.
+  */
+ for(int drop_index=0;drop_index<4;drop_index++) {
+  const int drops[]={200,201,204,282};
+  reset();run();c.request_mv=8860;
+  pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=8860000;
+  bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4271000;
+  bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-1796000;
+  adc(4,4285);adc(0,1199);adc(1,8680);
+  vbus_request_drop=drops[drop_index];
+  clock_ms+=200;tick();
+  assert(c.state==PPS_RUN && claim_owned && c.request_mv==8880);
+  assert(pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]==8880000);
+  for(int cycle=0;cycle<3;cycle++) {
+   clock_ms+=200;tick();assert(c.state==PPS_RUN && claim_owned);
+  }
+ }
+ /* A loaded voltage drop never exempts bus faults, stopped switching,
+  * absolute voltage/current/temperature limits or a mismatched contract.
+  */
+ for(int fault=0;fault<10;fault++) {
+  reset();run();adc(1,c.request_mv-204);vbus_request_drop=204;
+  switch(fault) {
+   case 0: regs[0x0a]|=BIT(0);break;
+   case 1: regs[0x0a]|=BIT(1);break;
+   case 2: regs[0x0a]&=~BIT(2);break;
+   case 3: adc(1,6999);break;
+   case 4: adc(1,9501);break;
+   case 5: adc(0,3001);break;
+   case 6: adc(4,4450);break;
+   case 7: bms.prop[POWER_SUPPLY_PROP_TEMP]=451;break;
+   case 8: pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]+=20000;break;
+   case 9: regs[0x10]=0x80;break;
+  }
+  clock_ms+=200;tick();
+  assert(c.state==PPS_FAULT && !claim_owned && !(regs[0x0c]&BIT(7)));
+ }
+ /* Faults arriving during the negotiated request still fail the fresh read. */
+ for(int fault=0;fault<4;fault++) {
+  reset();run();vbus_request_drop=204;
+  if(fault<2)bus_fault_during_request=BIT(fault);
+  if(fault==2)vbus_request_drop=c.request_mv+UMI_PPS_STEP_MV-6999;
+  if(fault==3)vbus_request_drop=-201;
+  clock_ms+=200;tick();
+  assert(c.state==PPS_FAULT && !claim_owned && !(regs[0x0c]&BIT(7)));
+ }
  /* Actual L3: first BMS/pump voltages differed by 54mV after SMB5 pause.
   * Both polarities wait with the pump OFF, then require the original 50mV.
   */
@@ -283,8 +341,39 @@ int main(void) {
  assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
  reset();begin();adc(4,3946);regs[0x10]=0x80;clock_ms+=200;tick();
  assert(c.state==PPS_FAULT && !enable_count && !claim_owned);
- reset();run();adc(4,3946);clock_ms+=200;tick();
- assert(c.state==PPS_FAULT && !claim_owned);
+ /* Once enabled, the retained L3 offsets (+105/+110mV) and both signs
+  * remain valid only within each independent absolute limit. */
+ const int offsets[]={-110,-105,-54,54,105,110};
+ for(unsigned int i=0;i<sizeof(offsets)/sizeof(offsets[0]);i++) {
+  reset();run();adc(4,4000+offsets[i]);
+  for(int cycle=0;cycle<3;cycle++){clock_ms+=200;tick();assert(c.state==PPS_RUN && claim_owned);}
+ }
+ /* Startup agreement still includes exactly +/-50mV, not +/-51mV. */
+ for(int sign=-1;sign<=1;sign+=2) {
+  reset();begin();adc(4,4000+sign*51);clock_ms+=200;tick();
+  assert(c.state==PPS_SETTLE && !enable_count);
+  adc(4,4000+sign*50);clock_ms+=200;tick();assert(c.state==PPS_RUN);
+ }
+ /* Either higher VBAT bounds the voltage loop and taper. */
+ for(int high_bms=0;high_bms<2;high_bms++) {
+  reset();run();int previous_mv=c.request_mv;
+  bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=high_bms ? 4430000 : 4310000;
+  adc(4,high_bms ? 4310 : 4430);clock_ms+=200;tick();
+  assert(c.state==PPS_RUN && c.request_mv==previous_mv-UMI_PPS_STEP_MV);
+  assert(c.taper_start);clock_ms+=UMI_PPS_TAPER_MS;tick();
+  assert(c.state==PPS_DONE && !claim_owned && !(regs[0x0c]&BIT(7)));
+  reset();run();previous_mv=c.request_mv;
+  bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=high_bms ? 4425000 : 4310000;
+  adc(4,high_bms ? 4310 : 4425);clock_ms+=200;tick();
+  assert(c.state==PPS_RUN && c.request_mv==previous_mv);
+ }
+ /* Fresh pump telemetry is revalidated after a sleeping PD request. */
+ for(int invalid=0;invalid<2;invalid++) {
+  reset();run();pump_during_request=invalid ? 4450 : 4105;
+  clock_ms+=200;tick();
+  assert(c.state==(invalid ? PPS_FAULT : PPS_RUN));
+  assert(claim_owned==!invalid);
+ }
  /* Match LOS ADC selection and BMS current semantics. An unused IBAT ADC
   * value cannot become a guessed sense-resistor safety threshold. */
  reset();run();assert(regs[0x15]==0x2f);adc(5,-7);
@@ -300,8 +389,8 @@ int main(void) {
  for(int i=0;i<10;i++){clock_ms+=200;tick();assert(c.state==PPS_RUN && wd_writes==1);}
  assert(!umi_pps_stop(&c,PPS_OFF,0) && wd_writes==1);
  /* Current/voltage/temperature/SOC/protection/contract/ownership failures. */
- for(int fault=0;fault<23;fault++) {
-  reset();run();int prior_wd_writes=wd_writes;
+ for(int fault=0;fault<26;fault++) {
+  reset();run();adc(4,4105);int prior_wd_writes=wd_writes;
   switch(fault) {
    case 0: fail_sensor=1;break;
    case 1: bms.prop[POWER_SUPPLY_PROP_TEMP]=451;break;
@@ -314,7 +403,7 @@ int main(void) {
    case 8: regs[0x0b]&=~BIT(2);break;
    case 9: bad_readback=1;break;
    case 10: adc(0,3001);break;
-   case 11: adc(4,4100);break;
+   case 11: adc(4,4450);break;
    case 12: pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=9000000;break;
    case 13: suspended=0;break;
    case 14: regs[0x01]&=~0x80;break;
@@ -326,6 +415,9 @@ int main(void) {
    case 20: regs[0x2c]|=BIT(0);break;
    case 21: pd.prop[POWER_SUPPLY_PROP_CURRENT_MAX]=2000000;break;
    case 22: regs[0x2b]|=BIT(3);break;
+   case 23: adc(4,3499);break;
+   case 24: adc(1,c.request_mv+201);break;
+   case 25: bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=3499000;break;
   }
   clock_ms+=200;tick();
   if(fault==3 || fault==4)

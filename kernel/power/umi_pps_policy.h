@@ -152,7 +152,7 @@ static inline int umi_pps_current(const struct umi_pps_caps *c, int board_ma)
 	return ma / UMI_PPS_STEP_MA * UMI_PPS_STEP_MA;
 }
 
-/* Reject inconsistent voltage ADCs, reverse bus current and latched faults.
+/* Reject out-of-range voltage ADCs, reverse bus current and latched faults.
  * LOS takes battery current from BMS: a negative NET battery current can mean
  * system load exceeds pump output, and is not evidence of reverse pump flow.
  */
@@ -168,27 +168,46 @@ static inline int umi_pps_sample_limits(const struct umi_pps_sample *s,
 }
 
 static inline int umi_pps_sample_ok(const struct umi_pps_sample *s,
-		int max_mv, int max_ma, int requested_mv)
+		int max_mv, int max_ma, int requested_mv, int starting)
 {
 	int delta = s->pump_vbat_mv - s->vbat_mv;
 
+	/* Keep the extra agreement gate before enabling the pump. LOS Umi uses
+	 * the pump VBAT for its running loop, not a cross-chip equality test.
+	 * Both independent absolute battery limits still apply while running.
+	 */
+	/* The requested voltage is the source contract, not the loaded pump
+	 * input. LOS RUN regulates from measured battery/bus current and pump
+	 * status rather than requiring a fixed source-to-pump voltage drop.
+	 * Keep the lower agreement gate before enable, the upper gate always,
+	 * and absolute limits plus RUN switching/bus status checks in the worker.
+	 */
 	return umi_pps_sample_limits(s, max_mv, max_ma) &&
-		delta >= -50 && delta <= 50 &&
-		s->vbus_mv >= requested_mv - 200 && s->vbus_mv <= requested_mv + 200;
+		(!starting || (delta >= -50 && delta <= 50 &&
+			       s->vbus_mv >= requested_mv - 200)) &&
+		s->vbus_mv <= requested_mv + 200;
+}
+
+static inline int umi_pps_control_vbat(const struct umi_pps_sample *s)
+{
+	/* Use LOS's pump measurement, retaining a higher BMS value as an
+	 * additional conservative bound for voltage regulation and taper.
+	 */
+	return umi_pps_max(s->vbat_mv, s->pump_vbat_mv);
 }
 
 /* Voltage / battery-current / bus-current loops: the most restrictive wins. */
 static inline int umi_pps_next_mv(const struct umi_pps_sample *s,
 		const struct umi_pps_caps *c, int max_bat_mv, int max_ma, int mv)
 {
-	int step = 0, next;
+	int step = 0, next, vbat_mv = umi_pps_control_vbat(s);
 
 	if (!umi_pps_caps_ok(c))
 		return -1;
-	if (s->bus_high || s->alarm || s->vbat_mv >= max_bat_mv - 20 ||
+	if (s->bus_high || s->alarm || vbat_mv >= max_bat_mv - 20 ||
 	    s->ibat_ma >= s->thermal_bat_ma - 100 || s->ibus_ma >= max_ma - 100)
 		step = -UMI_PPS_STEP_MV;
-	else if (s->bus_low || (s->vbat_mv < max_bat_mv - 30 &&
+	else if (s->bus_low || (vbat_mv < max_bat_mv - 30 &&
 		 s->ibat_ma < s->thermal_bat_ma - 200 && s->ibus_ma < max_ma - 200))
 		step = UMI_PPS_STEP_MV;
 	next = mv + step;

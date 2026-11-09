@@ -43,3 +43,5 @@ workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 
 MiSeed Linux/CSOT Boot L2 固定内核和 Android v2 头模板，重建 kernel、ramdisk、DTB 与 cmdline。CI 校验 rescue ELF、GENI console、overlay 符号及 FG/SMB5/PPS 内建对象、PPS/Type-C 链接符号；Umi sink-only PPS test profile 的 Type-C/I2C15/VBUS 节点启用；验证隔离的 soc/SPMI/TLMM overlay 入口、UART/I2C15/BQ IRQ GPIO allowlist 及两条 Type-C 电源 phandle。L2 环境强制运行 libfdt 叠加正反例，避免普通 runner 缺少 dtc 时跳过全部相关测试。设备真机行为按当前 L3 记录，不由 L2 推断。apt 传递包哈希与 runner 镜像 digest 未闭合；上传产物须审查分发条件并设短保留期。
 
 PR #1 commit `e5186ecb442a72eecaefb5c2c54311e193ba9508` 的 [CI run 4](https://github.com/Ben8368/MiSeed/actions/runs/42046511356) 于 2026-11-05 completed/success，Boot L2、PR commits、Ubuntu 3.11、Ubuntu 3.14、Windows 2025 和 macOS 26 六项 job 全部 success。Hosted Boot L2 编译约 4 分 47 秒；152 个 ABL overlay symbols 检查通过，hosted `boot.img` 为 2,453,504 bytes，SHA-256 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`，与本机 L2 完全一致。该证据闭合首个 PR HEAD 的真实 CI 和独立 hosted 复建；apt 传递包哈希、runner image digest 仍待闭合。CI 通过不代表设备已启动，分支保护仍按维护者决定延期。
+
+L2 另核对固定 PD PHY/TCPM 原始文件哈希，应用接收修正后记录输出哈希、检查 PD PHY 对象/ISR；见[接收修正](archive/research/2026-11-09-pd-receive-guard.md)。

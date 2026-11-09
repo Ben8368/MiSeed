@@ -610,11 +610,12 @@ static void umi_pps_work(struct work_struct *work)
 		umi_pps_stop(c, PPS_DONE, 0);
 		goto out;
 	}
-	if (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma, c->request_mv)) {
+	if (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma,
+			       c->request_mv, c->state == PPS_SETTLE)) {
 		/* Independent BMS/pump conversions may still reflect the previous
 		 * charging path. Wait with the pump OFF for voltage agreement.
 		 * Absolute limits, faults and the original 5s deadline still apply;
-		 * never accept a mismatch for enable, overvoltage or a running pump.
+		 * never enable with a mismatch or wait through an absolute fault.
 		 */
 		if (c->state == PPS_SETTLE && s.vbus_mv <= c->request_mv + 200 &&
 		    umi_pps_sample_limits(&s, c->max_bat_mv, c->request_ma)) {
@@ -675,7 +676,8 @@ static void umi_pps_work(struct work_struct *work)
 			ret = -EIO;
 			goto fail;
 		}
-		if (s.vbat_mv >= c->max_bat_mv - 80 && s.ibat_ma < UMI_PPS_TAPER_MA) {
+		if (umi_pps_control_vbat(&s) >= c->max_bat_mv - 80 &&
+		    s.ibat_ma < UMI_PPS_TAPER_MA) {
 			if (!c->taper_start)
 				c->taper_start = now;
 			if (now - c->taper_start >= UMI_PPS_TAPER_MS) {
@@ -697,20 +699,23 @@ static void umi_pps_work(struct work_struct *work)
 		ret = umi_pps_battery(c, &s);
 	if (!ret)
 		ret = umi_pps_sample(c, &s);
-	if (!ret && (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma, c->request_mv) ||
+	if (!ret && (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma,
+			       c->request_mv, c->state == PPS_SETTLE) ||
 		     (c->state == PPS_RUN && (!s.switching || s.bus_low || s.bus_high))))
 		ret = -ERANGE;
 	if (!ret)
 		ret = umi_pps_validate_cycle(c);
 	if (ret)
 		goto fail;
-	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d thermal_mc=%d thermal_level=%d thermal_bat_ma=%d\n",
-		 c->state, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.ibat_ma, c->request_mv, c->request_ma,
+	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d thermal_mc=%d thermal_level=%d thermal_bat_ma=%d\n",
+		 c->state, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv, s.ibat_ma,
+		 c->request_mv, c->request_ma,
 		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
 	goto out;
 fail:
-	dev_info(c->dev, "miseed-pps failure state=%u error=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d\n",
-		 c->state, ret, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
+	dev_info(c->dev, "miseed-pps failure state=%u error=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d\n",
+		 c->state, ret, c->request_mv, c->request_ma, c->max_bat_mv,
+		 s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
 		 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high, s.switching);
 	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {
 		/* Pre-negotiation telemetry faults are transient; keep polling without

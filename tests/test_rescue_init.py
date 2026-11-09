@@ -323,6 +323,21 @@ class RescueInitTests(unittest.TestCase):
             self.assertIn("I2C device 15-0066", result.stdout)
             self.assertIn("umi-bq25970-pps", result.stdout)
 
+    def test_tcpm_log_exports_more_than_1024_lines_and_marks_limit(self):
+        for count in (1500, 8191, 8200):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                port = root / "tcpm-test"
+                port.mkdir()
+                (port / "log").write_text("".join(f"[{i}] frame\n" for i in range(count)))
+                env = dict(os.environ, TEST_TCPM_ROOT=str(root))
+                result = subprocess.run([self.program, "tcpm-log"], env=env,
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(sum(line.endswith(" frame") for line in result.stdout.splitlines()), min(count,8192))
+                self.assertIn(f"lines={min(count,8192)} complete={int(count<8192)}", result.stdout)
+                self.assertEqual("limit reached" in result.stdout, count>=8192)
+
     def test_tcpm_log_reports_advertised_pdos_only_on_explicit_command(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
