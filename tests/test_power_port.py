@@ -17,6 +17,98 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PowerPortTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("cc"), "C compiler required")
+    def test_smb5_sink_current_converts_adc_voltage_and_rejects_boost(self):
+        source = (ROOT / "kernel/power/qcom_pm8150b_charger.c").read_text()
+        start = source.index("static int smb5_get_input_current(")
+        function = source[start:source.index("\n}\n", start) + 3]
+        constants = "\n".join(line for line in source.splitlines()
+                              if line.startswith("#define SMB5_"))
+        harness = r'''
+#include <assert.h>
+#include <errno.h>
+#include <limits.h>
+#define BIT(n) (1U << (n))
+struct smb5_chip { void *regmap, *usb_in_i_chan; unsigned int base; };
+static int online = 1, adc_uv = 480000, adc_error, otg_error, reads;
+static unsigned int otg;
+static int smb5_get_prop_usb_online(struct smb5_chip *chip, int *value)
+{ (void)chip; *value = online; return 0; }
+static int regmap_read(void *map, unsigned int reg, unsigned int *value)
+{ (void)map; assert(reg == 0x1140); reads++; *value = otg; return otg_error; }
+static int smb5_get_iio_chan(struct smb5_chip *chip, void *channel, int *value)
+{ (void)chip; (void)channel; reads++; *value = adc_uv; return adc_error; }
+''' + constants + "\n" + function + r'''
+int main(void) {
+ struct smb5_chip chip = { .base = 0x1000 };
+ int value = 123;
+ assert(!smb5_get_input_current(&chip, &value) && value == 2400000);
+ online = 0; reads = 0;
+ assert(!smb5_get_input_current(&chip, &value) && value == 0 && !reads);
+ online = 1; value = 123; otg = 1; reads = 0;
+ assert(smb5_get_input_current(&chip, &value) == -ENODATA && value == 123 && reads == 1);
+ otg = 0; otg_error = -EIO;
+ assert(smb5_get_input_current(&chip, &value) == -EIO && value == 123);
+ otg_error = 0; adc_error = -EIO;
+ assert(smb5_get_input_current(&chip, &value) == -EIO && value == 123);
+ adc_error = 0; adc_uv = -1;
+ assert(smb5_get_input_current(&chip, &value) == -ERANGE && value == 123);
+ adc_uv = INT_MAX;
+ assert(smb5_get_input_current(&chip, &value) == -ERANGE && value == 123);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            entry, binary = Path(directory) / "input.c", Path(directory) / "input"
+            entry.write_text(harness)
+            result = subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                                     str(entry), "-o", str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run([str(binary)], check=True, timeout=10)
+
+    @unittest.skipUnless(shutil.which("cc"), "C compiler required")
+    def test_fg_standard_current_sign_and_read_errors(self):
+        source = (ROOT / "kernel/power/qcom_fg.c").read_text()
+        start = source.index("static int qcom_fg_current_now(")
+        function = source[start:source.index("\n}\n", start) + 3]
+        harness = r'''
+#include <assert.h>
+#include <errno.h>
+#include <limits.h>
+struct qcom_fg_chip;
+struct fg_ops { int (*get_current)(struct qcom_fg_chip *, int *); };
+struct qcom_fg_chip { const struct fg_ops *ops; };
+static int raw_current, read_error;
+static int read_current(struct qcom_fg_chip *chip, int *value)
+{ (void)chip; if (read_error) return read_error; *value = raw_current; return 0; }
+''' + function + r'''
+int main(void) {
+ const struct fg_ops ops = { .get_current = read_current };
+ struct qcom_fg_chip chip = { .ops = &ops };
+ int value = 123;
+ raw_current = -2400000;
+ assert(!qcom_fg_current_now(&chip, &value) && value == 2400000);
+ raw_current = 386000;
+ assert(!qcom_fg_current_now(&chip, &value) && value == -386000);
+ raw_current = 0;
+ assert(!qcom_fg_current_now(&chip, &value) && value == 0);
+ raw_current = INT_MAX;
+ assert(!qcom_fg_current_now(&chip, &value) && value == -INT_MAX);
+ value = 123; raw_current = INT_MIN;
+ assert(qcom_fg_current_now(&chip, &value) == -ERANGE && value == 123);
+ read_error = -EIO;
+ assert(qcom_fg_current_now(&chip, &value) == -EIO && value == 123);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            entry, binary = Path(directory) / "current.c", Path(directory) / "current"
+            entry.write_text(harness)
+            result = subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                                     str(entry), "-o", str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run([str(binary)], check=True, timeout=10)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -124,6 +216,8 @@ class PowerPortTests(unittest.TestCase):
                     f"CONFIG_BATTERY_MISEED_QCOM_FG={state}\n"
                     f"CONFIG_CHARGER_MISEED_PM8150B={state}\n"
                     "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n"
+                    "CONFIG_DRM=y\nCONFIG_DRM_SIMPLEDRM=y\nCONFIG_DRM_FBDEV_EMULATION=y\n"
+                    "CONFIG_DRM_CLIENT_DEFAULT_FBDEV=y\nCONFIG_FB_CORE=y\nCONFIG_FRAMEBUFFER_CONSOLE=y\n"
                     "CONFIG_GPIOLIB=y\nCONFIG_NET=y\nCONFIG_NFC=y\nCONFIG_NFC_NCI=y\nCONFIG_NFC_SN100X=y\n"
                     "CONFIG_CHARGER_MISEED_UMI_PPS=y\nCONFIG_I2C_QCOM_GENI=y\n"
                     "CONFIG_TYPEC_TCPM=y\nCONFIG_TYPEC_QCOM_PMIC=y\n"
@@ -380,6 +474,7 @@ static void log_message(const char *fmt, ...) { (void)fmt; }
 #define dev_err(d,...) log_message(__VA_ARGS__)
 static int smb5_get_prop_usb_online(struct smb5_chip *c, int *v)
 { (void)c; *v = online; return usb_error; }
+static void smb5_log_registers(struct smb5_chip *c) { (void)c; }
 static int smb5_battery_value(struct smb5_chip *c, int prop, int *v)
 { (void)c; *v = values[prop]; return battery_error; }
 static int smb5_get_prop_health(struct smb5_chip *c, int *v)
@@ -458,7 +553,7 @@ int main(void) {
   if (fault == 1) battery_error = -EIO;
   if (fault == 2) usb_error = -EIO;
   if (fault == 3) limit_error = -EPERM;
-  if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = -6000001;
+  if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = 6000001;
   tick(&c, 2000, 1);
   assert(!enabled && !c.test_active && !c.test_armed && c.inhibit && feeds == old_feeds);
   battery_error = usb_error = limit_error = 0; values[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;

@@ -11,7 +11,8 @@ REVISION = "f45ed76d6791cf72ff1265ee93511175bbbc2f18"
 RULES = (
     "obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o",
     "obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o",
-    "obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi_pps.o",
+    "obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi-bq25970.o",
+    "umi-bq25970-y := umi_pps.o bq25970.o",
 )
 KCONFIG_RULE = 'source "drivers/power/supply/miseed-power.Kconfig"'
 # rpmhpd_probe() reads OPP tables while registering its genpd provider.
@@ -48,12 +49,12 @@ def stage(source, inputs):
 
     target = destination_dir(source, "drivers/power/supply")
     for name in ("qcom_fg.c", "qcom_pm8150b_charger.c", "Kconfig", "Makefile",
-                 "miseed-power.Kconfig", "umi_charge_policy.h", "umi_smb5.h",
+                 "miseed-power.Kconfig", "umi_charge_policy.h", "umi_smb5.h", "umi_smb5_diagnostics.h", "bq25970.c", "bq25970.h",
                  "umi_pps.c", "umi_pps_policy.h"):
         if (target / name).is_symlink():
             raise ValueError(f"refusing symlink target: {name}")
     for name in ("qcom_fg.c", "qcom_pm8150b_charger.c", "umi_charge_policy.h",
-                 "umi_smb5.h", "umi_pps.c", "umi_pps_policy.h"):
+                 "umi_smb5.h", "umi_smb5_diagnostics.h", "bq25970.c", "bq25970.h", "umi_pps.c", "umi_pps_policy.h"):
         (target / name).write_bytes((inputs / name).read_bytes())
     (target / "miseed-power.Kconfig").write_bytes((inputs / "Kconfig").read_bytes())
     for name, rules in (("Makefile", RULES), ("Kconfig", (KCONFIG_RULE,))):

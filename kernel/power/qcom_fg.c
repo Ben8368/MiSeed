@@ -900,6 +900,21 @@ static enum power_supply_property qcom_fg_props[] = {
 	POWER_SUPPLY_PROP_TEMP_ALERT_MAX,
 };
 
+/* The Qualcomm ADC uses discharge-positive current. The standard battery
+ * CURRENT_NOW ABI is charge-positive; keep raw decoding internal to the FG.
+ */
+static int qcom_fg_current_now(struct qcom_fg_chip *chip, int *current_ua)
+{
+	int raw, ret = chip->ops->get_current(chip, &raw);
+
+	if (ret)
+		return ret;
+	if (raw == INT_MIN)
+		return -ERANGE;
+	*current_ua = -raw;
+	return 0;
+}
+
 static int qcom_fg_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 		union power_supply_propval *val)
@@ -960,7 +975,7 @@ static int qcom_fg_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		if (!READ_ONCE(chip->initialized))
 			return -EAGAIN;
-		ret = chip->ops->get_current(chip, &val->intval);
+		ret = qcom_fg_current_now(chip, &val->intval);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		if (!READ_ONCE(chip->initialized))

@@ -26,6 +26,7 @@ class PpsTests(unittest.TestCase):
                      "umi_pps_get_cur_state", "umi_pps_set_cur_state"):
             start = full.index("static int " + name + "(")
             source += full[start:full.index("\n}\n", start) + 3]
+        source = (ROOT / "kernel/power/bq25970.c").read_text() + "\n" + source
         source = "\n".join(line for line in source.splitlines()
                            if not line.startswith("#include <linux/"))
         harness = (ROOT / "tests/pps_harness.c").read_text()

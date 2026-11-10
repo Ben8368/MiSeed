@@ -32,6 +32,12 @@
 #include "umi_charge_policy.h"
 #include "umi_smb5.h"
 
+/* Relative to the charger base (0x1000), fixed PM8150B DCDC block at 0x1100.
+ * See the locked LOS smb5-reg.h. Only sink/buck telemetry is qualified here.
+ */
+#define SMB5_DCDC_CMD_OTG 0x140
+#define SMB5_OTG_ENABLE BIT(0)
+
 /* clang-format off */
 #define BATTERY_CHARGER_STATUS_1			0x06
 #define ICL_INCR_REQ_FOR_PRECHG_BIT			BIT(7)
@@ -639,6 +645,8 @@ static int smb5_limits_verified(struct smb5_chip *chip)
  return 0;
 }
 
+#include "umi_smb5_diagnostics.h"
+
 static void smb5_status_change_work(struct work_struct *work)
 {
  struct smb5_chip *chip = container_of(work, struct smb5_chip, status_change_work.work);
@@ -650,6 +658,7 @@ static void smb5_status_change_work(struct work_struct *work)
   mutex_unlock(&chip->lock);
   return;
  }
+ smb5_log_registers(chip);
  usb_rc = smb5_get_prop_usb_online(chip, &online);
  rc = usb_rc;
  if (!rc) rc = smb5_battery_value(chip, POWER_SUPPLY_PROP_PRESENT, &present);
@@ -659,7 +668,7 @@ static void smb5_status_change_work(struct work_struct *work)
  if (!rc) rc = smb5_battery_value(chip, POWER_SUPPLY_PROP_CURRENT_NOW, &bms_current);
  if (!rc) rc = smb5_get_prop_health(chip, &health);
  if (!rc) rc = smb5_limits_verified(chip);
-	if (!rc && bms_current < -UMI_CHARGE_FCC_UA) rc = -EOVERFLOW;
+	if (!rc && bms_current > UMI_CHARGE_FCC_UA) rc = -EOVERFLOW;
  if (!usb_rc && !online) {
   if (chip->test_active) {
    chip->test_active = false;
@@ -699,7 +708,7 @@ static void smb5_status_change_work(struct work_struct *work)
   chip->inhibit = true;
  }
  chip->enabled = allow && !rc;
- dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_raw_ua=%d soc=%d test_armed=%u test_active=%u rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d\n",
+ dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_ua=%d soc=%d test_armed=%u test_active=%u rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d\n",
           chip->enabled, online, present, health, temp, voltage, bms_current, soc,
           chip->test_armed, chip->test_active, rc,
 			UMI_CHARGE_FCC_UA, UMI_CHARGE_USB_ICL_UA, chip->max_fv_uv);
@@ -728,6 +737,36 @@ static int smb5_get_iio_chan(struct smb5_chip *chip, struct iio_channel *chan,
 	}
 
 	return iio_read_channel_processed(chan, val);
+}
+
+/* ADC5_USB_IN_I reports a voltage in uV, not a current. The locked PM8150B
+ * smb5-lib.c specifies 0.2 V/A in buck mode: uV * 5 gives uA. Do not apply
+ * that conversion to OTG/boost; this board profile qualifies wired sink only.
+ */
+static int smb5_get_input_current(struct smb5_chip *chip, int *current_ua)
+{
+	unsigned int otg;
+	int online, voltage_uv, ret;
+
+	ret = smb5_get_prop_usb_online(chip, &online);
+	if (ret)
+		return ret;
+	if (!online) {
+		*current_ua = 0;
+		return 0;
+	}
+	ret = regmap_read(chip->regmap, chip->base + SMB5_DCDC_CMD_OTG, &otg);
+	if (ret)
+		return ret;
+	if (otg & SMB5_OTG_ENABLE)
+		return -ENODATA;
+	ret = smb5_get_iio_chan(chip, chip->usb_in_i_chan, &voltage_uv);
+	if (ret < 0)
+		return ret;
+	if (voltage_uv < 0 || voltage_uv > INT_MAX / 5)
+		return -ERANGE;
+	*current_ua = voltage_uv * 5;
+	return 0;
 }
 
 static int smb5_get_prop_health(struct smb5_chip *chip, int *val)
@@ -803,8 +842,7 @@ static int smb5_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		return smb5_get_current_limit(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		return smb5_get_iio_chan(chip, chip->usb_in_i_chan,
-					 &val->intval);
+		return smb5_get_input_current(chip, &val->intval);
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		return smb5_get_iio_chan(chip, chip->usb_in_v_chan,
 					 &val->intval);

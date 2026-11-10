@@ -12,7 +12,6 @@ import unittest
 from unittest.mock import patch
 
 from tools import collect_charge_log as collector
-from tools import apply_power_observer as applier
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,7 +83,7 @@ HARNESS = r'''
 #define BIT(n) (1U << (n))
 #define GENMASK(high, low) (((1U << ((high) + 1)) - 1) & ~((1U << (low)) - 1))
 @OBSERVER_CONSTANTS@
-struct power_observer { void *dev, *regmap; };
+struct smb5_chip { void *dev, *regmap; unsigned int base; };
 static unsigned int values[4];
 static int reads, fault;
 static char output[1024];
@@ -104,26 +103,26 @@ static void dev_info(void *dev, const char *format, ...) {
 }
 @SAMPLE@
 int main(void) {
-    struct power_observer observer = { 0 };
+    struct smb5_chip observer = { .base = 0x1000 };
     static const char * const phases[] = {
         "inhibit", "trickle", "precharge", "fullon", "taper", "terminate", "pause", "disabled"
     };
     for (int state = 0; state < 8; state++) {
         reads = 0; fault = -1;
         values[0] = 0x10; values[1] = state; values[2] = 0x22; values[3] = 1;
-        power_observer_sample(&observer);
+        smb5_log_registers(&observer);
         assert(reads == 4 && strstr(output, phases[state]));
         assert(strstr(output, "usb_present=1") && strstr(output, "chg_enable=1"));
         assert(strstr(output, "chgr2=0x22") && strstr(output, "control=read-only"));
     }
     for (int index = 0; index < 4; index++) {
         reads = 0; fault = index;
-        power_observer_sample(&observer);
+        smb5_log_registers(&observer);
         assert(reads == index + 1 && strstr(output, "read_error"));
         assert(!strstr(output, "hw_phase=") && !strstr(output, "usb_present="));
     }
     reads = 0; fault = -1; values[0] = values[3] = 0;
-    power_observer_sample(&observer);
+    smb5_log_registers(&observer);
     assert(strstr(output, "usb_present=0") && strstr(output, "chg_enable=0"));
     return 0;
 }
@@ -131,29 +130,28 @@ int main(void) {
 
 
 class ObserverTests(unittest.TestCase):
-    def test_applier_checks_revision_and_is_idempotent(self):
+    @unittest.skipUnless(CC, "C compiler required")
+    def test_product_build_has_no_raw_register_diagnostic_dependency(self):
+        source = (ROOT / "kernel/power/umi_smb5_diagnostics.h").read_text()
+        harness = '''
+struct smb5_chip { int unused; };
+''' + source + '''
+int main(void) { struct smb5_chip chip = { 0 }; smb5_log_registers(&chip); return 0; }
+'''
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            args = ["apply_power_observer", "--source", str(root)]
-            with patch("sys.argv", args), self.assertRaises(SystemExit):
-                applier.main()
-            (root / ".miseed-source-revision").write_text(applier.REVISION)
-            (root / "drivers/mfd").mkdir(parents=True)
-            makefile = root / "drivers/mfd/Makefile"
-            makefile.write_text("# fixture\n")
-            with patch("sys.argv", args):
-                applier.main()
-                applier.main()
-            self.assertEqual(makefile.read_text().count(applier.RULE), 1)
-            self.assertEqual((root / "drivers/mfd/miseed_power_observer.c").read_bytes(),
-                             (ROOT / "kernel/power_observer.c").read_bytes())
+            path, binary = Path(directory) / "product.c", Path(directory) / "product"
+            path.write_text(harness)
+            result = subprocess.run([CC, "-Wall", "-Werror", "-Wno-unused-parameter",
+                                     str(path), "-o", str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run([str(binary)], check=True, timeout=5)
 
     @unittest.skipUnless(CC, "C compiler required")
     def test_status_reads_and_all_error_branches(self):
-        source = (ROOT / "kernel/power_observer.c").read_text()
+        source = (ROOT / "kernel/power/umi_smb5_diagnostics.h").read_text()
         # This diagnostic must never grow a charge-control side effect.
         self.assertNotRegex(source, r"\b(?:regmap_(?:write|bulk_write|update_bits|multi_reg_write)|request_irq|devm_request_threaded_irq)\s*\(")
-        start = source.index("static void power_observer_sample(")
+        start = source.index("static void smb5_log_registers(")
         end = source.index("\n}\n", start) + 3
         constants = "\n".join(line for line in source.splitlines()
                                 if line.startswith("#define OBS_"))

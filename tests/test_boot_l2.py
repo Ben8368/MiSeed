@@ -122,13 +122,10 @@ class SourceCacheTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from pinned"):
             self.verify()
 
-    def test_mfd_observer_rule_is_allowed_but_other_edits_are_rejected(self):
+    def test_synthetic_mfd_observer_cannot_be_reintroduced(self):
         path = self.source / "drivers/mfd/Makefile"
         with path.open("a", newline="\n") as stream:
             stream.write("\nobj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o\n")
-        self.verify()
-        with path.open("a", newline="\n") as stream:
-            stream.write("obj-y += unrelated.o\n")
         with self.assertRaisesRegex(ValueError, "differs from pinned commit"):
             self.verify()
 

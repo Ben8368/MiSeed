@@ -29,7 +29,6 @@ GENERATED = {
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
     "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
-    "drivers/mfd/miseed_power_observer.c",
     "drivers/power/supply/qcom_fg.c",
     "drivers/power/supply/qcom_pm8150b_charger.c",
     "drivers/power/supply/miseed-power.Kconfig",
@@ -37,19 +36,21 @@ GENERATED = {
     "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
     "arch/arm64/boot/dts/qcom/umi-pps.dtsi",
     "drivers/power/supply/umi_pps.c",
+    "drivers/power/supply/bq25970.c",
+    "drivers/power/supply/bq25970.h",
     "drivers/power/supply/umi_pps_policy.h",
     "drivers/power/supply/umi_smb5.h",
+    "drivers/power/supply/umi_smb5_diagnostics.h",
 }
 OVERLAY_RULES = {
     "drivers/nfc/Makefile": [(b"", b"obj-$(CONFIG_NFC_SN100X) += sn100x.o")],
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
                (b"", b"DTC_FLAGS_umi-csot += -@")],
-    "drivers/mfd/Makefile": [
-        (b"\n", b"obj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o")],
     "drivers/power/supply/Makefile": [
         (b"\n", b"obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o"),
         (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi_pps.o")],
+        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi-bq25970.o"),
+        (b"\n", b"umi-bq25970-y := umi_pps.o bq25970.o")],
     "drivers/power/supply/Kconfig": [
         (b"\n", b'source "drivers/power/supply/miseed-power.Kconfig"')],
 }

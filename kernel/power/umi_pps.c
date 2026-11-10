@@ -25,15 +25,8 @@
 
 #include "umi_pps_policy.h"
 #include "umi_smb5.h"
+#include "bq25970.h"
 
-/* BQ25970 only. SC8551/NU2105/BQ25968 require distinct ADC/protection ports. */
-#define BQ_ID 0x13
-#define BQ_CONTROL 0x0c
-#define BQ_ENABLE BIT(7)
-#define BQ_WATCHDOG 0x0b
-#define BQ_WD_DISABLED BIT(2)
-#define BQ_ADC 0x14
-#define BQ_ADC_BASE 0x16
 #define PPS_FIXED 1
 #define PPS_PROGRAMMABLE 2
 
@@ -41,7 +34,6 @@ enum umi_pps_state { PPS_OFF, PPS_WAIT_PLUG,
 	PPS_SETTLE, PPS_RUN, PPS_DONE, PPS_FAULT };
 
 /* Expected writable protection image, checked during every control cycle. */
-struct umi_pps_reg { unsigned int reg, mask, value; };
 struct umi_pps {
 	struct device *dev;
 	struct regmap *map;
@@ -56,7 +48,7 @@ struct umi_pps {
 	struct iio_channel *thermal_channels[UMI_PPS_THERMAL_SENSORS - 1];
 	struct umi_pps_thermal thermal;
 	int thermal_comp_mc;
-	struct umi_pps_reg protection[20];
+	struct bq25970_reg protection[20];
 	unsigned int nprotection;
 	enum umi_pps_state state;
 	bool claimed, configured, pps, removing, stop_pending, manual_stop;
@@ -126,26 +118,12 @@ static int umi_pps_negotiate(struct umi_pps *c, enum power_supply_property p, in
 static int umi_pps_update(struct umi_pps *c, unsigned int reg,
 		unsigned int mask, unsigned int value)
 {
-	unsigned int readback;
-	int ret = regmap_update_bits(c->map, reg, mask, value);
-
-	if (!ret)
-		ret = regmap_read(c->map, reg, &readback);
-	if (!ret && (readback & mask) != value)
-		ret = -EIO;
-	return ret;
+	return bq25970_update(c->map, reg, mask, value);
 }
 
 static int umi_pps_disable(struct umi_pps *c)
 {
-	unsigned int status;
-	int ret = umi_pps_update(c, BQ_CONTROL, BQ_ENABLE, 0);
-
-	if (!ret)
-		ret = regmap_read(c->map, 0x0a, &status);
-	if (!ret && (status & BIT(2)))
-		ret = -EBUSY;
-	return ret;
+	return bq25970_disable(c->map);
 }
 
 /* Always attempt both stop mechanisms; preserve ownership if either fails. */
@@ -214,7 +192,7 @@ static int umi_pps_add_limit(struct umi_pps *c, const char *property,
 	encoded = umi_pps_encode(value, base, step, mask & 0x7f);
 	if (value < min || value > max || encoded < 0)
 		return dev_err_probe(c->dev, -ERANGE, "invalid exact threshold %s\n", property);
-	c->protection[c->nprotection++] = (struct umi_pps_reg){reg, mask, encoded};
+	c->protection[c->nprotection++] = (struct bq25970_reg){reg, mask, encoded};
 	return 0;
 }
 
@@ -248,51 +226,32 @@ static int umi_pps_parse(struct umi_pps *c)
 	LIMIT("ti,ac-ovp-volt", 0x05, 0x07, 11, 1, 14, 14);
 #undef LIMIT
 	/* LOS DTS disables battery OCP/OCP alarm and BQ TSBAT/TSBUS/TDIE. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x02, 0x80, 0x80};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x03, 0x80, 0x80};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x02, 0x80, 0x80};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x03, 0x80, 0x80};
 	/* LOS DTS also disables the battery UCP alarm. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x04, 0x80, 0x80};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x04, 0x80, 0x80};
 	/* Standalone mode, charge off, BQ therm comparators disabled per LOS. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x0c, 0x67, 0x07};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x28, 0xff, 0x15};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x29, 0xff, 0x15};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2a, 0xff, (1450 - 300) / 5};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x0c, 0x67, 0x07};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x28, 0xff, 0x15};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x29, 0xff, 0x15};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x2a, 0xff, (1450 - 300) / 5};
 	/* Keep the exact register configuration observed on this LOS device. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2b, 0xf7, 0xd0};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x2c, 0xf0, 0};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x2b, 0xf7, 0xd0};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x2c, 0xf0, 0};
 	/* LOS init_adc: continuous/averaging/13 bits; IBUS, VBUS, VAC, VBAT.
 	 * IBAT is supplied by BMS, not the unqualified pump sense-resistor ADC.
 	 */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x14, 0xed, 0xa8};
-	c->protection[c->nprotection++] = (struct umi_pps_reg){0x15, 0xff, 0x2f};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x14, 0xed, 0xa8};
+	c->protection[c->nprotection++] = (struct bq25970_reg){0x15, 0xff, 0x2f};
 	/* Match fixed LOS init_device: enable_wdt(false). Do not change timing. */
-	c->protection[c->nprotection++] = (struct umi_pps_reg){BQ_WATCHDOG,
+	c->protection[c->nprotection++] = (struct bq25970_reg){BQ_WATCHDOG,
 		BQ_WD_DISABLED, BQ_WD_DISABLED};
 	return 0;
 }
 
 static int umi_pps_verify(struct umi_pps *c)
 {
-	unsigned int i, v;
-	int ret;
-
-	for (i = 0; i < c->nprotection; i++) {
-		struct umi_pps_reg *r = &c->protection[i];
-
-		ret = regmap_read(c->map, r->reg, &v);
-		if (ret)
-			return ret;
-		if ((v & r->mask) != r->value)
-			return -EPERM;
-		/* Native Android 0x2b was 0xd0. Preserve and require its VOUT
-		 * control bit; do not guess the contradictory header's polarity.
-		 */
-		if (r->reg == 0x2b && (v & BIT(3)))
-			return -EPERM;
-		if ((r->reg == 0x05 && (v & 0xc0)) || (r->reg == 0x2c && (v & 3)))
-			return -EIO;
-	}
-	return 0;
+	return bq25970_verify(c->map, c->protection, c->nprotection);
 }
 
 static int umi_pps_prepare(struct umi_pps *c)
@@ -301,7 +260,7 @@ static int umi_pps_prepare(struct umi_pps *c)
 	int ret = umi_pps_disable(c);
 
 	for (i = 0; !ret && i < c->nprotection; i++) {
-		struct umi_pps_reg *r = &c->protection[i];
+		struct bq25970_reg *r = &c->protection[i];
 
 		ret = umi_pps_update(c, r->reg, r->mask, r->value);
 	}
@@ -334,9 +293,9 @@ static int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 	}
 	if (!ret) {
 		ret = umi_pps_get(c->bms, POWER_SUPPLY_PROP_CURRENT_NOW, &raw);
-		/* This pinned FG reports charging as negative; divide before negating. */
+		/* Standard battery CURRENT_NOW is positive while charging. */
 		if (!ret)
-			s->ibat_ma = -(raw / 1000);
+			s->ibat_ma = raw / 1000;
 	}
 	if (ret)
 		return ret;
@@ -363,12 +322,7 @@ static int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 
 static int umi_pps_adc(struct umi_pps *c, int channel, int *value)
 {
-	u8 bytes[2];
-	int ret = regmap_bulk_read(c->map, BQ_ADC_BASE + 2 * channel, bytes, 2);
-
-	if (!ret)
-		*value = (s16)((bytes[0] << 8) | bytes[1]);
-	return ret;
+	return bq25970_adc(c->map, channel, value);
 }
 
 static int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
@@ -879,7 +833,7 @@ static int umi_pps_property_is_writeable(struct power_supply *psy,
 static const struct power_supply_desc umi_pps_desc = {
 	.name = "bq25970-charger",
 	.type = POWER_SUPPLY_TYPE_USB,
-	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_UNKNOWN) | BIT(POWER_SUPPLY_USB_TYPE_PD) |
+	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_C) | BIT(POWER_SUPPLY_USB_TYPE_PD) |
 		BIT(POWER_SUPPLY_USB_TYPE_PD_PPS),
 	.properties = umi_pps_properties,
 	.num_properties = ARRAY_SIZE(umi_pps_properties),

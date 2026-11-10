@@ -24,11 +24,13 @@ PM8150B 的 FV/FCC 编码、watchdog 和 Umi 正常充电温区/电压上限，�
 
 ## LineageOS PPS 移植
 
-`umi_pps.c`、`umi_pps_policy.h` 和 `umi-pps.dtsi` 从 LineageOS 固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq2597x_charger.c`、`bq25970_reg.h`、`pd_policy_manager.c/.h` 以及 Umi/Kona DTS 选择性适配，保持 GPL-2.0-only。BQ 原驱动 Copyright (C) 2017 Texas Instruments、MODULE_AUTHOR Texas Instruments；策略 MODULE_AUTHOR Fei Jiang <jiangfei1@xiaomi.com>，策略头文件保留 a0220433 / Mar 27, 2017 的归属。参考驱动的 TI GPL v2 授权、策略 GPL 模块声明与根 COPYING 一并检查；来源锁记录逐文件哈希。未复制其整个下游 USB PD 实现。
+`umi_pps.c`、`umi_pps_policy.h`、`bq25970.c/.h` 和 `umi-pps.dtsi` 从 LineageOS 固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq2597x_charger.c`、`bq25970_reg.h`、`pd_policy_manager.c/.h` 以及 Umi/Kona DTS 选择性适配，保持 GPL-2.0-only。BQ 原驱动 Copyright (C) 2017 Texas Instruments、MODULE_AUTHOR Texas Instruments；策略 MODULE_AUTHOR Fei Jiang <jiangfei1@xiaomi.com>，策略头文件保留 a0220433 / Mar 27, 2017 的归属。参考驱动的 TI GPL v2 授权、策略 GPL 模块声明与根 COPYING 一并检查；来源锁记录逐文件哈希。未复制其整个下游 USB PD 实现。
 
 本地修改包括主线 TCPM power_supply 接口、固定 LOS Umi 参数与保护读回、拒绝未知芯片 ID、自动 attach/PPS 调节、SMB5 独占和输入暂停、故障回固定 PDO 后恢复 SMB5；本轮另对齐固定 LOS `bq2597x_init_adc()` 的通道选择和 BMS 电池电流用法，保留 IBUS/温控/电压/故障门控，不引入猜测 sense 参数。没有沿用额外电池 OCP/TS 保护位，当前硬件证据以 [PPS](PPS.md) 及其真机记录为准。Linux 原生 TCPM/PMIC Type-C/PD PHY 维持内核自身许可证及作者；本地诊断与接收修正见下节。移植范围、来源报告和运行阻断见[本轮评估](../../docs/archive/research/2026-11-08-lineage-pps-port.md)与[接口说明](PPS.md)。
 
 常规温控的 FCC 档位及 PMIC ADC 接线继续取自同一固定 Lineage Umi DTS；执行档位对照 `drivers/power/supply/qcom/smb5-lib.c`（SPDX GPL-2.0-only，Copyright (c) 2018–2021 The Linux Foundation，来源锁附逐文件哈希）。本机 vendor 配置和 `mi_thermald` 仅作只读、离线行为核对；不复制守护进程代码、不执行或再分发其二进制/完整配置。数值事实、映射依据与 MiSeed 自行实现的温控控制流程见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)；不能用来源报告替代 MiSeed 实机验收。
+
+2026-11-10 接口续修：FG 只在标准属性层转换电流正负号；BQ 寄存器访问层保持 TI 来源归属；原 observer 只读采样移入 `umi_smb5_diagnostics.h`，保留 Qualcomm/The Linux Foundation 的寄存器布局来源。SMB5 输入电流换算按上述已锁定 `smb5-lib.c` 的 PM8150B buck 0.2 V/A 事实自行实现，OTG 状态来自同源 `smb5-reg.h`；不猜测电流增益或更改保护参数。验证与差异见[接口续修](../../docs/archive/reviews/2026-11-10-mainline-interface-followup.md)。
 
 ## PPS 拓扑续查
 

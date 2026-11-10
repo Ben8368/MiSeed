@@ -55,7 +55,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 ## Linux 标准接口与诊断
 
-BQ25970 注册 `/sys/class/power_supply/bq25970-charger`，提供 `online/status/health/usb_type/voltage_now/current_now/charge_behaviour`，电压/电流为 µV/µA；ADC 尚未配置时返回 `ENODATA`，读取不消费锁存故障。`charge_behaviour=auto` 允许原有自动策略，`inhibit-charge` 停泵并回固定 PD，禁用请求跨拔插保持；故障停机未完成时不允许 auto。单独禁止泵会恢复 SMB5；禁止整个有线路径须按泵→SMB5 顺序禁止两者。SMB5 的 `input_current_limit` 为可写配置（µA），`current_max` 为只读 AICL 结果。标准通知经供电关系传到 FG，电池仍由 `qcom-battery` 提供，FG 原有净充电负号保持不变。
+BQ25970 注册 `/sys/class/power_supply/bq25970-charger`，提供 `online/status/health/usb_type/voltage_now/current_now/charge_behaviour`，电压/电流为 µV/µA；ADC 尚未配置时返回 `ENODATA`，读取不消费锁存故障。`charge_behaviour=auto` 允许原有自动策略，`inhibit-charge` 停泵并回固定 PD，禁用请求跨拔插保持；故障停机未完成时不允许 auto。单独禁止泵会恢复 SMB5；禁止整个有线路径须按泵→SMB5 顺序禁止两者。SMB5 的 `input_current_limit` 为可写配置（µA），`current_max` 为只读 AICL 结果。标准通知经供电关系传到 FG，电池仍由 `qcom-battery` 提供，FG 的标准 current_now 已修正为充电正、放电负，内部原始解码不变；两个有线消费者同步迁移。SMB5 输入电流按已锁定 PM8150B buck 的 0.2 V/A 将 ADC µV 换算为 µA，OTG/boost 返回 ENODATA；见[接口续修](../../docs/archive/reviews/2026-11-10-mainline-interface-followup.md)。
 
 thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cooling device `umi-wired-pps` 提供 0–15 档。DT trip/滞回与既有表一致；最终限流取 cooling 请求与独立保护的严格值，用户写 cooling state=0 不解除保护。该 zone 只管理有线 PPS，不能当作固定 PD、无线 RX/TX 的完整热模型。
 

@@ -102,7 +102,7 @@ static int regmap_write(struct regmap *map, unsigned int r, unsigned int v) {
   if (v & BIT(7)) {
    assert(claim_owned && suspended && pd.prop[POWER_SUPPLY_PROP_ONLINE] == 2);
    enable_count++; regs[0x0a] |= BIT(2);
-   adc(0,1000); bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = -2000000;
+   adc(0,1000); bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = 2000000;
   } else {
    regs[0x0a] &= ~BIT(2); adc(0,0);
    bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
@@ -325,7 +325,7 @@ int main(void) {
  /* Keep the control loop fast, but avoid repeated identical APDO requests.
   * Refresh at eight seconds while any voltage/current change remains immediate.
   */
- reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-5850000;adc(0,2850);
+ reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=5850000;adc(0,2850);
  int stable_requests=voltage_requests;clock_ms+=200;tick();
  assert(c.state==PPS_RUN && voltage_requests==stable_requests);
  clock_ms=c.last_pps_request_ms+UMI_PPS_REFRESH_MS;tick();
@@ -364,7 +364,7 @@ int main(void) {
   reset();run();c.request_mv=8860;
   pd.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=8860000;
   bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4271000;
-  bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-1796000;
+  bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=1796000;
   adc(4,4285);adc(0,1199);adc(1,8680);
   vbus_request_drop=drops[drop_index];
   clock_ms+=200;tick();
@@ -455,7 +455,7 @@ int main(void) {
  /* Match LOS ADC selection and BMS current semantics. An unused IBAT ADC
   * value cannot become a guessed sense-resistor safety threshold. */
  reset();run();assert(regs[0x15]==0x2f);adc(5,-7);
- bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=386000;clock_ms+=200;tick();
+ bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-386000;clock_ms+=200;tick();
  assert(c.state==PPS_RUN && claim_owned);
 	reset();run();clock_ms+=600000;tick();assert(c.state==PPS_RUN);
 	bms.prop[POWER_SUPPLY_PROP_CAPACITY]=95;clock_ms+=200;tick();
@@ -475,7 +475,7 @@ int main(void) {
    case 2: bms.prop[POWER_SUPPLY_PROP_TEMP]=150;break;
    case 3: bms.prop[POWER_SUPPLY_PROP_CAPACITY]=95;break;
    case 4: bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4450000;break;
-   case 5: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=-6001000;break;
+   case 5: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=6001000;break;
    case 6: regs[0x10]=0x80;break;
    case 7: regs[0x11]=0x01;break;
    case 8: regs[0x0b]&=~BIT(2);break;
