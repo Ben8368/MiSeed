@@ -659,6 +659,123 @@ static void report_tcpm_logs(void) {
     if (!ports) puts("No TCPM debug log ports found");
 }
 
+/* Only DT/sysfs metadata is read. Even opening /dev/nq-nci would run
+ * nfc_open(), changing IRQ/FIRM state; never open the character device here.
+ */
+static ssize_t nfc_read_property(const char *path, unsigned char *value, size_t size) {
+    struct stat st;
+    ssize_t length;
+    int fd;
+
+    if (lstat(path, &st) || !S_ISREG(st.st_mode)) return -1;
+    fd = open(path, O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    do {
+        length = read(fd, value, size);
+    } while (length < 0 && errno == EINTR);
+    close(fd);
+    return length;
+}
+
+static void report_nfc_status(const char *root, const char *device) {
+    static const char *const properties[] = {
+        "reg", "qcom,nq-irq", "qcom,nq-ven", "qcom,nq-firm", "qcom,nq-clkreq"
+    };
+    const char *compatible = "qcom,nq-nci";
+    DIR *dir = opendir(root);
+    struct dirent *entry;
+    struct stat st;
+    unsigned int scanned = 0, found = 0;
+    int incomplete = 0;
+
+    puts("NFC metadata only: no device open, ioctl, NCI traffic, RF or power changes");
+    if (!dir) {
+        printf("NFC I2C metadata unavailable: %s\n", strerror(errno));
+        incomplete = 1;
+    }
+    while (dir && (entry = readdir(dir)) != NULL) {
+        char path[1024], driver[512];
+        unsigned char value[512];
+        ssize_t length;
+        size_t offset = 0;
+        int matches = 0;
+
+        if (entry->d_name[0] == '.') continue;
+        if (scanned++ == 256) {
+            puts("NFC metadata scan truncated after 256 entries");
+            incomplete = 1;
+            break;
+        }
+        if (snprintf(path, sizeof(path), "%s/%s/of_node/compatible", root,
+                     entry->d_name) >= (int)sizeof(path)) {
+            incomplete = 1;
+            continue;
+        }
+        length = nfc_read_property(path, value, sizeof(value));
+        /* A missing compatible is normal for adapters and non-DT clients. */
+        if (length <= 0) continue;
+        if (length == (ssize_t)sizeof(value) || value[length - 1] != '\0') {
+            printf("NFC compatible metadata invalid for %s\n", entry->d_name);
+            incomplete = 1;
+            continue;
+        }
+        while (offset < (size_t)length) {
+            size_t part = strnlen((char *)value + offset, (size_t)length - offset);
+            if (part == strlen(compatible) &&
+                !memcmp(value + offset, compatible, part)) matches = 1;
+            offset += part + 1;
+        }
+        if (!matches) continue;
+        found++;
+        snprintf(path, sizeof(path), "%s/%s/driver", root, entry->d_name);
+        length = readlink(path, driver, sizeof(driver) - 1);
+        if (length < 0) {
+            printf("NFC I2C device=%s driver=unbound-or-unavailable\n", entry->d_name);
+        } else if (length == (ssize_t)sizeof(driver) - 1) {
+            printf("NFC I2C device=%s driver=path-too-long\n", entry->d_name);
+            incomplete = 1;
+        } else {
+            const char *name;
+            driver[length] = '\0';
+            name = strrchr(driver, '/');
+            printf("NFC I2C device=%s driver=%s\n", entry->d_name,
+                   name ? name + 1 : driver);
+        }
+        for (size_t i = 0; i < sizeof(properties) / sizeof(properties[0]); i++) {
+            unsigned int cell = i ? 1 : 0;
+            uint32_t number;
+            if (snprintf(path, sizeof(path), "%s/%s/of_node/%s", root,
+                         entry->d_name, properties[i]) >= (int)sizeof(path)) {
+                incomplete = 1;
+                continue;
+            }
+            length = nfc_read_property(path, value, sizeof(value));
+            if (length != (i ? 12 : 4)) {
+                printf("NFC %s %s=unavailable-or-invalid\n", entry->d_name, properties[i]);
+                incomplete = 1;
+                continue;
+            }
+            number = ((uint32_t)value[cell * 4] << 24) |
+                     ((uint32_t)value[cell * 4 + 1] << 16) |
+                     ((uint32_t)value[cell * 4 + 2] << 8) | value[cell * 4 + 3];
+            if (!i) printf("NFC %s reg=0x%x\n", entry->d_name, number);
+            else printf("NFC %s %s=gpio%u (DT assignment, not pin level)\n",
+                        entry->d_name, properties[i], number);
+        }
+    }
+    if (dir) closedir(dir);
+    printf("NFC DT matches=%u scan=%s\n", found, incomplete ? "incomplete" : "finished");
+    if (lstat(device, &st)) {
+        printf("NFC node=%s unavailable: %s\n", device, strerror(errno));
+    } else {
+        printf("NFC node=%s type=%s mode=%03o\n", device,
+               S_ISCHR(st.st_mode) ? "character" : "unexpected",
+               (unsigned int)(st.st_mode & 0777));
+    }
+    puts("NFC transport/IRQ/wakeup/recovery and reader/HCE/eSE functionality: not tested");
+    puts("Interface: Android NQ character ABI; Linux AF_NFC/NCI registration not established by this check");
+}
+
 static void report_runtime_status(void) {
     report_platform_driver("PDC", "qcom,sm8250-pdc");
     report_platform_driver("RPMh RSC", "qcom,rpmh-rsc");
@@ -671,11 +788,8 @@ static void report_runtime_status(void) {
     report_platform_driver("SPMI controller", "qcom,spmi-pmic-arb");
     report_platform_driver("PON", "qcom,pm8998-pon");
     report_platform_driver("QUP wrapper", "qcom,geni-se-qup");
-    report_platform_driver("NFC I2C controller", "qcom,geni-i2c");
     report_i2c_devices();
-    report_dt_string("NFC device-tree compatible",
-        "/sys/firmware/devicetree/base/soc@0/geniqup@9c0000/i2c@984000/nfc@28/compatible");
-    report_path("/dev/nq-nci");
+    report_nfc_status("/sys/bus/i2c/devices", "/dev/nq-nci");
     report_power_supply_diagnostics();
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
@@ -863,7 +977,7 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("Commands: help, status, nfc-status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
         puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
@@ -876,6 +990,8 @@ static void usb_console(void) {
         line[strcspn(line, "\r\n")] = '\0';
         if (!strcmp(line, "help")) continue;
         if (!strcmp(line, "status")) report_runtime_status();
+        else if (!strcmp(line, "nfc-status"))
+            report_nfc_status("/sys/bus/i2c/devices", "/dev/nq-nci");
         else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");

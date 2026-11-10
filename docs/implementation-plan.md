@@ -13,14 +13,14 @@
 | WP6 外设 / 持久化 | WP5、安全审查 | GPU/Wi-Fi/温控逐项验收；Recovery 包验证先过 L1，安装/更新/备份恢复依 [契约](RECOVERY.md) 审查并独立授权 L3 |
 | WP7 Fastboot 包 | WP6 | 设备/槽位/输入校验与恢复说明；L1 打包、L2 固定构建、独立授权 L3 安装/恢复 |
 | WP8 EDL 可行性 | WP7、外部前提 | 证明 Programmer 来源/授权/兼容性后才实现包格式；无前提则仅研究 |
-| WP9 USB 启动状态与基本供电 | WP1、WP2 | 放大横屏日志、USB 控制、Linux→Bootloader Fastboot→RAM Linux 往返及返回 Android，分项记录 L2/L3 和板级限制。基于匹配本机数据实现电源/充电，完成过流、过压、过温、故障保护审查、独立复核及授权 L3；保护不完整时不充电。任何 BCB/misc 写入须另行授权和回退方案；当前能力见 [platforms](platforms.md) |
-| WP10 Android 兼容 NFC / eSE | 内核接口与真机 probe 阶段完成；完整 Android HAL 需 Android 用户空间基座 | 已固定并移植 NQ-NCI `/dev/nq-nci` 和 ioctl ABI、设备树/I²C/GPIO 资源，L2 构建及 Linux RAM boot/NFCC probe L3 完成；完整 Android NFC 仍需固定 HAL、eSE middleware、配置和固件许可闭包，并在目标 Android 用户空间验证 discovery/NDEF/HCE/eSE。当前边界见 [NFC](NFC.md) 和 [L3 记录](archive/hardware/2026-11-09-umi-nfc-l2-ramboot.md) |
+| WP9 USB 启动状态与有线供电 | WP1、WP2 | 放大横屏日志、USB 控制、Linux→Bootloader Fastboot→RAM Linux 往返及返回 Android，分项记录 L2/L3 和板级限制。基于匹配本机数据实现有线供电/充电，完成过流、过压、过温、故障保护审查、独立复核及授权 L3；保护不完整时不充电。任何 BCB/misc 写入须另行授权和回退方案；当前能力见 [platforms](platforms.md) |
+| WP10 Linux NFC / eSE 评估 | WP1/WP2；Debian 集成衔接 WP5；固件需来源许可闭包 | 按 RQ-14 评估 SN100T 并接入 Linux NFC/NCI、标准 binding 与资源管理；验证 NCI 注册、传输/IRQ/恢复、标准接口 discovery/NDEF，HCE 与 eSE 各自评估和验收。有线、无线 RX/TX 共存分别验证；NQ 私有 ABI 退出条件见 TD-003，步骤见 [NFC](NFC.md) |
 
-WP2、WP3 可独立推进，WP4 汇合两条路径。工作包不授权设备操作或发布；未实现的构建 CLI 不写成可用命令。
+RQ-14 贯穿所有工作包，接口验收遵守 [QUALITY](QUALITY.md#linux-接口验收)。WP9 负责 TD-004/005/007 的有线接口、温控与 binding 迁移；无线 RX/TX 须独立建立驱动与证据，不继承有线结果。WP2、WP3 可独立推进，WP4 汇合两条路径。工作包不授权设备操作或发布；未实现的构建 CLI 不写成可用命令。
 
-## WP9 充电日志验收
+## WP9 有线充电日志验收
 
-RQ-11：后台记录独立于 USB 终端，断线期间继续采集只读输入/硬件充电状态；温度、电量及电池 V/A 缺少可信驱动时明确不可用。日志保存在有界 RAM，标明时间、序号、覆盖或内核丢失；导出不消耗记录、不隐式启动充电。
+RQ-11：后台记录独立于 USB 终端，断线期间继续采集只读输入/有线硬件充电状态；温度、电量及电池 V/A 缺少可信驱动时明确不可用。日志保存在有界 RAM，标明时间、序号、覆盖或内核丢失；导出不消耗记录、不隐式启动充电。
 同次启动内完成电脑→充电器→电脑切换，导出核对启动标识、连续序号及接入/拔出事件；另验证重复导出、终端再次挂断、缓冲覆盖和读取错误。重启后保留不在本阶段范围。
 
 ## 里程碑与需求对应

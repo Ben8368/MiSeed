@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "lock_date": "2026-11-09",
+  "lock_date": "2026-11-10",
   "lock_status": "reviewed-source-identities-and-local-input-hashes; dependency-closure-incomplete; check-only",
   "scope": "Reviewed source identities and the current Boot L2 local input inventory. This is a check-only record, not an automatic source selector or complete build environment lock. Hardware capability and validation belong to docs/platforms.md and its evidence links.",
   "build_profiles": [
@@ -55,7 +55,7 @@
       "input_sha256": {
         "kernel/umi-csot.dts": "6a908e2ba2dd1130179220e9c45683a8aea6ee4be57c2680c196cb17717e5125",
         "kernel/umi-l2.config": "8aa0663e4e9477b255b42bdaa7ce25d546f27926a79020590a61bea9bc7380b7",
-        "kernel/rescue_init.c": "6e9559cab22c0ed2290f2a66dee91653dfe6dca1f99196adff4c98c5f45e4479",
+        "kernel/rescue_init.c": "89f26b556bf8b581625395a20a833b8ca907e4ef6065a50f870eb2ef8ac47d61",
         "tools/build_kernel_l2.sh": "55831027f0041305e4fcf40630f3633989987ce11a21db254e70a579359a9bac",
         "tools/extract_abl_anchors.py": "2b892b003d29fb4f5ea6e8b0dc45a7598e38a1b3005eea454288a4179bd2aebc",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",

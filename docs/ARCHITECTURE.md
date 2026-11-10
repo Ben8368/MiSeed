@@ -13,9 +13,16 @@
 
 直启用于隔离硬件与 UEFI 交接故障，不能替代产品路径验收。设计理由见 [ADR-0002](ADR/0002-independent-integration.md)。
 
-## 模块接口
+## Linux 接口准则
 
-以下是目标布局，交付对应实现时才创建目录。
+- 目标为 Linux、MVP 为 Debian。移植先对照锁定 mainline 源码的子系统、Documentation/ABI、UAPI 与 DT binding；优先复用/扩展上游驱动，不以搬入下游驱动且可编译作为完成标准。
+- 硬件能力通过所属 Linux 子系统提供：电池/有线充电/无线 RX/TX 分别建模于 power_supply，USB PD/PPS 由 Type-C/TCPM 管理；温度与限流接入 IIO/thermal 的适用接口，硬件安全保护不依赖用户进程存活。
+- NFC 接入 NFC/NCI、generic netlink/AF_NFC；显示以 DRM/KMS、触控以 input/evdev 为产品接口。Debian 消费标准接口；Android HAL/Binder/Bionic/VINTF/私有 ioctl 不作为产品功能前提，eSE 另行评估，不能自动宣称可用。
+- DT 描述已核实硬件并遵守属性含义、单位和拓扑；不能给标准属性重定义语义，也不能冒用近似芯片 compatible。新硬件扩展须补 YAML binding；驱动通过 gpiod/regulator/clock/runtime PM 等适用框架管理资源。
+- 私有 sysfs/ioctl、debugfs、printk 解析及诊断命令不得成为发行版唯一功能入口；启动封装、bring-up 临时保留与确无上游覆盖的扩展，须在 TECH_DEBT 说明标准方案、责任工作包和退出验收，新增持久 ABI 先做子系统审查。
+- “使用标准接口”“已合入上游”“L2 编译”“L3 真机”分别举证；新增/修改接口按 QUALITY 验收，审计历史见 [2026-11-10 清单](archive/reviews/2026-11-10-linux-interface-audit.md)。
+
+## 模块接口
 
 | 模块 | 输入 → 输出 |
 | --- | --- |
@@ -47,12 +54,6 @@
 
 ## 语言与工具分工
 
-| 层 | 选型与边界 |
-| --- | --- |
-| UEFI / BootShim | C，必要的 AArch64 汇编；沿用 EDK II/Mu 原生构建描述 |
-| Linux 板级支持 | C、DTS/Kconfig/Kbuild；复用上游驱动，初期不引入 Rust 内核依赖 |
-| Recovery 核心 | Rust 用户空间；包解析、校验和后续安装状态机，内存安全不替代写入授权 |
-| 早期启动 | 小型 POSIX Shell + 经审查工具；复杂镜像/分区逻辑归 Recovery 核心 |
-| 宿主工具 | Python 3.11+ 标准库优先，调用原生构建器；不把 Python 放入手机早期启动闭包 |
+UEFI/BootShim 使用 C、必要的 AArch64 汇编与 EDK II/Mu 原生构建；Linux 使用 C、DTS/Kconfig/Kbuild，初期不引入 Rust 内核依赖。Recovery 核心使用 Rust 处理包校验及安装状态机，内存安全不替代写入授权；早期启动采用小型 POSIX Shell 与经审查工具，复杂镜像/分区逻辑归 Recovery 核心。宿主工具优先 Python 3.11+ 标准库与原生构建器，不把 Python 放入手机早期启动闭包。
 
 以上为 RQ-07 的项目设计选择。Windows 支持当前离线工具；产品交叉构建使用待固定的 Linux 环境，原生 Windows/WSL 的 L2 支持须分别验证。具体编译器与 Rust 版本随来源锁审查，不凭方案填版本。

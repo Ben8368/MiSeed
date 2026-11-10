@@ -3,7 +3,6 @@
 ## 本机身份
 
 来源分类见[WP1 输入调查](archive/research/2026-11-05-wp1-input-review.md)。
-
 | 项 | 当前值 / 证据 | 待核实 |
 | --- | --- | --- |
 | 设备身份 | DEVICE_OBSERVED：`umi` / Mi 10 / `kona`；hwversion `2.9.1`、board-id `<0x2b 0>`；USER_REPORTED：国行 | SKU、物理板号待核 |
@@ -14,7 +13,7 @@
 | Bootloader | Fastboot：`umi`、已解锁、安全启动开启、下载上限 805306368；版本空 | 槽位、ABL 版本、内存图未知；下载上限非启动上限 |
 | ABL / boot header | DEVICE_OBSERVED：官方 LOS 23.2 v2 boot 与仅替换 kernel 的同组件镜像均经 `fastboot boot` 启动；128 MiB boot 中 122.984 MiB kernel 启动完成 | ABL `Load Error` 未定位；最大尺寸未知 |
 | DTB / DTBO | 152 个锚点、241 个符号；隔离已 L2，见[续查](archive/research/2026-11-08-pps-topology-followup.md) | 本机 DTBO / 新交接未验证 |
-| Android | Android 16 / LOS 23.2-20261101、`4.19.325-cip131-st15-perf-g71b13e62f057`；root 只读后恢复普通 ADB | 固件未从分区核验 |
+| Android | Android 16 / LOS 23.2-20261108、`4.19.325-cip131-st15-perf-g71b13e62f057`；只读后恢复普通 ADB | 固件未从分区核验 |
 | 底层固件 | USER_REPORTED：国行；刷 Lineage 前官方 1.0.5；最新 Fastboot 包 1.0.3 | 当前设备固件未从分区读取 |
 | Recovery | USER_REPORTED：无需个人数据备份；官方 Recovery 1.0.7 / Fastboot 1.0.3 在 `.work/` | `misc` 随官方线刷允许更新；Recovery 入口未验证；身份/NV 禁访，BL 重锁严禁 |
 UPSTREAM_VERIFIED 非本机直测；本地包未鉴真。[root 核查](archive/hardware/2026-11-08-android-root-power-audit.md) PARTIAL（1），原始采集在忽略的 `local/`。
@@ -41,7 +40,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | ABL 载荷 | 上游 header v2、kernel/initrd/DTB 与 DTBO 约束；MiSeed 产物仍须对照官方包静态核对 |
 | 内存交接 | 采用上游 CSOT 配置起步；本机保留区未知，不能声明可运行 |
 | 存储 / 恢复 | 用户报告官方 MiFlash 已成功恢复并保留身份信息；本项目不得触碰身份/NV，且所有恢复保持 BL 解锁 |
-| 供电 / 温控 | 泵 ID 0x10、sense 选择 2 mΩ（仅配置）；GPIO8/68；实板热敏/OCP、完整保护待核；绿联45W屏显（用户报告，档位未核） |
+| 有线供电 / 温控 | 泵 ID 0x10、sense 选择 2 mΩ（仅配置）；GPIO8/68；实板热敏/OCP、完整保护待核；绿联45W屏显（用户报告，档位未核） |
 
 未锁定项不得声明可用；RAM 载荷须审查写盘行为，其他设备参数不可直接套用。
 
@@ -55,6 +54,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | UEFI → Linux | 设计中 | 无 L2/L3 |
 | CSOT 显示 / 触控 / USB | macOS ACM/version/status/日志 L3；既有 rotate:3 显示 L3（本轮未复测）；PPS 开放 UART34/35、I2C44/45、IRQ68；15-0066/充电 L3；保护开放，触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [显示](archive/reviews/2026-11-06-usb-acm-ramboot.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
-| NFC / eSE | NQ-NCI `/dev/nq-nci` 与 Umi I2C/GPIO 已通过 L2/L3 probe/node；Android HAL/eSE 用户空间未集成 | [NFC](NFC.md)；RISK-011 |
+| NFC / eSE | NQ 私有 ABI 已过 L2/probe L3；Linux NCI/读卡/eSE 未验证 | [NFC](NFC.md)；RISK-011 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 充电日志 / 管理 | PD/PPS 各约 10 分钟稳定；新镜像 PPS 约 81 秒正常转 PD。保护、串口丢行与旧故障开放 | [稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [本轮](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)；RISK-004 |
+| 有线充电日志 / 管理 | PD/PPS 各约 10 分钟稳定；新镜像 PPS 约 81 秒正常转 PD。保护、串口丢行与旧故障开放 | [稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [本轮](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)；RISK-004 |
+| 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |
