@@ -327,6 +327,7 @@ static enum power_supply_property smb5_properties[] = {
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_CURRENT_MAX,
+	POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_STATUS,
@@ -471,7 +472,7 @@ static int smb5_get_prop_status(struct smb5_chip *chip, int *val)
 static inline int smb5_get_current_limit(struct smb5_chip *chip,
 					 unsigned int *val)
 {
-	int rc = regmap_read(chip->regmap, chip->base + AICL_STATUS, val);
+	int rc = regmap_read(chip->regmap, chip->base + USBIN_CURRENT_LIMIT_CFG, val);
 
 	if (rc >= 0)
 		*val *= CURRENT_SCALE_FACTOR;
@@ -784,6 +785,8 @@ static int smb5_get_property(struct power_supply *psy,
 			     union power_supply_propval *val)
 {
 	struct smb5_chip *chip = power_supply_get_drvdata(psy);
+	int rc, behaviour;
+	unsigned int current_max;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_MANUFACTURER:
@@ -793,6 +796,11 @@ static int smb5_get_property(struct power_supply *psy,
 		val->strval = chip->name;
 		return 0;
 	case POWER_SUPPLY_PROP_CURRENT_MAX:
+		rc = regmap_read(chip->regmap, chip->base + AICL_STATUS, &current_max);
+		if (!rc)
+			val->intval = current_max * CURRENT_SCALE_FACTOR;
+		return rc;
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		return smb5_get_current_limit(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		return smb5_get_iio_chan(chip, chip->usb_in_i_chan,
@@ -815,7 +823,15 @@ static int smb5_get_property(struct power_supply *psy,
 		val->intval = smb5_get_charge_control_threshold(chip, false);
 		return 0;
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
-		return smb5_get_prop_charging_enabled(chip, &val->intval);
+		mutex_lock(&chip->lock);
+		rc = smb5_get_prop_charging_enabled(chip, &behaviour);
+		if (!rc && chip->inhibit && behaviour != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
+			rc = -EIO;
+		if (!rc)
+			val->intval = chip->inhibit ? POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE :
+				POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO;
+		mutex_unlock(&chip->lock);
+		return rc;
 	default:
 		dev_err(chip->dev, "invalid property: %d\n", psp);
 		return -EINVAL;
@@ -830,25 +846,29 @@ static int smb5_set_property(struct power_supply *psy,
 	int rc = 0;
 
 	switch (psp) {
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		mutex_lock(&chip->lock);
-		rc = chip->pps_owned ? -EBUSY : smb5_set_current_limit(chip, val->intval);
+		rc = chip->pps_owned || chip->stopping ? -EBUSY : smb5_set_current_limit(chip, val->intval);
 		mutex_unlock(&chip->lock);
+		power_supply_changed(psy);
 		return rc;
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		if (val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
                     val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
                         return -EINVAL;
                 mutex_lock(&chip->lock);
-                if (chip->pps_owned) {
+                if (chip->pps_owned || chip->stopping) {
                         mutex_unlock(&chip->lock);
                         return -EBUSY;
                 }
+                chip->test_armed = false;
+                chip->test_active = false;
                 chip->inhibit = val->intval == POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
                 if (chip->inhibit)
-                        rc = smb5_set_prop_charging_enabled(chip, val->intval);
+                        rc = smb5_inhibit_with_fallback(chip, "user-inhibit");
                 mutex_unlock(&chip->lock);
                 mod_delayed_work(system_wq, &chip->status_change_work, 0);
+                power_supply_changed(psy);
                 return rc;
 	default:
 		dev_err(chip->dev, "No setter for property: %d\n", psp);
@@ -860,7 +880,7 @@ static int smb5_property_is_writable(struct power_supply *psy,
 				     enum power_supply_property psp)
 {
 	switch (psp) {
-	case POWER_SUPPLY_PROP_CURRENT_MAX:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		return 1;
 	default:
@@ -976,6 +996,7 @@ static int smb5_init_hw(struct smb5_chip *chip)
  return regmap_update_bits(chip->regmap, chip->base + 0x670, BIT(0), BIT(0));
 }
 
+#ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
 static ssize_t charge_test_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
  struct smb5_chip *chip = power_supply_get_drvdata(dev_get_drvdata(dev));
@@ -1019,6 +1040,7 @@ static ssize_t charge_test_store(struct device *dev, struct device_attribute *at
 static DEVICE_ATTR_RW(charge_test);
 static struct attribute *smb5_attrs[] = { &dev_attr_charge_test.attr, NULL };
 static const struct attribute_group smb5_group = { .attrs = smb5_attrs };
+#endif
 
 static void smb5_stop(void *data)
 {
@@ -1056,7 +1078,10 @@ static int smb5_init_irq(struct smb5_chip *chip, int *irq, const char *name,
 
 static int smb5_probe(struct platform_device *pdev)
 {
-	struct power_supply_config supply_config = {};
+	static char *supplied_to[] = { "qcom-battery" };
+	struct power_supply_config supply_config = {
+		.supplied_to = supplied_to, .num_supplicants = ARRAY_SIZE(supplied_to),
+	};
 	struct power_supply_desc *desc;
 	struct smb5_chip *chip;
 	int rc, irq;
@@ -1088,9 +1113,11 @@ static int smb5_probe(struct platform_device *pdev)
 	rc = smb5_inhibit_with_fallback(chip, "initial");
 	if (rc)
 		return rc;
- chip->bms = devm_power_supply_get_by_reference(chip->dev, "power-supplies");
+ chip->bms = devm_power_supply_get_by_reference(chip->dev, "qcom,fuel-gauge");
  if (IS_ERR(chip->bms)) return PTR_ERR(chip->bms);
  if (!chip->bms) return -EPROBE_DEFER;
+ if (!device_link_add(chip->dev, chip->bms->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER))
+  return -ENOMEM;
  rc = devm_delayed_work_autocancel(chip->dev, &chip->status_change_work, smb5_status_change_work);
  if (rc) return rc;
 
@@ -1158,8 +1185,10 @@ static int smb5_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, rc, "Couldn't set wake irq\n");
 
 	platform_set_drvdata(pdev, chip);
+#ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
  rc = devm_device_add_group(&chip->chg_psy->dev, &smb5_group);
  if (rc) return rc;
+#endif
 
 
 	/* Initialise charger state */

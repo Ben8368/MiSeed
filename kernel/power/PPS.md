@@ -53,15 +53,22 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 活动类型支持列表不证明合约；Source_Capabilities、APDO Request、Accept/PS_RDY、ADC、switching 与净充电分别核实。`tcpm-log` 显式读取 `/sys/kernel/debug/usb/tcpm-*/log`，会消费协议环，读取至 EOF，内核环容量为 262144 条；不自动并入 `status`。旧 `-95` 可来自接回 Mac 后仅固定 PDO 的会话，不能代替充电器会话的错误。共享 VBUS 仍 sink/device-only。PD 与 PPS 充电均已在本机分别约 10 分钟 L3 通过并宣告稳定；保护/温控/恢复分项、GPIO8、RISK-010、温度标度及主机串口完整导出仍待独立专项复核。
 
-## 诊断接口
+## Linux 标准接口与诊断
 
-控制状态位于唯一绑定 I2C 设备的 `fastcharge_test`。USB 诊断支持 `pps-status`、`pps-stop`；合格板级节点启用后，PPS 会在 USB-PD attach 自动进入；`charge-stop` 会先尝试停止已绑定 PPS，再停普通充电。当前测试镜像已启用相关节点，控制器已绑定；命令不会猜 I2C 总线编号。
+BQ25970 注册 `/sys/class/power_supply/bq25970-charger`，提供 `online/status/health/usb_type/voltage_now/current_now/charge_behaviour`，电压/电流为 µV/µA；ADC 尚未配置时返回 `ENODATA`，读取不消费锁存故障。`charge_behaviour=auto` 允许原有自动策略，`inhibit-charge` 停泵并回固定 PD，禁用请求跨拔插保持；故障停机未完成时不允许 auto。单独禁止泵会恢复 SMB5；禁止整个有线路径须按泵→SMB5 顺序禁止两者。SMB5 的 `input_current_limit` 为可写配置（µA），`current_max` 为只读 AICL 结果。标准通知经供电关系传到 FG，电池仍由 `qcom-battery` 提供，FG 原有净充电负号保持不变。
+
+thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cooling device `umi-wired-pps` 提供 0–15 档。DT trip/滞回与既有表一致；最终限流取 cooling 请求与独立保护的严格值，用户写 cooling state=0 不解除保护。该 zone 只管理有线 PPS，不能当作固定 PD、无线 RX/TX 的完整热模型。
+
+`python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。有界 `charge_test` 仅在显式启用 `CONFIG_MISEED_CHARGE_DIAGNOSTICS` 时存在，默认镜像关闭，不作为产品依赖。
+
+DT 使用 `monitored-battery` 只指向 simple-battery；`qcom,fuel-gauge`/`xiaomi,fuel-gauge` 指向遥测提供者，`power-supplies` 表示 TCPM 电源。三份本地 binding 位于 [bindings](bindings/)，属于可校验的本地提案，未宣称上游已接受。内核内部 `umi_smb5_*` 原子互锁仍保留：通用属性不能表达失败保留所有权，不能用用户空间分步写入取代它。完整接口审查与本轮验证见[记录](../../docs/archive/reviews/2026-11-10-wired-mainline-power.md)。
 
 `miseed-pps` 状态、请求和错误进入已有断线 RAM 日志。日志从启动后动态扩展，RAM 文件预算为 64 MiB，不覆盖旧记录；预算用尽或分配/写入失败时丢弃新增记录并累计 `storage_errors`；导出读取不可变前缀，每次仅用一条记录缓冲，重启仍会清空 RAM 日志。相同电压/电流不再每个 200 ms 控制周期重复发送 APDO；参数变化立即请求，稳定时每 8 秒刷新，为 USB-IF 的 10 秒 SPR PPS 请求超时留出调度余量（[USB-IF overview](https://www.usb.org/sites/default/files/D2T2-1%20-%20USB%20Power%20Delivery.pdf)）。PD PHY 的 `rx_irq_signal` 只表示收到 RX 中断，不表示 reset；异常失败会记录 BQ 当前/锁存故障、报警、状态、看门狗和控制寄存器原值，保持原有停泵/回退行为。TCPM 指针表用可回退到非连续内存的 kvcalloc 分配，分配失败只停用日志；环保留 262144 条，覆盖更长的协议时间线；它仍有界，`tcpm-log` 读到 EOF 也不代表环溢出前后的完整历史。详见[接收修正](../../docs/archive/research/2026-11-09-pd-receive-guard.md)。SMB5 配置沿用 LOS 3 A ICL、6 A FCC、4.45 V FV；PPS 占用期间拒绝并发普通充电命令，PPS 正常退出后恢复 SMB5 worker。挂起/关机/移除停止循环；挂起失败拒绝休眠，恢复时仅重启原可运行会话，保留手动停止与故障状态；手动停止后继续只读观察拔线。SMB5 inhibit 时拒绝 PPS 接管。
 
 ## 验证入口
 
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
+- `python3 tools/check_wired_dt.py --dtb <L2-DTB> --schema <processed-schema.json>`：定向 schema 与实际 phandle 校验，任何诊断均失败；测试需配置 MISEED_WIRED_DTB/MISEED_DT_SCHEMA 并安装 dtschema，命令见本轮记录。
 - Windows 日志导出需可选依赖 `pyserial`：`python tools/collect_charge_log.py --port COM6 --output local/charging-session.log`（端口按实际枚举选择）。先有界收包后校验，检查 VID/PID、诊断身份和连续序列；缺段/超时保留原始 `.partial`，换文件名重试且不重启；最终 `.log` 不覆盖旧文件。macOS/Linux 使用实际 ACM 端口，无此依赖。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
 - 本机 L3：PD 与 PPS 分别约 10 分钟稳定运行见[本轮记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)；旧 QUP/RPMh、SMB5 回退和电压样本问题见[续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。本版源码须对应镜像哈希的 L3，不沿用更早短时 switching 证据。

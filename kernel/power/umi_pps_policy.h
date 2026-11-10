@@ -50,6 +50,15 @@ static inline int umi_pps_thermal_level(int target, int screen_state)
 	return screen_state ? on : off;
 }
 
+/* Cooling states share the already qualified wired PPS battery-current table. */
+static inline int umi_pps_cooling_current(unsigned long state)
+{
+	static const int fcc_ma[] = {6000, 5700, 5475, 5250, 5025, 4800,
+		4575, 4350, 4100, 3500, 3000, 2400, 2000, 1500, 1000, 500};
+
+	return state < 16 ? fcc_ma[state] : -1;
+}
+
 static inline int umi_pps_thermal_update(struct umi_pps_thermal *t,
 		const int temp_mc[UMI_PPS_THERMAL_SENSORS], int screen_state,
 		int board_comp_mc)
@@ -62,9 +71,7 @@ static inline int umi_pps_thermal_update(struct umi_pps_thermal *t,
 		47000, 48000, 49000, 51000};
 	static const int target[] = {0, 803, 1106, 1206, 1206, 1209,
 		1410, 1512, 1514, 1515};
-	/* Fixed LOS Umi thermal-fcc-pps-bq table, battery-side mA. */
-	static const int fcc_ma[] = {6000, 5700, 5475, 5250, 5025, 4800,
-		4575, 4350, 4100, 3500, 3000, 2400, 2000, 1500, 1000, 500};
+
 	long long sum = 0, virtual_mc;
 	int i, step = t->step, level;
 
@@ -87,7 +94,7 @@ static inline int umi_pps_thermal_update(struct umi_pps_thermal *t,
 	t->step = step;
 	t->level = level;
 	t->virtual_mc = (int)virtual_mc;
-	t->max_bat_ma = fcc_ma[level];
+	t->max_bat_ma = umi_pps_cooling_current(level);
 	return 0;
 }
 

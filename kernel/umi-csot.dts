@@ -8,6 +8,7 @@
 /dts-v1/;
 
 #include <dt-bindings/arm/qcom,ids.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "sm8250.dtsi"
 #include "pm8150.dtsi"
@@ -123,15 +124,69 @@
 	};
 };
 
-/* Umi PD/PPS test profile exposes only active consumers: UART12 34/35,
- * I2C15 44/45, and the LOS BQ25970 fault IRQ on GPIO68. Keep GPIO8 reserved:
- * its LOS VBUS-disable behavior is not wired into the mainline SMB5 path yet.
- * Every other pin remains reserved. This is a consumer allowlist, not a claim
- * that other pins are bad. Requires fresh boot L3.
+/* Umi test profile exposes only the active consumers: UART12 34/35,
+ * I2C15 44/45, the LOS BQ25970 fault IRQ on GPIO68, and the NQ NFC signals
+ * on GPIO7/83/110/111 with QUP1 I2C on GPIO4/5. Keep GPIO8 reserved: its LOS
+ * VBUS-disable behavior is not wired into the mainline SMB5 path yet. All
+ * other pins remain reserved. Requires fresh boot L3.
  */
 &tlmm {
-	gpio-reserved-ranges = <0 34>, <36 8>, <46 22>, <69 112>;
+	gpio-reserved-ranges = <0 4>, <6 1>, <8 26>, <36 8>, <46 22>,
+			       <69 14>, <84 26>, <112 69>;
 	status = "okay";
+};
+
+/* NQ NFC control pins adapted from the pinned Umi/Kona pinctrl definitions.
+ * This controller shares VEN between the NFCC and SN100 eSE; no independent
+ * eSE power GPIO is declared. Linux NCI owns the transport, retaining VEN
+ * on close. Only the active pin state is modeled; wake needs fresh L3.
+ */
+&tlmm {
+	umi_nfc_default: umi-nfc-default-state {
+		irq-pins {
+			pins = "gpio111";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+
+		control-pins {
+			pins = "gpio83", "gpio110";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+
+		clock-request-pin {
+			pins = "gpio7";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+};
+
+/* The running Mi 10 NFC device tree reports i2c@984000/nq@28. On the
+ * SM8250 base this is I2C1, whose SCL/SDA pins are GPIO4/5.
+ */
+&qupv3_id_0 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+
+	umi_nfc: nfc@28 {
+		compatible = "nxp,sn100t";
+		reg = <0x28>;
+		enable-gpios = <&tlmm 83 GPIO_ACTIVE_HIGH>;
+		firmware-gpios = <&tlmm 110 GPIO_ACTIVE_HIGH>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <111 IRQ_TYPE_LEVEL_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&umi_nfc_default>;
+	};
 };
 
 /* USB PHY PMIC rails, selectively adapted from the pinned Umi board DTS. */

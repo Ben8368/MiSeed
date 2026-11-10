@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "lock_date": "2026-11-09",
+  "lock_date": "2026-11-10",
   "lock_status": "reviewed-source-identities-and-local-input-hashes; dependency-closure-incomplete; check-only",
   "scope": "Reviewed source identities and the current Boot L2 local input inventory. This is a check-only record, not an automatic source selector or complete build environment lock. Hardware capability and validation belong to docs/platforms.md and its evidence links.",
   "build_profiles": [
@@ -46,44 +46,58 @@
         "pd_diagnostics_applier": "tools/apply_pd_diagnostics.py",
         "pd_receive_fix": "kernel/power/pmic_pdphy_receive.inc",
         "dts_license_text": "LICENSES/BSD-3-Clause.txt",
-        "kernel_license_text": "LICENSES/GPL-2.0-only.txt"
+        "kernel_license_text": "LICENSES/GPL-2.0-only.txt",
+        "nfc_port_applier": "tools/apply_nfc_port.py",
+        "nfc_driver": "kernel/nfc/sn100x.c",
+        "wired_binding_0": "kernel/power/bindings/qcom,pm8150b-charger.yaml",
+        "wired_binding_1": "kernel/power/bindings/qcom,pm8150b-fg.yaml",
+        "wired_binding_2": "kernel/power/bindings/xiaomi,umi-bq25970.yaml",
+        "nfc_kconfig": "kernel/nfc/Kconfig",
+        "nfc_binding": "kernel/nfc/bindings/nxp,sn100t.yaml"
       },
       "input_sha256": {
-        "kernel/umi-csot.dts": "93d40e2e2271b1b61c6eebe3cebdff9fb40834ce57311ed90132af39142800b2",
-        "kernel/umi-l2.config": "64135239225dfe0a58c630ea4e1fc9be3a7969b7480dd706205b406e66455c2f",
-        "kernel/rescue_init.c": "8ad073542a9adc32a39708ae8bba19063c64a7cc91e59dac930b9a4ba6c84eb5",
-        "tools/build_kernel_l2.sh": "deaf07aee7dc152b198efacf3292220520f5b0c59398e13e0f91cc31a76d0c4e",
+        "kernel/umi-csot.dts": "0316efd0958dcaa500bbd6eb30094970a1f1ddc0e67a4a29f9d0cf784248634d",
+        "kernel/umi-l2.config": "09cd0c261b548045f17f9c8080bcb31a624a5662f60f1d1d3350d28d164edff5",
+        "kernel/rescue_init.c": "46eaa9be5bc926406593f859a0b3f0b99c07d66f193d650c2fd43e8e10469430",
+        "tools/build_kernel_l2.sh": "7e11304e74acd50f11fed57f8f4dcf30cde4e559433b13586030896dfec933cf",
         "tools/extract_abl_anchors.py": "2b892b003d29fb4f5ea6e8b0dc45a7598e38a1b3005eea454288a4179bd2aebc",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
         "tools/make_initramfs.py": "644d4cbcffc58aaf02715af9d6e2dbe45df2072dd2c3cfffafe5694a6c95dbf3",
         "tools/pack_android_boot_v2.py": "c2f659c5eccc29aed2ffc7e721599b0710c13bb93c034c8331915dcd584629cd",
         "kernel/umi-csot-dtbo-targets.txt": "3c8483b0996bed1b757bba6ad68b5439c5c168c8bb3bec586ce48e603e0d5dd1",
-        "tools/verify_kernel_source.py": "adf21c16541d7624b232707d3d7428f7cdfa8d885b3c883d95b67622845ea82a",
-        "kernel/charge_log.h": "83a8946d1fcc83abf8468a023e569bc46516c6cb893cc1320dd047222664d170",
+        "tools/verify_kernel_source.py": "0c3d39d4eac2366c935cba264325e639992a10fe8f60b9a7d1b575d8333c60a7",
+        "kernel/charge_log.h": "e599c60572cbca56b01a807c70462134a6ba3148a36cbed7a2af24fe5775b19c",
         "kernel/power_observer.c": "ec019c4f138e7762629a316b808a44ae632d17a70825631b71dfede77f462256",
         "tools/apply_power_observer.py": "6c3c4b1c5133128e1e28eab8b00845e834b080425bc074000d83f53d19dcb22c",
-        "kernel/power/qcom_fg.c": "e828e06aabe9d5ed14bad36fc891b3e18146de2c1f1e50568c434f13aa38f1a5",
-        "kernel/power/qcom_pm8150b_charger.c": "b15a8ceb69969c9d966f4d7c4741ee51dc0fdd84a63bd3d5446f8e4e797ba050",
-        "kernel/power/Kconfig": "69e1bb40f16b2d6489fd0b7defba7477c5f31ad5be5425cfe7701faadea50cf1",
-        "tools/apply_power_port.py": "f9e6b879d6524a83f3887b2b2e07f3d363f081cbc7f79dbf30fde5d4ad6d0fc5",
+        "kernel/power/qcom_fg.c": "22b968d703e7283e7a68677f9b8931cc419dc3ab189c08ca302ff79aa0f18234",
+        "kernel/power/qcom_pm8150b_charger.c": "9b357e091db693a5172e0486fbd5447bf9af0668a85f8ce88383011058cdf2eb",
+        "kernel/power/Kconfig": "326062bf3389248cd94f8ad14bedf600e72486cf9cbee347e51ac89d335f975b",
+        "tools/apply_power_port.py": "d723225b327e21196ce0f34904f5c507f2e81dbb80752e81cbfb58c1460a015d",
         "kernel/power/umi_charge_policy.h": "a631ef71ba22a75574516f9e1639be887e30ca816d41870f50f017f7f6170108",
-        "kernel/power/umi-pm8150b.dtsi": "206b0589b185874f96311d481e7f28421691842f7718249a13310f06c8122bd0",
-        "tools/check_build_lock.py": "e75154e3c132b37d670d8a4dcad6aed55ffa8ffe78f105fd1beec7a11167cf76",
+        "kernel/power/umi-pm8150b.dtsi": "3f54d296e52de34f7bed362452ad81135753bfeab3c4f05b906a4739bd7290a6",
+        "tools/check_build_lock.py": "021e4603274fc08bd75ab03cd45d33e72aabc941744b601ce26d92e33a3bb508",
         "tools/download_locked.py": "6f4833c07e154fde16cfac2ff7322ddfd53f9295468ccbb0d93b172a94bdd422",
-        "tools/isolate_abl_targets.py": "8464ee5ff098e9ff5433b8bdbe7b8dd8e201d41f79b1d1aa13639a5a6d81875e",
-        "tests/test_abl_isolation.py": "fb9c73cd457dd3075974d2b51a8211154a66f193aa6f971e52e1ef58da05acee",
-        "kernel/power/umi_pps.c": "b787e7699dad49bcfcf2dfa735c685088ba9bba1c1a9216af257eaafc32b0634",
-        "kernel/power/umi_pps_policy.h": "db08cd910335e6f778b3525ab225856c848945e15fb1a6ac52a4baf2a0b02766",
+        "tools/isolate_abl_targets.py": "3038d812d4dc34c3cc7bc372769e381943c46bc7d994ae90353032c70729a05a",
+        "tests/test_abl_isolation.py": "d0fc1b5f2a1ec4308cfb36ffba17bf77e49e54af67beb46c4362e55ea56b6bff",
+        "kernel/power/umi_pps.c": "7e594d769d3f98ef9566247266b8345828fbd19a1c3fd35daeeab00d026b9a8b",
+        "kernel/power/umi_pps_policy.h": "d5075c4b4c0e1ca7f095e047e1323e24259d3c2d011e843d3c96dbd80797e532",
         "kernel/power/umi_smb5.h": "59f657690c21bebe5ae5268d4c0d51b23fa1832f2c0e551573a972a401407d68",
-        "kernel/power/umi-pps.dtsi": "3f8f44a36c753a6e65dacdb568d98d72201ea90a2b176dea0a9f02ae0e468570",
+        "kernel/power/umi-pps.dtsi": "63c0b2b0e12c304ca705ac35cd8d5d4dc83c5b7b458f2f457665f9ecd6c07c6a",
         "tools/apply_pd_diagnostics.py": "e575ad2f52a5b3c0521ad339836ad79e082200f0ef643b78fd64356b21159ee4",
         "kernel/power/pmic_pdphy_receive.inc": "5bb58ca41ca25b7374f4d7d6bc020b9f5ce2aaba9ce621e5ea40f3265614986b",
         "LICENSES/BSD-3-Clause.txt": "8f0e2dfa56521e68f247ea8772f3f83eb9db045a793a8d6061bfb7803a69489b",
-        "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+        "LICENSES/GPL-2.0-only.txt": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
+        "tools/apply_nfc_port.py": "d5c772963cdbc373de743b7645506f85f7e3e353721af172ccad3e73e20cf9d0",
+        "kernel/nfc/sn100x.c": "c51e3f3e646efe00b32fa3943b4a098a18afb0ae7cd0c35015945bf4c1c2cd70",
+        "kernel/power/bindings/qcom,pm8150b-charger.yaml": "8d91a9a9d6d33971f4c384de000e4c8ce1ff615b8fbe7de0ff2d70ab3b0a31d4",
+        "kernel/power/bindings/qcom,pm8150b-fg.yaml": "bf30fc207ff8823b568125e393748824dc3c64bd5c8ad9b9c5a34d516c526c54",
+        "kernel/power/bindings/xiaomi,umi-bq25970.yaml": "a3f74e998e19aa615f228d507fabc29ffea0f3d2f09b49202f6ec21821ec5ebd",
+        "kernel/nfc/Kconfig": "862eed2bb25f4daa3929838974afaf6240b0ce4d6b4bcb574555f31689df93fc",
+        "kernel/nfc/bindings/nxp,sn100t.yaml": "965f724644f6998640ce47b142035005db93dad216b6b18cde9ff6a82ce6e1a3"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
-      "build": "Pinned Linux 6.18.60; Umi CSOT Android header v2 metadata; built-in FG/SMB5/ADC5, sink-only Type-C/TCPM/BQ25970 PPS test profile and rescue RAM logger. Hardware results are recorded separately in docs/platforms.md.",
+      "build": "Pinned Linux 6.18.60; Umi CSOT Android header v2 metadata; built-in FG/SMB5/ADC5, sink-only Type-C/TCPM/BQ25970 PPS test profile and rescue RAM logger. Hardware results are recorded separately in docs/platforms.md. Built-in SN100T Linux NFC/NCI transport with generic-netlink/AF_NFC interfaces; no private NQ character ABI, Android HAL or firmware downloader.",
       "dtbo_symbol_reference": {
         "origin": "Local Xiaomi UMI MIUI OS1.0.7.0.TJBCNXM package, firmware-update/dtbo.img",
         "sha256": "d6a6f4c07d7ce88f6213cfed0cee26d55f908e8eff38675faadc6f6e4671eee6",
@@ -109,7 +123,8 @@
           "use": "Register addresses and SMB5 enum reviewed for the original read-only observer; not the current FG/SMB5 adoption status. No historical patch payload applied."
         },
         "local_driver_license": "GPL-2.0-only"
-      }
+      },
+      "nfc_driver_reference": "linux-stable@f45ed76d6791cf72ff1265ee93511175bbbc2f18"
     }
   ],
   "sources": [
@@ -451,6 +466,54 @@
         "qcom/umi-sm8250.dtsi": "4906c37a17e6a768a74dc42413bd3688e50825d191bb94c4232d1b2554828190"
       },
       "verification": "Same calibration/protection gaps as Lineage; no new board defaults accepted. See docs/archive/research/2026-11-08-pps-topology-followup.md"
+    },
+    {
+      "id": "lineage-umi-nfc-driver",
+      "url": "https://github.com/LineageOS/android_kernel_xiaomi_sm8250.git",
+      "revision": "6fcac56423a078c7bd180e8d2c626c7d66bf1677",
+      "license": "GPL-2.0-only",
+      "license_evidence": [
+        "SPDX-License-Identifier in nq-nci.c, nq-nci.h, and include/linux/nfcinfo.h"
+      ],
+      "role": "Historical NQ-NCI bring-up and SN100T hardware/power-sequence reference only; no driver or private UAPI is compiled in the current profile",
+      "included_paths": [
+        "drivers/nfc/nq-nci.c",
+        "drivers/nfc/nq-nci.h",
+        "include/uapi/linux/nfc/nfcinfo.h"
+      ],
+      "submodules": [],
+      "patches": [],
+      "reviewed_sha256": {
+        "drivers/nfc/nq-nci.c": "fcd4e82f6ab56da558015d03b382cf322fd902493c60f11dfad2f101dd9daed4",
+        "drivers/nfc/nq-nci.h": "649c412aa68f736332d473eee477cd4d04fc8c005164458cde673b3a9bac6e0d",
+        "include/uapi/linux/nfc/nfcinfo.h": "f60bbb0f295b26f6263fb59dda9365d48009c868687539ff76a7248c0607fee5"
+      },
+      "board_evidence": {
+        "paths": [
+          "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi",
+          "arch/arm64/boot/dts/vendor/qcom/umi-pinctrl.dtsi",
+          "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi",
+          "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi"
+        ],
+        "sha256": {
+          "arch/arm64/boot/dts/vendor/qcom/umi-sm8250.dtsi": "5d7693de26606e5d9fa9cb6b73d1278fd79e008a5e08134a3c0d83d90fc90a01",
+          "arch/arm64/boot/dts/vendor/qcom/umi-pinctrl.dtsi": "80bb179bff1aede9e949cd29819806b1b800bfed79369e7769da116a7ba1ccdc",
+          "arch/arm64/boot/dts/vendor/qcom/kona-qupv3.dtsi": "91147d6f1676ea70f6e6c8e78a1d81399a3bb186986e712fc1246ad1b2250763",
+          "arch/arm64/boot/dts/vendor/qcom/kona-pinctrl.dtsi": "cd826a3af94fe27d95644a4492d4a990f8afed9660cdafdcfed25282973691f0"
+        },
+        "use": "Read-only device-tree facts for Umi NFC pinctrl and QUP mapping. The Umi downstream DTS contains a disabled nq@64 on another controller; it is not copied as the active node. Active i2c@984000/nq@28 comes from connected-device sysfs observation."
+      },
+      "local_changes": [
+        "Adapt I2C probe/remove callback and class_create signatures to Linux 6.18.",
+        "Bundle the private NFC info UAPI header with the driver and include it locally.",
+        "Retain the downstream Android character-device/ioctl protocol; do not import vendor firmware or Android binaries."
+      ],
+      "verification": "Source files pinned to a full commit; file-level SPDX retained. No binaries or firmware included. Device-tree source observation is separate from MiSeed L2/L3 evidence; HAL/userspace license closure remains open.",
+      "file_licenses": {
+        "drivers/nfc/nq-nci.c": "GPL-2.0-only",
+        "drivers/nfc/nq-nci.h": "GPL-2.0-only",
+        "include/uapi/linux/nfc/nfcinfo.h": "GPL-2.0-only WITH Linux-syscall-note"
+      }
     }
   ],
   "unlocked_inputs": [

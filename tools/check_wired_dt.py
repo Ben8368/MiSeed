@@ -1,0 +1,63 @@
+"""Validate compiled Umi wired topology and selected mainline DT schemas."""
+# SPDX-License-Identifier: AGPL-3.0-only
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+SCHEMAS = ("power/supply/qcom,pm8150b-fg.yaml",
+           "power/supply/qcom,pm8150b-charger.yaml",
+           "power/supply/xiaomi,umi-bq25970.yaml",
+           "power/supply/battery.yaml", "thermal/thermal-zones.yaml")
+
+
+def check(dtb, schema):
+    indexed = json.loads(schema.read_text())
+    for name in SCHEMAS:
+        if "http://devicetree.org/schemas/" + name + "#" not in indexed:
+            raise ValueError("schema was not loaded: " + name)
+
+    def prop(node, name, kind="x"):
+        result = subprocess.run(["fdtget", "-t", kind, str(dtb), node, name],
+                                capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+
+    nodes = {name: prop("/__symbols__", name, "s") for name in
+             ("umi_battery", "umi_fg", "umi_charger", "umi_pps", "pm8150b_typec")}
+    handles = {name: prop(node, "phandle") for name, node in nodes.items()}
+    references = (("umi_fg", "monitored-battery", "umi_battery"),
+                  ("umi_charger", "monitored-battery", "umi_battery"),
+                  ("umi_charger", "qcom,fuel-gauge", "umi_fg"),
+                  ("umi_pps", "xiaomi,fuel-gauge", "umi_fg"),
+                  ("umi_pps", "xiaomi,switch-charger", "umi_charger"),
+                  ("umi_pps", "power-supplies", "pm8150b_typec"))
+    for owner, name, target in references:
+        if prop(nodes[owner], name) != handles[target]:
+            raise ValueError(f"{owner}:{name} must reference {target}")
+    if prop(nodes["umi_battery"], "compatible", "s") != "simple-battery":
+        raise ValueError("monitored-battery target is not simple-battery")
+    if prop("/thermal-zones/wired-pps-thermal", "thermal-sensors") != handles["umi_pps"]:
+        raise ValueError("wired thermal zone must reference the PPS sensor")
+    result = subprocess.run(["dt-validate", "-s", str(schema), "-l", ":".join(SCHEMAS), str(dtb)],
+                            capture_output=True, text=True)
+    # dt-validate/make can emit schema failures and still exit zero.
+    if result.returncode or result.stderr.strip() or result.stdout.strip():
+        raise ValueError("DT schema diagnostics:\n" + result.stdout + result.stderr)
+    return nodes
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dtb", type=Path, required=True)
+    parser.add_argument("--schema", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        nodes = check(args.dtb, args.schema)
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        parser.exit(1, f"wired DT validation failed: {exc}\n")
+    print("PASS: wired DT schemas, battery/gauge/charger/TCPM references and thermal zone")
+    print(json.dumps(nodes, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

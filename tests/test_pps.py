@@ -20,7 +20,10 @@ class PpsTests(unittest.TestCase):
         # synthetic transports. No reimplementation of the tested state machine.
         source = source[:source.index("static irqreturn_t umi_pps_irq")]
         full = (ROOT / "kernel/power/umi_pps.c").read_text()
-        for name in ("umi_pps_suspend", "umi_pps_resume"):
+        for name in ("umi_pps_suspend", "umi_pps_resume", "umi_pps_get_property",
+                     "umi_pps_set_property", "umi_pps_property_is_writeable",
+                     "umi_pps_get_temp", "umi_pps_get_max_state",
+                     "umi_pps_get_cur_state", "umi_pps_set_cur_state"):
             start = full.index("static int " + name + "(")
             source += full[start:full.index("\n}\n", start) + 3]
         source = "\n".join(line for line in source.splitlines()

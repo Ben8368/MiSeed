@@ -46,11 +46,25 @@ enum power_supply_property { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_PRESENT
  POWER_SUPPLY_PROP_TEMP, POWER_SUPPLY_PROP_CAPACITY, POWER_SUPPLY_PROP_HEALTH,
  POWER_SUPPLY_PROP_VOLTAGE_NOW, POWER_SUPPLY_PROP_CURRENT_NOW, POWER_SUPPLY_PROP_USB_TYPE,
  POWER_SUPPLY_PROP_VOLTAGE_MIN, POWER_SUPPLY_PROP_VOLTAGE_MAX, POWER_SUPPLY_PROP_CURRENT_MAX,
- PROP_COUNT };
+ POWER_SUPPLY_PROP_MANUFACTURER, POWER_SUPPLY_PROP_MODEL_NAME,
+ POWER_SUPPLY_PROP_STATUS, POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR, PROP_COUNT };
 #define POWER_SUPPLY_HEALTH_GOOD 1
 #define POWER_SUPPLY_USB_TYPE_PD 6
 #define POWER_SUPPLY_USB_TYPE_PD_PPS 7
-union power_supply_propval { int intval; };
+#define POWER_SUPPLY_HEALTH_UNSPEC_FAILURE 2
+#define POWER_SUPPLY_HEALTH_UNKNOWN 0
+#define POWER_SUPPLY_STATUS_CHARGING 1
+#define POWER_SUPPLY_STATUS_NOT_CHARGING 3
+#define POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO 0
+#define POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE 1
+union power_supply_propval { int intval; const char *strval; };
+struct thermal_zone_device { void *devdata; };
+struct thermal_cooling_device { void *devdata; };
+static void *thermal_zone_device_priv(struct thermal_zone_device *tz) { return tz->devdata; }
+struct power_supply;
+static void *power_supply_get_drvdata(struct power_supply *psy) { return drvdata; }
+static int changed;
+static void power_supply_changed(struct power_supply *psy) { changed++; }
 struct power_supply { int id; int prop[PROP_COUNT]; };
 static struct power_supply pd, bms, sw;
 static unsigned int regs[0x30];
@@ -165,7 +179,7 @@ static int device_property_read_u32(struct device *d, const char *key, u32 *v) {
   {"ti,bat-ocp-alarm-milliamp",7500}, {"ti,bus-ovp-millivolt",12000},
   {"ti,bus-ovp-alarm-millivolt",11000}, {"ti,bus-ocp-milliamp",3750},
   {"ti,bus-ocp-alarm-milliamp",3500}, {"ti,ac-ovp-volt",14}
-  ,{"miseed,thermal-board-compensation-millicelsius",0}
+  ,{"xiaomi,thermal-board-compensation-millicelsius",0}
  };
  if(missing_property && !strcmp(key,missing_property)) return -EINVAL;
  for(unsigned int i=0;i<sizeof(values)/sizeof(values[0]);i++)
@@ -181,7 +195,7 @@ static void reset(void) {
  info_count=scheduled=check_operating_power=0;
  memset(&c,0,sizeof(c));memset(regs,0,sizeof(regs));
  memset(&pd,0,sizeof(pd));memset(&bms,0,sizeof(bms));memset(&sw,0,sizeof(sw));
- c.pd=&pd;c.bms=&bms;c.sw=&sw;
+ c.pd=&pd;c.bms=&bms;c.sw=&sw;c.ready=true;
  clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
  fail_pps_unsupported=0;
@@ -215,6 +229,40 @@ static void run(void) {
  clock_ms+=200;tick(); assert(c.state==PPS_RUN && enable_count==1);
 }
 int main(void) {
+ union power_supply_propval value;
+ struct thermal_zone_device tz = {.devdata=&c};
+ struct thermal_cooling_device cooling = {.devdata=&c};
+ int temp; unsigned long cooling_state;
+ reset();c.psy=&sw;changed=0;
+ assert(umi_pps_get_property(&sw,POWER_SUPPLY_PROP_VOLTAGE_NOW,&value)==-ENODATA);
+ assert(!umi_pps_get_temp(&tz,&temp) && temp==32561);
+ thermal_fail=1;assert(umi_pps_get_temp(&tz,&temp)==-EIO);thermal_fail=0;
+ bms.prop[POWER_SUPPLY_PROP_TEMP]=1250;assert(umi_pps_get_temp(&tz,&temp)==-ERANGE);
+ reset();c.psy=&sw;run();assert(changed>0);
+ assert(!umi_pps_get_property(&sw,POWER_SUPPLY_PROP_CURRENT_NOW,&value) && value.intval==1000000);
+ assert(!umi_pps_get_property(&sw,POWER_SUPPLY_PROP_STATUS,&value) && value.intval==POWER_SUPPLY_STATUS_CHARGING);
+ int previous_io=io_count;unsigned int latched=regs[0x11];
+ assert(!umi_pps_get_property(&sw,POWER_SUPPLY_PROP_HEALTH,&value));
+ assert(io_count==previous_io && regs[0x11]==latched);
+ value.intval=99;assert(umi_pps_set_property(&sw,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&value)==-EINVAL);
+ assert(!umi_pps_property_is_writeable(&sw,POWER_SUPPLY_PROP_CURRENT_NOW));
+ value.intval=POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
+ fail_stop=1;assert(umi_pps_set_property(&sw,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&value)==-EIO);
+ assert(c.manual_stop && c.stop_pending && c.claimed);
+ value.intval=POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO;
+ assert(umi_pps_set_property(&sw,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&value)==-EBUSY);
+ fail_stop=0;tick();assert(!c.stop_pending && !c.claimed && c.manual_stop);
+ pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();assert(c.manual_stop);
+ assert(!umi_pps_set_property(&sw,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&value) && !c.manual_stop);
+ reset();assert(!umi_pps_get_max_state(&cooling,&cooling_state) && cooling_state==15);
+ assert(umi_pps_set_cur_state(&cooling,16)==-EINVAL);
+ assert(!umi_pps_set_cur_state(&cooling,8));
+ assert(!umi_pps_get_cur_state(&cooling,&cooling_state) && cooling_state==8);
+ struct umi_pps_sample cool_sample={0};
+ assert(!umi_pps_battery(&c,&cool_sample) && cool_sample.thermal_bat_ma==4100);
+ c.removing=true;assert(umi_pps_set_cur_state(&cooling,0)==-EAGAIN);
+ assert(umi_pps_get_property(&sw,POWER_SUPPLY_PROP_STATUS,&value)==-ENODEV);
+
  reset();run();assert(!umi_pps_suspend(NULL) && c.suspended && c.state==PPS_OFF);
  int previous_enable=enable_count;tick();assert(enable_count==previous_enable);
  assert(!umi_pps_resume(NULL) && !c.suspended && c.state==PPS_WAIT_PLUG);
@@ -222,7 +270,7 @@ int main(void) {
  reset();c.manual_stop=true;c.state=PPS_OFF;pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;
  assert(!umi_pps_suspend(NULL) && !umi_pps_resume(NULL) && c.manual_stop && c.state==PPS_OFF);
  tick();assert(scheduled && !enable_count);
- pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();assert(!c.manual_stop && c.state==PPS_WAIT_PLUG);
+ pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();assert(c.manual_stop && c.state==PPS_WAIT_PLUG);
  reset();c.state=PPS_FAULT;c.last_error=-EIO;
  assert(!umi_pps_suspend(NULL) && !umi_pps_resume(NULL) && c.state==PPS_FAULT);
  reset();c.state=PPS_WAIT_PLUG;pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;fail_sensor=1;tick();int first_error=info_count;

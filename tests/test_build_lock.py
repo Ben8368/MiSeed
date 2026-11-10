@@ -41,6 +41,11 @@ class BuildLockTests(unittest.TestCase):
     def test_reviewed_record_and_hashes_match(self):
         self.assertEqual(self.errors(), [])
 
+    def test_nfc_cannot_restore_an_android_driver_reference(self):
+        self.data["build_profiles"][0]["nfc_driver_reference"] = (
+            "lineage-umi-nfc-driver@6fcac56423a078c7bd180e8d2c626c7d66bf1677")
+        self.assertTrue(any("pinned Linux NCI" in error for error in self.errors()))
+
     def test_changed_source_and_host_tool_fail(self):
         for name in ("kernel/power/umi_pps.c", "tools/collect_charge_log.py"):
             (self.root / name).write_bytes(b"changed\n")

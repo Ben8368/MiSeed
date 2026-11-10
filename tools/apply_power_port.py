@@ -95,6 +95,12 @@ def main():
     for name in ("umi-pm8150b.dtsi", "umi-pps.dtsi"):
         (board_dir / name).write_bytes(
             (Path(__file__).resolve().parents[1] / "kernel/power" / name).read_bytes())
+    binding_dir = destination_dir(args.source, "Documentation/devicetree/bindings/power/supply")
+    for binding in sorted((Path(__file__).resolve().parents[1] / "kernel/power/bindings").glob("*.yaml")):
+        destination = binding_dir / binding.name
+        if destination.is_symlink():
+            parser.error("refusing binding symlink")
+        destination.write_bytes(binding.read_bytes())
     print("Staged Umi FG/SMB5 runtime port; probe starts charge-inhibited")
 
 

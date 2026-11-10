@@ -71,7 +71,7 @@ static long test_reboot_syscall(long number, ...) {
     return -1;
 }
 
-static const char *pps_prefix = "/sys/bus/i2c/drivers/umi-bq25970-pps";
+static const char *pps_prefix = "/sys/class/power_supply";
 static ssize_t test_readlink(const char *path, char *buffer, size_t size) {
     char mapped[1024];
     if (getenv("TEST_I2C_ROOT") && !strncmp(path, "/sys/bus/i2c/devices/", 21)) {
@@ -85,7 +85,7 @@ static FILE *test_fopen(const char *path, const char *mode) {
     if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
         path = mapped;
-        if (getenv("TEST_PPS_READ_FAIL")) path = getenv("TEST_PPS_ROOT");
+        if (getenv("TEST_PPS_READ_FAIL") && strstr(path, "/uevent")) path = getenv("TEST_PPS_ROOT");
     }
     return fopen(path, mode);
 }
@@ -470,6 +470,8 @@ class RescueInitTests(unittest.TestCase):
             supply.mkdir()
             control = supply / "charge_test"
             control.touch()
+            behaviour = supply / "charge_behaviour"
+            behaviour.touch()
             master, slave = pty.openpty()
             env = dict(os.environ, TEST_TTY=os.ttyname(slave), TEST_POWER_ROOT=str(root))
             process = subprocess.Popen([self.program, "console"], env=env,
@@ -479,16 +481,16 @@ class RescueInitTests(unittest.TestCase):
             try:
                 banner = self.read_until(master, b"miseed> ")
                 self.assertIn(b"read-only samples", banner)
-                self.assertIn(b"charge-test-10min (600 s)", banner)
+                self.assertIn(b"require a diagnostic kernel", banner)
                 for command, value, message in (
                     (b"charge-test\n", "arm", b"after 60 seconds"),
                     (b"charge-test-10min\n", "arm-10min", b"after 600 seconds"),
-                    (b"charge-stop\n", "stop", b"test cancelled"),
+                    (b"charge-stop\n", "inhibit-charge", b"test cancelled"),
                 ):
                     control.write_text("")
                     os.write(master, command)
                     self.read_until(master, message)
-                    self.assertEqual(control.read_text(), value)
+                    self.assertEqual((behaviour if command == b"charge-stop\n" else control).read_text(), value)
             finally:
                 process.terminate()
                 process.wait(timeout=5)
@@ -501,13 +503,16 @@ class RescueInitTests(unittest.TestCase):
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
             first = root / "15-0066"
             first.mkdir()
-            control = first / "fastcharge_test"
+            control = first / "charge_behaviour"
+            (first / "model_name").write_text("BQ25970\n")
+            (first / "uevent").write_text("POWER_SUPPLY_STATUS=Charging\n")
             control.touch()
             self.assertIn("discovery=0", self.run_log("pps-discovery", env))
             self.assertEqual(control.read_text(), "")
             second = root / "16-0066"
             second.mkdir()
-            (second / "fastcharge_test").touch()
+            (second / "charge_behaviour").touch()
+            (second / "model_name").write_text("BQ25970\n")
             control.write_text("keep")
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
             self.assertEqual(control.read_text(), "keep")
@@ -517,17 +522,19 @@ class RescueInitTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            pump = root / "pps" / "15-0066"
+            pump = root / "pump0"
             pump.mkdir(parents=True)
-            control = pump / "fastcharge_test"
+            control = pump / "charge_behaviour"
+            (pump / "model_name").write_text("BQ25970\n")
+            (pump / "uevent").write_text("POWER_SUPPLY_STATUS=Charging\n")
             control.touch()
             supply = root / "pm8150b-charger"
             supply.mkdir()
-            normal = supply / "charge_test"
+            normal = supply / "charge_behaviour"
             normal.touch()
             master, slave = pty.openpty()
             env = dict(os.environ, TEST_TTY=os.ttyname(slave), TEST_POWER_ROOT=str(root),
-                       TEST_PPS_ROOT=str(root / "pps"))
+                       TEST_PPS_ROOT=str(root))
             process = subprocess.Popen([self.program, "console"], env=env,
                                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                        stderr=subprocess.DEVNULL, start_new_session=True)
@@ -535,15 +542,15 @@ class RescueInitTests(unittest.TestCase):
             try:
                 self.read_until(master, b"miseed> ")
                 for command, value, message in (
-                    (b"pps-status\n", "state=3 error=0\n", b"state=3 error=0"),
-                    (b"pps-stop\n", "stop", b"PPS stopped; SMB5 fallback policy resumed."),
-                    (b"charge-stop\n", "stop", b"test cancelled"),
+                    (b"pps-status\n", "auto\n", b"POWER_SUPPLY_STATUS=Charging"),
+                    (b"pps-stop\n", "inhibit-charge", b"PPS stopped; SMB5 fallback policy resumed."),
+                    (b"charge-stop\n", "inhibit-charge", b"test cancelled"),
                 ):
                     control.write_text(value if command == b"pps-status\n" else "")
                     os.write(master, command)
                     self.read_until(master, message)
                     self.assertEqual(control.read_text(), value)
-                self.assertEqual(normal.read_text(), "stop")
+                self.assertEqual(normal.read_text(), "inhibit-charge")
             finally:
                 process.terminate()
                 process.wait(timeout=5)
@@ -572,7 +579,8 @@ class RescueInitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "15-0066").mkdir()
-            (root / "15-0066/fastcharge_test").write_text("state=3\n")
+            (root / "15-0066/charge_behaviour").write_text("auto\n")
+            (root / "15-0066/model_name").write_text("BQ25970\n")
             env = dict(os.environ, TEST_PPS_ROOT=str(root), TEST_PPS_READ_FAIL="1")
             result = subprocess.run([self.program, "pps-discovery"], env=env, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 23)

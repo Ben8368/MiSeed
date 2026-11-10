@@ -18,9 +18,18 @@ config CHARGER_MISEED_PM8150B
 config CHARGER_MISEED_UMI_PPS
 	tristate "MiSeed Umi guarded BQ25970 PPS controller"
 	depends on I2C && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
+	depends on THERMAL && THERMAL_OF
 	depends on CHARGER_MISEED_PM8150B && BATTERY_MISEED_QCOM_FG
 	select REGMAP_I2C
 	help
 	  Automatic LOS-style PPS policy using mainline TCPM and a standalone
 	  BQ25970. The Umi board profile is sink-only and is exercised on the
 	  maintainer's Umi device through temporary RAM boot.
+
+config MISEED_CHARGE_DIAGNOSTICS
+	bool "MiSeed bounded wired charge diagnostic command"
+	depends on CHARGER_MISEED_PM8150B
+	help
+	  Enable the temporary charge_test ABI only in diagnostic kernels.
+	  Product consumers use power_supply charge_behaviour. No protection
+	  is disabled by this option.

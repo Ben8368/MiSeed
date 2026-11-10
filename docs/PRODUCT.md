@@ -1,6 +1,6 @@
 # 产品范围
 
-MiSeed 为小米 10 提供独立 UEFI、Linux 主线适配与 Recovery，以及构建组合和镜像打包。长期面向多系统，首个目标是 Linux；完整内核树与发行版包由外部固定来源提供，本仓库不维护发行版包全集。
+MiSeed 为小米 10 提供独立 UEFI、Linux 主线适配与 Recovery，以及构建组合和镜像打包。长期面向多系统，当前产品链路为 UEFI + Linux 主线内核 + Debian，Debian 为 MVP 发行版；完整内核树与发行版包由外部固定来源提供，本仓库不维护发行版包全集。
 
 ## MVP
 
@@ -27,6 +27,8 @@ MiSeed 为小米 10 提供独立 UEFI、Linux 主线适配与 Recovery，以及�
 | RQ-08 | 2026-11-06：日志横屏放大；通过 USB 控制 Linux 诊断内核、Fastboot 与 Android；基础电源管理和充电。2026-11-07：要求 RAM 镜像直接返回 Fastboot，不经 Android ADB | USB 控制与直接 Bootloader Fastboot 往返归 WP9，当前能力及证据见 [platforms](platforms.md)；PR1 充电延期决定保留，充电须锁定实际板级参数并通过保护审查与真机专项验收 |
 | RQ-11 | 2026-11-08：完全回到 `b97f1d9977caf211e5c219a0fb3431b922247e0c`，优先完成 USB 断开期间的充电信息记录，接回电脑后可导出全过程 | WP9 先交付只读日志；同次启动内持续采集、重连导出和缺失字段说明，验收不替代主动充电/温控能力 |
 | RQ-12 | 2026-11-08：指定长期真机使用稳定的 LineageOS `lineage-23.2` 内核，要求新分支移植快充/PPS | WP9 采用固定提交逐功能适配；来源稳定性作为用户报告，本项目需单独完成 PD/泵/保护闭环及 L2/L3，不继承原项目验收 |
+| RQ-13 | 2026-11-09：NFC 初期按 Android 兼容路径保留 `/dev/nq-nci` 与 NXP HAL/eSE 接口，并构建、启动镜像 | 历史移植依据；后续目标由 RQ-14 替代，既有 probe/node 证据保留，见 [NFC](NFC.md) |
+| RQ-14 | 2026-11-10：明确 UEFI + Linux 主线内核 + Debian 产品目标；全面排查接口，后续按 mainline 适配，不走 Android 架构 | UEFI 适配与交接仍为 MVP 必需项；所有工作包遵守 [Linux 接口准则](ARCHITECTURE.md#linux-接口准则)；WP10 转向 Linux NFC/NCI，现存例外及退出条件归 TECH_DEBT |
 
 对话助手的具体补丁版本、短 SHA、硬件组合、目录、命令与版本路线图均属建议；未经来源审查或本项目证据，不作为锁定配置、可用命令或已完成能力。
 

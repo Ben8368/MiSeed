@@ -19,6 +19,12 @@ else:
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
+    "drivers/nfc/sn100x.c",
+    "drivers/nfc/sn100x.Kconfig",
+    "Documentation/devicetree/bindings/net/nfc/nxp,sn100t.yaml",
+    "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-fg.yaml",
+    "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-charger.yaml",
+    "Documentation/devicetree/bindings/power/supply/xiaomi,umi-bq25970.yaml",
     ".miseed-source-revision",
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
@@ -35,6 +41,7 @@ GENERATED = {
     "drivers/power/supply/umi_smb5.h",
 }
 OVERLAY_RULES = {
+    "drivers/nfc/Makefile": [(b"", b"obj-$(CONFIG_NFC_SN100X) += sn100x.o")],
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
                (b"", b"DTC_FLAGS_umi-csot += -@")],
     "drivers/mfd/Makefile": [
@@ -116,6 +123,11 @@ def verify_source(repository, revision, source):
                 original = git(repository, "show", revision + ":" + name).decode("utf-8")
                 base = RPMHPD_KCONFIG_RULE.removesuffix("\n\tselect PM_OPP")
                 if original.count(base) == 1 and path.read_bytes() == original.replace(base, RPMHPD_KCONFIG_RULE, 1).encode("utf-8"):
+                    continue
+            if actual != oid and name == "drivers/nfc/Kconfig":
+                original = git(repository, "show", revision + ":" + name)
+                if original.count(b"endmenu") == 1 and path.read_bytes() == original.replace(
+                        b"endmenu", b'source "drivers/nfc/sn100x.Kconfig"\nendmenu'):
                     continue
             if actual != oid and name in OVERLAY_RULES:
                 original = git(repository, "show", revision + ":" + name)
