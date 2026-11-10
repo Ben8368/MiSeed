@@ -14,6 +14,10 @@ SHIM = r"""
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+/* Linux transport errno absent from Darwin libc. */
+#ifndef EREMOTEIO
+#define EREMOTEIO 121
+#endif
 typedef uint8_t u8;
 #define U8_MAX 255
 #define NCI_CTRL_HDR_SIZE 3
@@ -144,9 +148,12 @@ class TransportTests(unittest.TestCase):
         path = Path(cls.temp.name) / 'transport.c'
         path.write_text('#include <stddef.h>\n' + SHIM + logic + pm + MAIN, encoding='utf-8')
         cls.binary = Path(cls.temp.name) / 'transport'
-        subprocess.run([shutil.which('cc') or shutil.which('gcc'), '-std=c11', '-Wall',
-                        '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-sign-compare',
-                        str(path), '-o', str(cls.binary)], check=True, capture_output=True)
+        result = subprocess.run(
+            [shutil.which('cc') or shutil.which('gcc'), '-std=c11', '-Wall',
+             '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-sign-compare',
+             str(path), '-o', str(cls.binary)], capture_output=True, text=True)
+        if result.returncode:
+            raise AssertionError(result.stderr)
 
     def test_production_transport_failure_and_lifecycle_paths(self):
         for case in range(10):
