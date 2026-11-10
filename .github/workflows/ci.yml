@@ -36,9 +36,22 @@ jobs:
             libssl-dev=3.0.13-0ubuntu3.16 \
             libelf-dev=0.190-1.1ubuntu0.1 \
             libc6-dev-arm64-cross=2.39-0ubuntu8cross1 \
-            device-tree-compiler=1.7.0-2build1
+            device-tree-compiler=1.7.0-2build1 \
+            python3-venv=3.12.3-0ubuntu2.1 \
+            python3-dev=3.12.3-0ubuntu2.1 \
+            swig=4.2.0-2ubuntu1
       - name: Build locked MiSeed CSOT boot image (L2)
+        env:
+          MISEED_EXTRACTED_SOURCE: ${{ runner.temp }}/miseed-linux-source
+          MISEED_BUILD_ROOT: ${{ runner.temp }}/miseed-linux-build
         run: bash tools/build_kernel_l2.sh
+      - name: Validate bindings, final DTB and DT regressions
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dtschema"
+          "$RUNNER_TEMP/dtschema/bin/python" -m pip install -r tools/requirements-dtschema.txt
+          "$RUNNER_TEMP/dtschema/bin/python" tools/validate_kernel_dt.py \
+            --source "$RUNNER_TEMP/miseed-linux-source" --build "$RUNNER_TEMP/miseed-linux-build" \
+            --dtb "$GITHUB_WORKSPACE/.work/boot-l2/umi-csot.dtb"
 
   repository:
     name: Repository (${{ matrix.os }}, Python ${{ matrix.python }})

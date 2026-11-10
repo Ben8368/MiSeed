@@ -27,7 +27,7 @@ workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 
 
 | required check 名称 | 执行范围 |
 | --- | --- |
-| Boot L2 (Ubuntu 24.04) | 固定 Linux v6.18.60、MiSeed CSOT DTS/ABL 锚点、只读救援 initramfs 和 Android v2 头模板，构建并校验 `boot.img`；apt 传递包哈希与 runner 镜像 digest 尚未闭合 |
+| Boot L2 (Ubuntu 24.04) | 固定 Linux v6.18.60、CSOT DT/ABL、只读 rescue 与 v2 头，校验 boot.img、定向 DT/schema 和四项 DT 反例；传递包/runner 闭包未完 |
 | Repository (ubuntu-24.04, Python 3.11) | L0/L1，最低 Python |
 | Repository (ubuntu-24.04, Python 3.14) | L0/L1，新版 Python |
 | Repository (windows-2025, Python 3.14) | L0/L1，Windows 路径 |

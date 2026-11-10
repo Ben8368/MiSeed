@@ -1,0 +1,2 @@
+# Direct tool version; transitive wheel/package hashes remain TD-001.
+dtschema==2025.8

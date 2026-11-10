@@ -19,6 +19,9 @@ MANIFEST = "manifests/sources.lock.json"
 SCRIPT = "tools/build_kernel_l2.sh"
 REQUIRED_INPUTS = {
     SCRIPT, "tools/check_build_lock.py", "tools/verify_kernel_source.py",
+    "tools/run_build_command.py",
+    "tools/validate_kernel_dt.py", "tools/requirements-dtschema.txt",
+    "tools/check_wired_dt.py", "tests/test_wired_dt.py",
     "tools/download_locked.py", "tools/extract_abl_anchors.py",
     "tools/extract_boot_v2_dtb.py", "tools/isolate_abl_targets.py",
     "tools/apply_power_port.py",

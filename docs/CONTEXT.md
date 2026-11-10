@@ -4,7 +4,9 @@
 
 WP10 使用 SN100T Linux NFC/NCI 与标准 Netlink；新驱动 RF/读卡/恢复 L3、eSE 和 Debian 服务待验，见[NFC 适配](archive/research/2026-11-10-sn100t-linux-nci.md)。
 
-HEAD `b53705e` 修正 BQ IRQ、拆分芯片后端并完善有线固定 PD thermal；L1 184 项、ARM64 L2、定向 schema 通过；新行为 L3 待验，见[接口审查](archive/reviews/2026-11-10-linux-standard-interfaces.md)。8 项篇幅黄灯归 TD-008。
+`b53705e` 已修正 BQ IRQ、拆分芯片后端并完善有线固定 PD thermal；L1 184 项、ARM64 L2、定向 schema 通过；新行为 L3 待验，见[接口审查](archive/reviews/2026-11-10-linux-standard-interfaces.md)。8 项篇幅黄灯归 TD-008。
+
+有线 SMB5 bit5 状态误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM 启动/Android 回退 L3 通过，见[真机读数](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 
 当前镜像 RAM 启动、USB CDC/日志、simpledrm 屏显与 Fastboot→Android 往返 L3 通过；UEFI、原生 DSI、触控未验，见[真机记录](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)。
 
@@ -14,4 +16,4 @@ HEAD `b53705e` 修正 BQ IRQ、拆分芯片后端并完善有线固定 PD therma
 
 1. WP10：新 NCI reset/init、RF/NDEF、失败恢复 L3，再集成 Debian；eSE 独立评估。
 2. 新 ABI、simpledrm/DT、有线温控标度/保护恢复 L3 与独立复核；Debian 后续集成，无线 RX/TX 独立设计。
-3. 旧 BQ 故障、间歇 `-ENOTCONN`、专项复核与精确 HEAD CI，见 RISK-004。
+3. 旧 BQ / `-ENOTCONN`、复核与精确 HEAD CI 见 RISK-004；[DT/时钟复核](archive/reviews/2026-11-10-kernel-validation-environment.md)。

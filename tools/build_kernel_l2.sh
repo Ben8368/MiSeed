@@ -39,6 +39,8 @@ cleanup_fallback_trees() {
 trap cleanup_fallback_trees EXIT
 
 require python3
+# Capture recursive make diagnostics too: make 4.3 may return 0 on clock skew.
+make() { python3 "$repo_root/tools/run_build_command.py" -- make "$@"; }
 python3 "$repo_root/tools/check_build_lock.py" --root "$repo_root" \
     --kernel-url "$kernel_url" --kernel-revision "$kernel_revision" \
     --reference-revision "$reference_revision" --boot-url "$boot_url" \
