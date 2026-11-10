@@ -118,7 +118,7 @@
         "kernel/power/umi_smb5_diagnostics.h": "4743fcad43626e079406931aaeee9a090cf247cd4bde8784879bf6d1a4f08a80",
         "kernel/power/bq25970.c": "c48865a864272da51373f7aadc2d1696c1b3d93a9ffb955817f7aaf75d2238f9",
         "kernel/power/bq25970.h": "759975f1ecc7dc27697d9ebcfcca6cab1fe300fa9bead47b3e8feeeb0033d1ae",
-        "kernel/charge_log.c": "d28451196cfa6660a90626ff2cb419b0575875af61636ee29cd85fab23c27510",
+        "kernel/charge_log.c": "f299c378f1f998bbd82cfa8416742b4dc7be049b34ad96abaf1048999d17d064",
         "kernel/power/qcom_fg_internal.h": "b72ea4f71195ceecd881ab3878b5df0b53f40f4ce60a5f250a70cdfb4f5a52fa",
         "kernel/power/qcom_fg_io.c": "affe16ffcaea20009fbb6242bec4961f28863eac53e1060483b1210d5f825e45",
         "kernel/power/qcom_fg_measure.c": "67b42f94982a1e99fad1e939e4dffef495954767979d48d4643586b24aff1b26",
@@ -151,7 +151,8 @@
         "use": "Extracted 241 overlay target symbol names only as input data for symbol anchors; no DTBO binary, overlay properties, or payloads are copied into the build. This MIUI reference is not verified as the DTBO installed on the connected LOS device."
       },
       "host_tools": {
-        "tools/collect_charge_log.py": "39180005d3209f6823168e60bd017cbd5548c0475f792f770680cee607859302"
+        "tools/collect_charge_log.py": "24f32f7edf4fd6a336887834eea843c82313c3ff9b119d244c9b0d44d662cf10",
+        "tools/charge_log_windows.py": "82095e0e3a67bbb4ddf5d646c74b6368d1ed03896feb2a9d69780eba61cac95a"
       },
       "historical_build_evidence": [
         "docs/archive/reviews/2026-11-08-fastcharge-ci.md",

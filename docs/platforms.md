@@ -56,5 +56,5 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | NFC / eSE | 标准 NCI 本地 L2；新驱动 L3/读卡/eSE 未测 | [NFC](NFC.md)；RISK-011 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线充电日志 / 管理 | PD/PPS 各约 10 分钟稳定；新镜像 PPS 约 81 秒正常转 PD。保护、串口丢行与旧故障开放 | [稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [本轮](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)；RISK-004 |
+| 有线充电日志 / 管理 | 固定 PD：`aa5a4683…bd1b7f7` ~10.3 min 稳定（SOC 81→89）；既有 PD/PPS 仍有效。导出 `b4026d67…d44e9` 1102条无缺段；保护/旧故障开放 | [PD 稳定 L3](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [既有稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md)；RISK-004 |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |

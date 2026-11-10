@@ -144,8 +144,16 @@ void charge_log_export(unsigned int recent) {
         }
         record.text[CHARGE_LOG_LINE - 1] = '\0';
         if (fputs(record.text, stdout) == EOF) return;
+        /* Bound USB ACM bursts so Windows host RX queues do not drop lines. */
+        if ((i & 3u) == 3u) {
+            fflush(stdout);
+            usleep(3000);
+        }
     }
-    if (!ferror(stdout)) printf("CHARGE_LOG_END next=%" PRIu64 "\n", header.total);
+    if (!ferror(stdout)) {
+        fflush(stdout);
+        printf("CHARGE_LOG_END next=%" PRIu64 "\n", header.total);
+    }
 }
 
 static int charge_read_value(const char *path, char *value, size_t size) {

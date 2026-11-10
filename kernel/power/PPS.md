@@ -51,7 +51,7 @@ BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b 
 
 测试 profile 按 LOS 开放 I2C15 GPIO44/45 和 BQ IRQ GPIO68；GPIO8 未接入 LOS 的 VBUS-disable 行为。早期绑定、协商/启泵/回退和采样门控修正见[历史真机证据](../../docs/archive/hardware/2026-11-08-umi-pps-ams-retry.md)；`49b1f406` 后的 L2/L3 演进见[本轮记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)。历史待办及错误值不作为当前运行状态。
 
-活动类型支持列表不证明合约；Source_Capabilities、APDO Request、Accept/PS_RDY、ADC、switching 与净充电分别核实。`tcpm-log` 显式读取 `/sys/kernel/debug/usb/tcpm-*/log`，会消费协议环，读取至 EOF，内核环容量为 262144 条；不自动并入 `status`。旧 `-95` 可来自接回 Mac 后仅固定 PDO 的会话，不能代替充电器会话的错误。共享 VBUS 仍 sink/device-only。PD 与 PPS 充电均已在本机分别约 10 分钟 L3 通过并宣告稳定；保护/温控/恢复分项、GPIO8、RISK-010、温度标度及主机串口完整导出仍待独立专项复核。
+活动类型支持列表不证明合约；Source_Capabilities、APDO Request、Accept/PS_RDY、ADC、switching 与净充电分别核实。`tcpm-log` 显式读取 `/sys/kernel/debug/usb/tcpm-*/log`，会消费协议环，读取至 EOF，内核环容量为 262144 条；不自动并入 `status`。旧 `-95` 可来自接回 Mac 后仅固定 PDO 的会话，不能代替充电器会话的错误。共享 VBUS 仍 sink/device-only。PD 与 PPS 充电均已在本机分别约 10 分钟 L3 通过并宣告稳定；Windows 串口完整导出已在 pacing 修复镜像上复验无缺段。保护/温控/恢复分项、GPIO8、RISK-010、温度标度仍待独立专项复核。
 
 ## Linux 标准接口与诊断
 
@@ -69,7 +69,7 @@ DT 使用 `monitored-battery` 只指向 simple-battery；`qcom,fuel-gauge`/`xiao
 
 - `python -m unittest discover -s tests -v`：策略、实际控制代码的合成传输故障、原充电/日志回归。
 - `python3 tools/check_wired_dt.py --dtb <L2-DTB> --schema <processed-schema.json>`：定向 schema 与实际 phandle 校验，任何诊断均失败；测试需配置 MISEED_WIRED_DTB/MISEED_DT_SCHEMA 并安装 dtschema，命令见本轮记录。
-- Windows 日志导出需可选依赖 `pyserial`：`python tools/collect_charge_log.py --port COM6 --output local/charging-session.log`（端口按实际枚举选择）。先有界收包后校验，检查 VID/PID、诊断身份和连续序列；缺段/超时保留原始 `.partial`，换文件名重试且不重启；最终 `.log` 不覆盖旧文件。macOS/Linux 使用实际 ACM 端口，无此依赖。
+- Windows 日志导出需可选依赖 `pyserial`：`python tools/collect_charge_log.py --port COM6 --output local/charging-session.log`（端口按实际枚举选择）。专用读线程持续排空 CDC-ACM，先收齐后再校验；COM RX 缓冲优先 8 MiB。救援端 `charge-log` 每 4 行 pacing/`fflush`。修复镜像 `b4026d67…d44e9` 真机全量 1102 条无缺段。检查 VID/PID、诊断身份和连续序列；缺段/超时保留原始 `.partial`，换文件名重试且不重启；最终 `.log` 不覆盖旧文件。macOS/Linux 使用实际 ACM 端口，无此依赖。
 - `bash tools/build_kernel_l2.sh`：固定基线 ARM64 内核/DTB/救援镜像；校验 PPS 内建配置、对象和链接符号。
 - 本机 L3：PD 与 PPS 分别约 10 分钟稳定运行见[本轮记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)；旧 QUP/RPMh、SMB5 回退和电压样本问题见[续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。本版源码须对应镜像哈希的 L3，不沿用更早短时 switching 证据。
 
