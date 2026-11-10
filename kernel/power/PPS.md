@@ -63,6 +63,28 @@ thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cool
 
 `python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。有界 `charge_test` 仅在显式启用 `CONFIG_MISEED_CHARGE_DIAGNOSTICS` 时存在，默认镜像关闭，不作为产品依赖。
 
+### 有线旁路供电的上层调用
+
+旁路供电复用已经开放的 Linux 标准 `power_supply` ABI：外部有线电源供系统运行，电池充电禁止并保持净电流近零；能力与 L3 证据归 [platforms](../../docs/platforms.md#硬件能力)。上层无需新增私有 sysfs、ioctl、Android HAL 或诊断命令；标准属性含义遵循 [内核 ABI 文档](https://raw.githubusercontent.com/torvalds/linux/master/Documentation/ABI/testing/sysfs-class-power)。
+
+| 上层操作 | 现有接口与顺序 |
+| --- | --- |
+| 开启有线旁路 | 先向 BQ25970 泵的 `charge_behaviour` 写 `inhibit-charge`，再向 SMB5 写同值；保留外部输入供系统，不把 `input_current_limit=0` 当作旁路开关 |
+| 退出旁路 / 恢复自动充电 | 先向 SMB5 写 `auto`，成功后再向泵写 `auto`；恢复原有保护策略，故障/停机未完成时保留 `EBUSY`，不强制清除故障 |
+| 查询请求与实际效果 | 读取两路 `charge_behaviour/status/health/online` 和 `qcom-battery` 的 `status/current_now/voltage_now`；外部在线、两路停充及电池净电流共同判断效果，µA/µV 分别换算，不将读错或缺失填 0 |
+
+现有协调消费者可直接供上层调用（以下命令在目标 Linux 上执行）：
+
+```sh
+python3 tools/wired_power.py --action status
+sudo python3 tools/wired_power.py --action inhibit-charge
+sudo python3 tools/wired_power.py --action auto
+```
+
+工具按名称/泵型号唯一发现设备，仅操作有线路径，JSON 返回 `supplies`、`missing` 和逐设备 `control_errors`。退出 0 表示设备齐全且控制写入无报告错误；上层仍须检查属性中的 `error`，异步轮询实际状态，不能把请求成功直接显示为已生效。控制是跨两路的有序操作，不是用户空间原子事务：禁止时即使泵写入失败仍尝试禁止 SMB5 并报告错误；恢复时 SMB5 失败即不请求泵，内核继续保持互锁。外部离线时显示为禁止充电请求已保持，不显示外部供电中；单独 `pps-stop` 仍允许 SMB5 充电，不能代替整条路径旁路请求。
+
+写控制由 root 或显式授权的系统服务持有权限，上层普通应用通过该服务调用，避免全局放宽 sysfs 写权限。Debian 服务/界面尚待集成；状态反馈可消费标准属性和 uevent。该契约不添加持久 ABI，不修改电气阈值，不把有线结果复用于无线 RX/TX；旁路供电的控制器仍保留既有故障、温控和停机恢复边界。
+
 DT 使用 `monitored-battery` 只指向 simple-battery；`qcom,fuel-gauge`/`xiaomi,fuel-gauge` 指向遥测提供者，`power-supplies` 表示 TCPM 电源。三份本地 binding 位于 [bindings](bindings/)，属于可校验的本地提案，未宣称上游已接受。内核内部 `umi_smb5_*` 原子互锁仍保留：通用属性不能表达失败保留所有权，不能用用户空间分步写入取代它。完整接口审查与本轮验证见[记录](../../docs/archive/reviews/2026-11-10-wired-mainline-power.md)。
 
 `miseed-pps` 状态、请求和错误进入已有断线 RAM 日志。日志从启动后动态扩展，RAM 文件预算为 64 MiB，不覆盖旧记录；预算用尽或分配/写入失败时丢弃新增记录并累计 `storage_errors`；导出读取不可变前缀，每次仅用一条记录缓冲，重启仍会清空 RAM 日志。相同电压/电流不再每个 200 ms 控制周期重复发送 APDO；参数变化立即请求，稳定时每 8 秒刷新，为 USB-IF 的 10 秒 SPR PPS 请求超时留出调度余量（[USB-IF overview](https://www.usb.org/sites/default/files/D2T2-1%20-%20USB%20Power%20Delivery.pdf)）。PD PHY 的 `rx_irq_signal` 只表示收到 RX 中断，不表示 reset；异常失败会记录 BQ 当前/锁存故障、报警、状态、看门狗和控制寄存器原值，保持原有停泵/回退行为。TCPM 指针表用可回退到非连续内存的 kvcalloc 分配，分配失败只停用日志；环保留 262144 条，覆盖更长的协议时间线；它仍有界，`tcpm-log` 读到 EOF 也不代表环溢出前后的完整历史。详见[接收修正](../../docs/archive/research/2026-11-09-pd-receive-guard.md)。SMB5 配置沿用 LOS 3 A ICL、6 A FCC、4.45 V FV；PPS 占用期间拒绝并发普通充电命令，PPS 正常退出后恢复 SMB5 worker。挂起/关机/移除停止循环；挂起失败拒绝休眠，恢复时仅重启原可运行会话，保留手动停止与故障状态；手动停止后继续只读观察拔线。SMB5 inhibit 时拒绝 PPS 接管。

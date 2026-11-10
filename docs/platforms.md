@@ -56,5 +56,5 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | NFC / eSE | 标准 NCI 本地 L2；新驱动 L3/读卡/eSE 未测 | [NFC](NFC.md)；RISK-011 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线 FG/SMB5 ABI/fullon 已复测；固定 PD/PPS 稳定；修复镜像协商/故障清理/拔插恢复/禁止保持 L3 通过；硬件保护/旧故障开放 | [ABI 读数](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [PPS](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；RISK-004 |
+| 有线 FG/SMB5、PD/PPS / 旁路供电 | 旁路供电已实现并完成 L3：外部供系统、电池停充；PD/PPS 稳定，故障清理/恢复/禁止保持 L3；硬件保护归 RISK-004 | [ABI](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [PPS](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [旁路/恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |

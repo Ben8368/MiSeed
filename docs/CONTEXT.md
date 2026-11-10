@@ -10,7 +10,7 @@ WP10 使用 SN100T Linux NFC/NCI 与标准 Netlink；新驱动 RF/读卡/恢复 
 
 RAM 启动、USB CDC、simpledrm 与 Android 往返 L3 通过；UEFI、原生 DSI、触控未验，见[真机记录](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)。
 
-有线 PD/PPS 既有约 10 分钟稳定结论保留；修复镜像 `9f7534c1…1872f3` 已过双 PPS 会话、故障清理/拔插恢复及固定 PD/禁止保持 L3，见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。硬件保护注入仍归 RISK-004，无线 RX/TX 未移植。
+有线旁路供电已实现并完成真机验证；镜像 `9f7534c1…1872f3` 的 PD/PPS、故障清理/恢复与禁止保持 L3 见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。既有 PD/PPS 约 10 分钟稳定结论保留；硬件保护专项归 RISK-004，无线 RX/TX 未移植。
 
 ## 近期优先级
 
