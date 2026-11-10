@@ -65,6 +65,23 @@ class DtValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "failed, skipped, or changed"):
                     validate_kernel_dt.run_regressions("dtb", "schema", {})
 
+    def test_yamllint_is_required_before_kbuild(self):
+        for version, executable in ((None, "/fixture"), ("0.0", "/fixture"),
+                                    (validate_kernel_dt.YAMLLINT_VERSION, None)):
+            def metadata(name):
+                if name == "dtschema":
+                    return validate_kernel_dt.DTSCHEMA_VERSION
+                if version is None:
+                    raise validate_kernel_dt.importlib.metadata.PackageNotFoundError(name)
+                return version
+            with self.subTest(version=version, executable=executable), patch.object(
+                    validate_kernel_dt.importlib.metadata, "version", side_effect=metadata), patch.object(
+                    validate_kernel_dt.shutil, "which", side_effect=lambda name, **kw:
+                    executable if name == "yamllint" else "/fixture"):
+                with self.assertRaises((ValueError,
+                                        validate_kernel_dt.importlib.metadata.PackageNotFoundError)):
+                    validate_kernel_dt.validate(None, None, None)
+
 
 if __name__ == "__main__":
     unittest.main()

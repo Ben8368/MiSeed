@@ -261,6 +261,23 @@ static int umi_pps_validate_cycle(struct umi_pps *c)
 	return ret;
 }
 
+/* Only the clean loss of RUN's enable/switching bits can be a detach race.
+ * Absolute limits, sensor errors and real/latched protections remain faults.
+ */
+static bool umi_pps_pump_lost(struct umi_pps *c, struct umi_pps_sample *s)
+{
+	struct umi_pps_sample live = *s;
+
+	if (c->state != PPS_RUN || !s->fault || s->fault_raw || s->latched_raw ||
+	    s->status_raw || s->alarm_raw != BIT(1) ||
+	    !(s->watchdog_raw & BQ_WD_DISABLED) || (s->control_raw & BQ_ENABLE))
+		return false;
+	live.online = 1;
+	live.fault = 0;
+	return umi_pps_sample_ok(&live, c->max_bat_mv, c->request_ma,
+				 c->request_mv, false);
+}
+
 void umi_pps_work(struct work_struct *work)
 {
 	struct umi_pps *c = container_of(to_delayed_work(work), struct umi_pps, work);
@@ -448,6 +465,28 @@ fail:
 			dev_info(c->dev, "miseed-pps pre-claim error=%d\n", ret);
 		c->last_error = ret;
 		goto out;
+	}
+	/* A physical detach can land between a PPS request and its fresh BQ
+	 * sample. The pump then drops CHG_EN as VBUS disappears, which otherwise
+	 * looks like a hardware fault while the previous ONLINE value is stale.
+	 * Preserve the diagnostic, but finish the normal detach path when TCPM now
+	 * confirms that the source is gone. I/O/timeout/protection errors must not
+	 * be hidden by a concurrent detach, including partial latch reads. Stop
+	 * still keeps SMB5 ownership if either stop mechanism fails.
+	 */
+	if (c->pps && (ret == -ENOTCONN ||
+		      (ret == -ERANGE && umi_pps_pump_lost(c, &s)))) {
+		int online;
+
+		if (!umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &online) && !online) {
+			dev_info(c->dev, "miseed-pps detached during control cycle error=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
+				 ret, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
+				 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high,
+				 s.switching, s.fault_raw, s.latched_raw, s.alarm_raw,
+				 s.status_raw, s.watchdog_raw, s.control_raw);
+			umi_pps_stop(c, PPS_WAIT_PLUG, 0);
+			goto out;
+		}
 	}
 	dev_info(c->dev, "miseed-pps failure state=%u error=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
 		 c->state, ret, c->request_mv, c->request_ma, c->max_bat_mv,

@@ -22,6 +22,7 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 DTSCHEMA_VERSION = "2025.8"
+YAMLLINT_VERSION = "1.38.0"
 SCOPE = SCHEMAS + ("net/nfc/nxp,sn100t.yaml", "display/simple-framebuffer.yaml")
 
 
@@ -44,13 +45,15 @@ def run_regressions(dtb, schema, env):
 
 
 def validate(source, build, dtb):
-    version = importlib.metadata.version("dtschema")
-    if version != DTSCHEMA_VERSION:
-        raise ValueError(f"dtschema {DTSCHEMA_VERSION} required; found {version}")
+    for package, expected in (("dtschema", DTSCHEMA_VERSION),
+                              ("yamllint", YAMLLINT_VERSION)):
+        version = importlib.metadata.version(package)
+        if version != expected:
+            raise ValueError(f"{package} {expected} required; found {version}")
     env = dict(os.environ, LC_ALL="C")
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     for tool in ("make", "dt-doc-validate", "dt-mk-schema", "dt-validate",
-                 "dt-extract-example", "fdtget", "fdtput", "aarch64-linux-gnu-gcc"):
+                 "dt-extract-example", "yamllint", "fdtget", "fdtput", "aarch64-linux-gnu-gcc"):
         if not shutil.which(tool, path=env["PATH"]):
             raise ValueError("missing DT validation tool: " + tool)
     if (source / ".miseed-source-revision").read_text().strip() != REVISION:

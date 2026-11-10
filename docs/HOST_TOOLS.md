@@ -31,9 +31,9 @@ pwsh -NoProfile -File tools/test_host.ps1
 
 入口只临时补齐进程 PATH，检查工具后分别运行 Windows 与 WSL Ubuntu-24.04 回归及 ShellCheck，任一步失败即退出。Windows 不具备的 Linux 伪终端、FIFO、权限、Bash 用例由 WSL 实际执行，不能把原生跳过计为通过。WSL 需 Python 3.11+、Git、gcc/cc、Bash、dtc/libfdt 工具及 ShellCheck；手机 ARM64 L2 仍用锁定交叉工具链。已有 Windows 原生协议/日志测试的来源见[本机记录](archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
 
-DT/schema 专用验证使用 `dtschema==2025.8` venv（`python3 -m venv <venv>` 后安装 `tools/requirements-dtschema.txt`）。完成 L2 后执行 `<venv>/bin/python tools/validate_kernel_dt.py --source <源码> --build <Kbuild目录> --dtb <最终打包DTB>`；固定范围、依赖与四项 DT 反例均为必需，缺失/跳过/诊断即失败。CI 的 L2 job 同步执行。
+DT/schema 专用验证使用 `dtschema==2025.8` / `yamllint==1.38.0` venv（`python3 -m venv <venv>` 后安装 `tools/requirements-dtschema.txt`）。完成 L2 后执行 `<venv>/bin/python tools/validate_kernel_dt.py --source <源码> --build <Kbuild目录> --dtb <最终打包DTB>`；固定范围、依赖与四项 DT 反例均为必需，缺失/跳过/诊断即失败。CI 的 L2 job 同步执行。
 
-make 时钟警告现在阻断构建；先查 `timedatectl timesync-status` 与 journal 回拨记录。WSL 来宾 NTP 与 Hyper-V 冲突的处理/回退和本机证据见[环境复核](archive/reviews/2026-11-10-kernel-validation-environment.md)；不改写输入时间戳。
+make 时钟警告阻断构建，不改写输入时间戳。先查来宾 NTP、宿主同步日志及频率校正；WSL/Hyper-V 处置见[环境复核](archive/reviews/2026-11-10-kernel-validation-environment.md)，Colima/Lima 冲突、残留校频与回退见[本机修复](archive/reviews/2026-11-10-pd-pps-detach-clock.md)。
 
 ## ADB / Fastboot 工具与连接
 

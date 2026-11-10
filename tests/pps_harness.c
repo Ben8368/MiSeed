@@ -76,7 +76,8 @@ static enum power_supply_property busy_prop;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
 static unsigned int delayed_reg;
 static u64 read_delay_ms, request_delay_ms;
-static int voltage_requests, current_requests, pps_activations, pump_during_request, vbus_request_drop, bus_fault_during_request;
+static int voltage_requests, current_requests, pps_activations, pump_during_request, vbus_request_drop, bus_fault_during_request, disconnect_after_online_reads;
+static void pps_detach_during_online_read(struct power_supply *p, enum power_supply_property prop, int *reads_left);
 static const char *missing_property;
 static int io_fail(void) { return ++io_count == fail_at ? -EIO : 0; }
 static int iio_read_channel_processed(struct iio_channel *chan, int *v) {
@@ -123,6 +124,7 @@ static int power_supply_get_property(struct power_supply *p, enum power_supply_p
  int ret=io_fail(); if(ret) return ret;
  if (fail_sensor && p == &bms) return -EIO;
  if (fail_caps && prop == POWER_SUPPLY_PROP_VOLTAGE_MAX) return -EIO;
+ pps_detach_during_online_read(p, prop, &disconnect_after_online_reads);
  v->intval=p->prop[prop]; return 0;
 }
 static int power_supply_set_property(struct power_supply *p, enum power_supply_property prop,
@@ -147,7 +149,7 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
   if (fail_pps_unsupported) return -EOPNOTSUPP;
   assert(claim_owned && suspended);pps_activations++;
  }
- if (fail_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) return -EIO;
+ if (fail_request && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) return fail_request == 2 ? -ENOTCONN : -EIO;
  if (expired_negotiation && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) clock_ms += 601000;
  if (request_delay_ms && prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) {
   clock_ms += request_delay_ms; request_delay_ms=0;
@@ -205,6 +207,7 @@ static void reset(void) {
  vbus_request_drop=bus_fault_during_request=0;
  delayed_reg=0;read_delay_ms=request_delay_ms=0;voltage_requests=current_requests=pps_activations=0;
  thermal_fail=thermal_delay_ms=0;
+ disconnect_after_online_reads=0;
  for(int i=0;i<5;i++){thermal_channels[i].index=i;thermal_mc[i]=30000;c.thermal_channels[i]=&thermal_channels[i];}
  pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD_PPS;
  pd.prop[POWER_SUPPLY_PROP_VOLTAGE_MIN]=3300000;
@@ -230,6 +233,7 @@ static void run(void) {
 }
 #include "pps_notification_cases.h"
 #include "pps_snapshot_cases.h"
+#include "pps_detach_cases.h"
 int main(void) {
  test_notifications();
  test_partial_fault_snapshot();
@@ -315,6 +319,7 @@ int main(void) {
  reset();run();clock_ms+=200;tick();assert(c.state==PPS_RUN);
  pd.prop[POWER_SUPPLY_PROP_ONLINE]=0;tick();
  assert(c.state==PPS_WAIT_PLUG && !claim_owned && !(regs[0x0c]&BIT(7)));
+	test_detach_during_request();
  /* A source AMS / discarded transmission is transient; unrelated I/O errors
   * are still fatal. Reproduce the actual 3A activation without a duplicate AMS.
   */
