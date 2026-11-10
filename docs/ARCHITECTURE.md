@@ -11,11 +11,11 @@
                                   └─ OS initramfs → Debian 等用户空间
 ```
 
-直启用于隔离硬件与 UEFI 交接故障，不能替代产品路径验收。设计理由见 [ADR-0002](ADR/0002-independent-integration.md)。
+产品链路为第二阶段 UEFI → Linux 主线内核 → Debian（MVP 发行版），Recovery 为独立救援入口。ABL 直启用于隔离硬件与 UEFI 交接故障，不能替代产品路径验收。设计理由见 [ADR-0002](ADR/0002-independent-integration.md)。
 
 ## Linux 接口准则
 
-- 目标为 Linux、MVP 为 Debian。移植先对照锁定 mainline 源码的子系统、Documentation/ABI、UAPI 与 DT binding；优先复用/扩展上游驱动，不以搬入下游驱动且可编译作为完成标准。
+- 在 UEFI + Linux 主线内核 + Debian 产品链路中，以下规范约束 Linux 侧；UEFI/BootShim 及 EFI Stub 交接按本文跨层契约实施。移植先对照锁定 mainline 源码的子系统、Documentation/ABI、UAPI 与 DT binding；优先复用/扩展上游驱动，不以搬入下游驱动且可编译作为完成标准。
 - 硬件能力通过所属 Linux 子系统提供：电池/有线充电/无线 RX/TX 分别建模于 power_supply，USB PD/PPS 由 Type-C/TCPM 管理；温度与限流接入 IIO/thermal 的适用接口，硬件安全保护不依赖用户进程存活。
 - NFC 接入 NFC/NCI、generic netlink/AF_NFC；显示以 DRM/KMS、触控以 input/evdev 为产品接口。Debian 消费标准接口；Android HAL/Binder/Bionic/VINTF/私有 ioctl 不作为产品功能前提，eSE 另行评估，不能自动宣称可用。
 - DT 描述已核实硬件并遵守属性含义、单位和拓扑；不能给标准属性重定义语义，也不能冒用近似芯片 compatible。新硬件扩展须补 YAML binding；驱动通过 gpiod/regulator/clock/runtime PM 等适用框架管理资源。

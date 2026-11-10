@@ -20,7 +20,7 @@
 
 ## 不可跨越的边界
 
-- 本仓库目标为 Linux，MVP 为 Debian；按 mainline 子系统、UAPI 与 DT binding 适配，规范见 [ARCHITECTURE](docs/ARCHITECTURE.md#linux-接口准则)。不得把 Android HAL/Binder 或私有 ABI 作为产品功能前提；临时例外须登记技术债。源码存在、标准接口、上游合入、编译通过、真机可用分别举证。
+- 本仓库是移动设备 UEFI + Linux 主线适配层，MVP 为 UEFI + Linux 主线内核 + Debian；第二阶段 UEFI 是产品启动路径，Linux 按 mainline 子系统、UAPI 与 DT binding 适配，规范见 [ARCHITECTURE](docs/ARCHITECTURE.md#linux-接口准则)。不得把 Android HAL/Binder 或私有 ABI 作为产品功能前提；临时例外须登记技术债。源码存在、标准接口、上游合入、编译通过、真机可用分别举证。
 - 刷写、格式化、分区、真实块设备写入和供电修改，必须有本轮明确授权及回退方案。
 - 不猜测电压、电流、温控或采样电阻参数；保护不全时拒绝主动危险充电。
 - 设备具备有线充电与无线充电功能，开发时必须明确区分两条路径；不得因统称“充电”而混淆其硬件、驱动或配置。每次涉及充电的设计、代码、文档或验证，都要标明有线/无线目标并核对对应驱动与配置；只有经证据确认可共享的部分才可共用。

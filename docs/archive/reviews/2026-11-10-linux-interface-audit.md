@@ -101,3 +101,12 @@ SMB5 的 `power-supplies = <&umi_fg>` 用于 BMS 查找；FG 是否应被表达�
 | boot.img | `12195083ce94a8003e20b242957c325e086b786193700f7b40b31d9700b4cc38` |
 
 **未覆盖**：未对本次镜像执行 RAM boot L3，未做 NFC 传输/RF/HCE/eSE 测试，未改供电参数或执行刷写/分区操作；未运行 DT schema 检查、Debian 集成或远端 CI。之前的 ADB Android 基线与本轮 L2 分属独立证据，设备保持 Android/普通 ADB。治理/驱动合并仍须按 QUALITY 做开发者以外的专项复核。
+
+
+## 同日 PR #4 提交修复与 UEFI 目标澄清
+
+维护者再次明确产品链路为 UEFI + Linux 主线内核 + Debian；AGENTS/PRODUCT/ARCHITECTURE 与工作包已明确第二阶段 UEFI、EFI Stub 交接及 Debian 都是完整 MVP 必需项。原有 UEFI 架构未撤销，Linux 直启仍是诊断路径。
+
+首次推送 `9e67f131429f2a741108aba24d7400dd55e6e5c2` 的正文误含字面量 `\n`，Git 未识别 Co-authored-by trailer，导致 PR commits 失败；同次四个平台 Repository 检查成功。本地推送前全量回归为 145 项通过，先前 L2 证据不变。
+
+维护者要求修复 CI 并继续提交后，仅修正这条提交消息；修正前后 Git tree 同为 `68592f1e28bca1117159e3cf9d277c70ce56ab59`，内容未变。UEFI 文档澄清另作新提交。推送使用绑定旧远端 SHA 的 force-with-lease，避免覆盖他人更新；CI 检查器和 workflow 未放宽，AI_RULES 补充推送前对 PR 提交范围运行检查的要求。远端新 HEAD 结果按实际查询汇报，不继承旧 SHA 的 CI 结论。

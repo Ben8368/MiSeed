@@ -29,7 +29,7 @@
 | Cursor | `Co-authored-by: Cursor <cursoragent@cursor.com>` |
 | Jules | `Co-authored-by: Google Labs Jules <161369871+google-labs-jules[bot]@users.noreply.github.com>` |
 
-机器人使用固定 `Bot-authored-by:`；纯人工使用 `Human-authored: true`，不得与 AI/机器人标记混用。多段正文使用文件或独立 `-m`，不用字面量 `\n`。提交后以 `git show -s --format=%B HEAD | git interpret-trailers --parse` 核对；只检查新提交，不回溯历史。
+机器人使用固定 `Bot-authored-by:`；纯人工使用 `Human-authored: true`，不得与 AI/机器人标记混用。多段正文使用文件或独立 `-m`，不用字面量 `\n`。提交后以 `git show -s --format=%B HEAD | git interpret-trailers --parse` 核对；推送前运行 `tools/check_commits.py --base <PR base SHA> --head <HEAD SHA>`，失败即停止推送；只检查 PR 新提交，不回溯历史。
 
 ## PR 与合并
 

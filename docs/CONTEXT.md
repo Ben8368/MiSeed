@@ -1,6 +1,6 @@
 # 当前状态
 
-日期：2026-11-10。本任务分支 `codex/nfc-wireless-charging`；未提交/推送。RQ-14 明确 Linux 目标、Debian MVP；接口审计与治理更新见 [本轮审计](archive/reviews/2026-11-10-linux-interface-audit.md)，例外归 TD-003–007。被动 nfc-status 已过 L1/L2，本轮镜像未做 L3。
+日期：2026-11-10。本任务分支 `codex/nfc-wireless-charging`，对应 PR #4。RQ-14 明确 UEFI + Linux 主线内核 + Debian；UEFI/交接仍按 WP3/WP4 实施。接口审计与治理更新见 [本轮审计](archive/reviews/2026-11-10-linux-interface-audit.md)，例外归 TD-003–007。被动 nfc-status 已过 L1/L2，本轮镜像未做 L3。
 
 WP10 既有 NQ-NCI 内核/DT 已过 L2 与 RAM boot probe/node L3；尚未接入 Linux NFC/NCI，不能认定内核功能完成或只剩 Debian。2026-11-10 ADB 只读核对了 Android HAL/固件/eSE 基线，设备保持 Android、已恢复普通 ADB。后续按 [Linux NFC](NFC.md) 迁移，RISK-011 开放；无线 RX/TX 尚未移植。
 
