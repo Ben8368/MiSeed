@@ -172,7 +172,8 @@ void smb5_status_change_work(struct work_struct *work)
   chip->test_armed = false;
   chip->inhibit = true;
  }
- if (!rc && !chip->inhibit && (!chip->test_armed || chip->test_active))
+ if (!rc && !chip->inhibit && !chip->cooling_state &&
+     (!chip->test_armed || chip->test_active))
   allow = umi_charge_policy(online, present, health == POWER_SUPPLY_HEALTH_GOOD,
                            temp, voltage, soc, chip->max_fv_uv,
                            chip->enabled, chip->test_active);

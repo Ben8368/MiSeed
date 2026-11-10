@@ -8,7 +8,8 @@ from pathlib import Path
 SCHEMAS = ("power/supply/qcom,pm8150b-fg.yaml",
            "power/supply/qcom,pm8150b-charger.yaml",
            "power/supply/xiaomi,umi-bq25970.yaml",
-           "power/supply/battery.yaml", "thermal/thermal-zones.yaml")
+           "power/supply/battery.yaml", "thermal/thermal-zones.yaml",
+           "thermal/thermal-sensor.yaml", "pinctrl/qcom,sm8250-pinctrl.yaml")
 
 
 def check(dtb, schema):
@@ -38,6 +39,14 @@ def check(dtb, schema):
         raise ValueError("monitored-battery target is not simple-battery")
     if prop("/thermal-zones/wired-pps-thermal", "thermal-sensors") != handles["umi_pps"]:
         raise ValueError("wired thermal zone must reference the PPS sensor")
+    zone = "/thermal-zones/wired-pd-thermal"
+    if prop(zone, "thermal-sensors") != handles["umi_charger"]:
+        raise ValueError("fixed PD thermal zone must reference SMB5 battery telemetry")
+    trip = zone + "/trips/warm"
+    if prop(trip, "temperature", "i") != "45000" or prop(trip, "hysteresis", "i") != "0":
+        raise ValueError("fixed PD warm boundary must match the qualified battery gate")
+    if prop(zone + "/cooling-maps/map-warm", "cooling-device") != handles["umi_charger"] + " 1 1":
+        raise ValueError("fixed PD cooling must stop SMB5, separately from PPS")
     result = subprocess.run(["dt-validate", "-s", str(schema), "-l", ":".join(SCHEMAS), str(dtb)],
                             capture_output=True, text=True)
     # dt-validate/make can emit schema failures and still exit zero.

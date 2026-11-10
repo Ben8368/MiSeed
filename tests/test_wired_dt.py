@@ -48,6 +48,30 @@ class WiredDtTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "schema was not loaded"):
                 check(self.dtb, bad)
 
+    def test_fixed_pd_thermal_and_bq_pinctrl_regressions_rejected(self):
+        nodes = check(self.dtb, self.schema)
+        zone = "/thermal-zones/wired-pd-thermal"
+        cases = ((zone, "thermal-sensors", "0"),
+                 (zone + "/trips/warm", "temperature", "46000"),
+                 (zone + "/cooling-maps/map-warm", "cooling-device", "0 1 1"))
+        with tempfile.TemporaryDirectory() as directory:
+            for node, prop, value in cases:
+                with self.subTest(property=prop):
+                    bad = Path(directory) / "bad.dtb"
+                    shutil.copyfile(self.dtb, bad)
+                    subprocess.run(["fdtput", "-t", "i", str(bad), node, prop,
+                                    *value.split()], check=True)
+                    with self.assertRaises(ValueError):
+                        check(bad, self.schema)
+            irq_state = subprocess.check_output(
+                ["fdtget", "-t", "s", str(self.dtb), "/__symbols__", "umi_bq_irq_default"],
+                text=True).strip()
+            bad = Path(directory) / "bad-pinctrl.dtb"
+            shutil.copyfile(self.dtb, bad)
+            subprocess.run(["fdtput", str(bad), irq_state, "input-enable"], check=True)
+            with self.assertRaisesRegex(ValueError, "DT schema diagnostics"):
+                check(bad, self.schema)
+
 
 if __name__ == "__main__":
     unittest.main()

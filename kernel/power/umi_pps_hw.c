@@ -97,16 +97,7 @@ int umi_pps_verify(struct umi_pps *c)
 
 int umi_pps_prepare(struct umi_pps *c)
 {
-	unsigned int i;
-	int ret = umi_pps_disable(c);
-
-	for (i = 0; !ret && i < c->nprotection; i++) {
-		struct bq25970_reg *r = &c->protection[i];
-
-		ret = umi_pps_update(c, r->reg, r->mask, r->value);
-	}
-	if (!ret)
-		ret = umi_pps_verify(c);
+	int ret = bq25970_configure(c->map, c->protection, c->nprotection);
 	c->configured = !ret;
 	return ret;
 }
@@ -168,21 +159,25 @@ int umi_pps_adc(struct umi_pps *c, int channel, int *value)
 
 int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 {
+	struct bq25970_status status = {
+		.fault = s->fault_raw, .latched = s->latched_raw,
+		.alarm = s->alarm_raw, .status = s->status_raw,
+		.watchdog = s->watchdog_raw, .control = s->control_raw,
+	};
 	int ret;
 
 	ret = umi_pps_verify(c);
 	if (!ret)
-		ret = regmap_read(c->map, 0x10, &s->fault_raw);
-	if (!ret)
-		ret = regmap_read(c->map, 0x11, &s->latched_raw);
-	if (!ret)
-		ret = regmap_read(c->map, 0x0d, &s->alarm_raw);
-	if (!ret)
-		ret = regmap_read(c->map, 0x0a, &s->status_raw);
-	if (!ret)
-		ret = regmap_read(c->map, BQ_WATCHDOG, &s->watchdog_raw);
-	if (!ret)
-		ret = regmap_read(c->map, BQ_CONTROL, &s->control_raw);
+		ret = bq25970_fault_snapshot(c->map, &status);
+	/* Preserve partial diagnostics if a later read fails after consuming a
+	 * read-to-clear latch. The error still forces the normal safe stop.
+	 */
+	s->fault_raw = status.fault;
+	s->latched_raw = status.latched;
+	s->alarm_raw = status.alarm;
+	s->status_raw = status.status;
+	s->watchdog_raw = status.watchdog;
+	s->control_raw = status.control;
 	if (ret)
 		return ret;
 	s->fault = s->fault_raw || s->latched_raw || (s->status_raw & 0xcb) ||

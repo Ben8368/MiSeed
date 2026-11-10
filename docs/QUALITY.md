@@ -48,7 +48,7 @@ PR 行数取 GitHub `additions`（全部新增行），文件数取 `changed_fil
 
 ## Linux 接口验收
 
-- 逐项记录锁定上游版本、子系统/UAPI/binding、Debian 消费方式与差异；依赖 Android HAL 或未登记私有 ABI 的功能不得标记为 Linux 产品能力完成。
+- 逐项记录锁定上游版本、子系统/驱动模型/UAPI/binding、标准用户态消费方式与差异；通用化扩展须附符合上游设计/维护要求的本地审查依据与未覆盖项。依赖 Android HAL 或未登记私有 ABI 的功能不得标记为 Linux 产品能力完成。
 - 验证属性单位、范围、读写权限、错误码、事件通知与设备发现；用标准用户空间入口验证成功、缺失/不支持及恢复路径，不只看节点存在。温度单位按各子系统定义，禁止混用 IIO/thermal 与 power_supply 标度。
 - 新增/修改 DT binding 执行目标 `dt_binding_check`，板级 DTS 执行相关 `dtbs_check`；记录命令、schema 范围及诊断。旧例外须关联 TECH_DEBT，新引入错误阻断；dtc 或 L2 通过不能替代 schema 检查。
 - 产品验收使用 Debian 的标准接口消费者；初期可用最小 Linux 测试程序取得单项证据，不能据此宣称 Debian 已集成。有线、无线 RX、无线 TX、NFC RF 与 eSE 分别验收；标准接口、上游合入与 L2/L3 证据独立记录。

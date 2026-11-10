@@ -32,6 +32,7 @@
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
 #include <linux/jiffies.h>
+#include <linux/thermal.h>
 #include "umi_charge_policy.h"
 #include "umi_smb5.h"
 
@@ -87,6 +88,7 @@ struct smb5_chip {
 	struct mutex lock;
 	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
 	bool pps_owned;
+	unsigned long cooling_state;
 	unsigned long test_deadline;
 	unsigned int test_seconds;
 	int max_fv_uv;
@@ -108,6 +110,7 @@ int smb5_get_input_current(struct smb5_chip *chip, int *current_ua);
 int smb5_get_prop_health(struct smb5_chip *chip, int *val);
 int smb5_init_hw(struct smb5_chip *chip);
 void smb5_status_change_work(struct work_struct *work);
+int smb5_register_thermal(struct smb5_chip *chip);
 int smb5_set_property(struct power_supply *psy,
 			     enum power_supply_property psp,
 			     const union power_supply_propval *val);

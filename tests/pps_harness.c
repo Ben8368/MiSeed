@@ -229,8 +229,10 @@ static void run(void) {
  clock_ms+=200;tick(); assert(c.state==PPS_RUN && enable_count==1);
 }
 #include "pps_notification_cases.h"
+#include "pps_snapshot_cases.h"
 int main(void) {
  test_notifications();
+ test_partial_fault_snapshot();
  union power_supply_propval value;
  struct thermal_zone_device tz = {.devdata=&c};
  struct thermal_cooling_device cooling = {.devdata=&c};

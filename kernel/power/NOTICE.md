@@ -9,7 +9,7 @@
 | `qcom_fg.c` | The Linux Foundation；Caleb Connolly、Joel Selvaraj、Yassine Oudjana |
 | `qcom_pm8150b_charger.c` | Teguh Sobirin；基于 Caleb Connolly 的 PMI8998 charger；保留原 MODULE_AUTHOR |
 
-上述原文件现按职责编译为同名复合模块：FG 使用 `qcom_fg_core.c`（power_supply/生命周期）、`qcom_fg_io.c`（寄存器/SRAM）、`qcom_fg_measure.c`（代际读数）；SMB5 使用 `qcom_pm8150b_{core,hw,policy,supply}.c`（生命周期、硬件访问、有线互锁/策略、标准属性）。各文件及内部头保留原文件头与 SPDX，来源锁记录派生路径；未改变模块名、外部接口或参数。
+上述原文件现按职责编译为同名复合模块：FG 使用 `qcom_fg_core.c`（power_supply/生命周期）、`qcom_fg_io.c`（寄存器/SRAM）、`qcom_fg_measure.c`（代际读数）；SMB5 使用 `qcom_pm8150b_{core,hw,policy,supply}.c`（生命周期、硬件访问、有线互锁/策略、标准属性），另由 `qcom_pm8150b_thermal.c` 提供固定 PD 的标准 thermal 停充。各文件及内部头保留 SPDX 与原始归属，来源锁记录派生路径；模块名不变，新增热接口使用既有温度边界。
 
 colorgarden 的文档将其来源追溯到 zhaoyuanwang123/armbian `sm8250-7.2` 的 0024、0025、0028、0037、0039、0041 补丁。这里使用 colorgarden 固定提交中的完整文件，不重新拼接移动补丁序列。感谢这些作者与移植维护者的工作。
 

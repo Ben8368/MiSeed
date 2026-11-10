@@ -10,7 +10,7 @@
 
 ## 移植前接口审查
 
-按 [Linux 接口准则](ARCHITECTURE.md#linux-接口准则)，先列“功能 → mainline 子系统/ABI/binding → Debian 消费者 → 本地差异”，核对固定源码后再实施。涉及供电须分别标明有线、无线 RX、无线 TX；下游来源仅作为硬件线索，Android 服务不得默认进入 Linux 运行闭包。标准能力缺失时先设计子系统扩展；临时例外在 TECH_DEBT 指定责任工作包与退出条件，未知硬件能力登记 RISK_REGISTER。审查须检查现有例外是否扩大，并按 QUALITY 附接口验证证据。
+按 [Linux 接口准则](ARCHITECTURE.md#linux-接口准则)，先列“功能 → mainline 子系统/驱动模型 → ABI/binding → 标准用户态消费者 → 本地差异”，核对固定源码后再实施。涉及供电须分别标明有线、无线 RX、无线 TX；下游来源仅作为硬件线索，Android 服务不得默认进入 Linux 运行闭包。标准能力缺失时，实施前记录复用候选、未覆盖原因、通用化扩展方案及对应上游设计/维护要求的依据和评审路径。临时例外在 TECH_DEBT 指定责任工作包与退出条件，未知硬件能力登记 RISK_REGISTER。审查须检查现有例外是否扩大，并按 QUALITY 附接口验证证据。
 
 ## 🚦 Audit Report
 

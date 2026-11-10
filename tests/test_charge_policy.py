@@ -110,6 +110,7 @@ struct smb5_chip {
  int lock, max_fv_uv;
  bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
  unsigned long test_deadline;
+ unsigned long cooling_state;
 };
 struct device { struct smb5_chip *chip; };
 struct device_attribute { int unused; };
@@ -226,6 +227,17 @@ int main(void) {
  values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 0; tick(&c, 3500, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4100000;
  health = 0; tick(&c, 4000, 1); assert(!enabled); health = 1;
+ /* Thermal requests survive user auto, unplug/replug and PPS release.
+  * Clearing cooling removes only that request; all independent gates apply. */
+ c.test_armed = c.test_active = false; c.inhibit = false;
+ c.cooling_state = 1; tick(&c, 4100, 1); assert(!enabled);
+ tick(&c, 4200, 0); tick(&c, 4300, 1); assert(!enabled && c.cooling_state == 1);
+ c.cooling_state = 0; c.inhibit = true;
+ tick(&c, 4400, 1); assert(!enabled);
+ c.inhibit = false; values[POWER_SUPPLY_PROP_TEMP] = 451;
+ tick(&c, 4500, 1); assert(!enabled);
+ values[POWER_SUPPLY_PROP_TEMP] = 300;
+ tick(&c, 4600, 1); assert(enabled);
  /* A failed stop uses input suspend and never feeds the watchdog. */
  int old_feeds = feeds;
  stop_error = -EIO;

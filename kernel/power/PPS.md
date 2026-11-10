@@ -59,6 +59,8 @@ BQ25970 注册 `/sys/class/power_supply/bq25970-charger`，提供 `online/status
 
 thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cooling device `umi-wired-pps` 提供 0–15 档。DT trip/滞回与既有表一致；最终限流取 cooling 请求与独立保护的严格值，用户写 cooling state=0 不解除保护。该 zone 只管理有线 PPS，不能当作固定 PD、无线 RX/TX 的完整热模型。
 
+有线固定 PD/SMB5 单独提供 `wired-pd-thermal`（电池温度，m°C）与 `umi-wired-pd`（0=允许原策略、1=停充）。DT 以已有 45°C 暖端保守停充，不引入新的温控阈值、滞回或 FCC 表；冷端/读错保护仍由 worker 独立执行。cooling 请求跨拔插和 PPS 所有权释放保持，state=0 不清用户 inhibit、也不直接启充；PPS 占用时不触碰其互锁。此实现与新 DT 的 L3 另验，完整板级热模型未宣称完成，见[完善记录](../../docs/archive/reviews/2026-11-10-linux-standard-interfaces.md)。
+
 `python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。有界 `charge_test` 仅在显式启用 `CONFIG_MISEED_CHARGE_DIAGNOSTICS` 时存在，默认镜像关闭，不作为产品依赖。
 
 DT 使用 `monitored-battery` 只指向 simple-battery；`qcom,fuel-gauge`/`xiaomi,fuel-gauge` 指向遥测提供者，`power-supplies` 表示 TCPM 电源。三份本地 binding 位于 [bindings](bindings/)，属于可校验的本地提案，未宣称上游已接受。内核内部 `umi_smb5_*` 原子互锁仍保留：通用属性不能表达失败保留所有权，不能用用户空间分步写入取代它。完整接口审查与本轮验证见[记录](../../docs/archive/reviews/2026-11-10-wired-mainline-power.md)。

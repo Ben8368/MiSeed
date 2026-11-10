@@ -42,7 +42,7 @@ bool umi_pps_changed(struct umi_pps *c)
 	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_USB_TYPE, &next.usb_type);
 	if (ret)
 		next.usb_type = ret;
-	ret = regmap_read(c->map, 0x0a, &status);
+	ret = bq25970_live_status(c->map, &status);
 	next.pump_status = ret ? ret : !!(status & BIT(2));
 	if (c->reported_valid && prev->state == next.state &&
 	    prev->online == next.online && prev->usb_type == next.usb_type &&
@@ -92,7 +92,7 @@ static int umi_pps_get_property(struct power_supply *psy,
 			val->intval = !!raw;
 		break;
 	case POWER_SUPPLY_PROP_STATUS:
-		ret = regmap_read(c->map, 0x0a, &status);
+		ret = bq25970_live_status(c->map, &status);
 		if (!ret)
 			val->intval = status & BIT(2) ? POWER_SUPPLY_STATUS_CHARGING :
 				POWER_SUPPLY_STATUS_NOT_CHARGING;

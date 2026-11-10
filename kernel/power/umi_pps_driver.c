@@ -85,7 +85,6 @@ static int umi_pps_probe(struct i2c_client *client)
 		.num_supplicants = ARRAY_SIZE(supplied_to),
 	};
 	struct umi_pps *c;
-	unsigned int id, mode;
 	int ret, i;
 
 	c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
@@ -98,16 +97,9 @@ static int umi_pps_probe(struct i2c_client *client)
 	c->map = devm_regmap_init_i2c(client, &umi_pps_regmap);
 	if (IS_ERR(c->map))
 		return PTR_ERR(c->map);
-	ret = regmap_read(c->map, BQ_ID, &id);
+	ret = bq25970_check_identity(c->map);
 	if (ret)
-		return ret;
-	if (id != 0x10)
-		return dev_err_probe(dev, -ENODEV, "unqualified pump ID 0x%x (no clone fallback)\n", id);
-	ret = regmap_read(c->map, BQ_CONTROL, &mode);
-	if (ret)
-		return ret;
-	if (mode & 0x60)
-		return dev_err_probe(dev, -EINVAL, "only standalone BQ25970 is qualified by this port\n");
+		return dev_err_probe(dev, ret, "BQ25970 identity/standalone mode not verified\n");
 	ret = umi_pps_disable(c);
 	if (ret)
 		return ret;

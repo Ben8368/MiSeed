@@ -12,7 +12,7 @@
 		function = "gpio";
 		drive-strength = <2>;
 		bias-pull-up;
-		input-enable;
+		/* TLMM irq_request_resources sets GPIO input direction. */
 	};
 };
 

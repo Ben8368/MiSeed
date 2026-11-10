@@ -10,6 +10,7 @@ config BATTERY_MISEED_QCOM_FG
 config CHARGER_MISEED_PM8150B
 	tristate "MiSeed PM8150B charger port (Umi runtime)"
 	depends on SPMI && POWER_SUPPLY && IIO && OF
+	depends on THERMAL && THERMAL_OF
 	help
 	  SMB5 driver from colorgarden/umi-mainline with the fixed LOS Umi
 	  current/voltage profile and automatic attach policy. The optional

@@ -32,6 +32,10 @@ properties:
       - const: usb_in_i_uv
       - const: usb_in_v_div_16
   monitored-battery: true
+  '#thermal-sensor-cells':
+    const: 0
+  '#cooling-cells':
+    const: 2
   qcom,fuel-gauge:
     $ref: /schemas/types.yaml#/definitions/phandle
     description: Telemetry provider, not a source supplying power to this charger.
@@ -45,5 +49,7 @@ required:
   - io-channel-names
   - monitored-battery
   - qcom,fuel-gauge
+  - '#thermal-sensor-cells'
+  - '#cooling-cells'
 
 additionalProperties: false

@@ -218,6 +218,9 @@ static int smb5_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, rc, "Couldn't set wake irq\n");
 
 	platform_set_drvdata(pdev, chip);
+	rc = smb5_register_thermal(chip);
+	if (rc)
+		return rc;
 #ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
  rc = devm_device_add_group(&chip->chg_psy->dev, &smb5_group);
  if (rc) return rc;

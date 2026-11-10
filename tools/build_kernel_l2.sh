@@ -158,7 +158,7 @@ install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 # a standalone umi-bq25970.o is only materialized for the module case.
 # Check both built-in constituents here and their linked symbols below.
 readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
-    qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply
+    qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply qcom_pm8150b_thermal
     umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970)
 power_objects=()
 for driver in "${power_drivers[@]}"; do
@@ -170,7 +170,7 @@ install -m 0644 "$source_tree/.miseed-pd-diagnostics.json" "$output_root/pd-diag
 install -m 0644 "$build_tree/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.o" "$output_root/qcom_pmic_typec_pdphy.o"
 cp "$build_tree/.config" "$output_root/resolved.config"
 aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
-for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr sn100x_probe nci_register_device bq25970_update bq25970_adc bq25970_verify; do
+for symbol in qcom_fg_probe smb5_probe smb5_register_thermal umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr sn100x_probe nci_register_device bq25970_update bq25970_adc bq25970_verify; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
@@ -245,6 +245,7 @@ sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" 
     "$repo_root/kernel/power/qcom_fg_measure.c" "$repo_root/kernel/power/qcom_fg_internal.h" \
     "$repo_root/kernel/power/qcom_pm8150b_core.c" "$repo_root/kernel/power/qcom_pm8150b_hw.c" \
     "$repo_root/kernel/power/qcom_pm8150b_policy.c" "$repo_root/kernel/power/qcom_pm8150b_supply.c" \
+    "$repo_root/kernel/power/qcom_pm8150b_thermal.c" \
     "$repo_root/kernel/power/qcom_pm8150b_internal.h" "$repo_root/kernel/power/qcom_pm8150b_regs.h" \
     "$repo_root/kernel/power/Kconfig" "$repo_root/kernel/power/umi_charge_policy.h" \
     "$repo_root/kernel/power/umi-pm8150b.dtsi" "$repo_root/tools/apply_power_port.py" \

@@ -24,11 +24,11 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-源码偿还：FG/SMB5/BQ 已采用 power_supply；新增修正 FG 充电正号与有线消费者、SMB5 ADC 输入电流换算，抽出 BQ 寄存器层，诊断独立可选，见[续修](archive/reviews/2026-11-10-mainline-interface-followup.md)。umi_smb5_* 保留失败锁定互锁，不能以非原子的用户空间写入替代；完整芯片驱动/板级策略拆分和所有权专项复核仍待完成。剩余新 ABI 的有线 PD/PPS、保护恢复 L3、Debian 消费与独立复核；既有稳定运行结论不变。
+源码偿还：FG/SMB5/BQ 已采用 power_supply，修正 FG 电流符号/SMB5 ADC 换算，诊断独立可选；BQ 身份检查、停泵后配置/读回、故障快照与 ADC 下沉芯片后端，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。umi_smb5_* 保留失败锁定互锁，不以用户空间分步写入替代；独立通用芯片驱动、板级策略拆分及所有权专项复核仍开放。新 ABI/保护恢复 L3 在本分支继续，Debian 消费后续进行；既有稳定运行结论不变。
 
-## TD-005：有线温控策略未接入 thermal（P1，2026-11-10；WP9/WP6）
+## TD-005：有线温控模型与验收（P1，2026-11-10；WP9/WP6）
 
-本轮源码偿还：有线 PPS 的既有六路模型接入 thermal zone/cooling device，DT 显式绑定既有 trip/滞回/FCC 档位，独立采样与保护继续生效；wireless_therm 仅是被复用的 ADC 名称。剩余：核实板级温度标度、超温/传感器失败/恢复 L3、固定 PD 热策略及独立复核；未将无线 RX/TX 纳入该 zone。验证范围见[记录](archive/reviews/2026-11-10-wired-mainline-power.md)，未因增加节点关闭本债务。
+源码偿还：有线 PPS 六路 thermal zone/cooling device 保留；有线固定 PD 新增独立电池温度 zone 与二态停充 cooling，沿用 45°C 暖端，冷端/读错独立保护保留，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。未把 PPS 多传感器/FCC 表移用于固定 PD，wireless_therm 名称不代表无线 RX/TX。剩余：板级标度、两条有线路径的超温/读错/恢复 L3、完整板级热模型与独立复核；未因标准节点存在关闭本债务。
 
 ## TD-006：诊断启动与用户空间临时路径（P2，2026-11-10；WP2–WP5）
 
@@ -36,10 +36,10 @@
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-源码偿还：FG/SMB5/BQ25970 与 NFC 已补 YAML；monitored-battery 只指 simple-battery，遥测单独引用，TCPM 为真实供电源，observer 虚构节点已撤除。定向 schema/L2 见[有线记录](archive/reviews/2026-11-10-wired-mainline-power.md)与[NFC 适配](archive/research/2026-11-10-sn100t-linux-nci.md)。剩余新 DT/标准消费者 L3、binding 上游评审、整机 schema/运行时 DTBO；既有有线 BQ IRQ 的 `input-enable` 被 TLMM binding 拒绝，由 WP9 核对配置并经专项复核及适用 L2/L3 退出，见[复核](archive/reviews/2026-11-10-pr4-review-fixes.md)。定向通过不等于整机合规。
+源码偿还：FG/SMB5/BQ25970 与 NFC 已补 YAML，电池/遥测/真实供电源引用已修；撤除 observer 虚构节点。有线 BQ IRQ 删除 TLMM 不支持的 input-enable，输入方向由 IRQ 资源申请设置；新增固定 PD thermal binding，并将 TLMM 加入有线检查范围，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。剩余新 DT/标准消费者 L3、binding 上游评审、整机 schema/运行时 DTBO 与专项复核；定向检查不等于整机合规。
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任与保留原因：WP9 的 `kernel/power/` 下 `qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（324）、`umi_pps.c`（467）分别保留 FG 核心、SRAM 事务、代际读数、有线硬件访问、PPS 状态机完整性；同包 `tests/pps_harness.c`（592）保留故障注入桩。WP10 的 `kernel/nfc/sn100x.c`（325）保留传输/PM；WP0 的 `tests/test_boot_l2.py`（355）保留缓存/平台回归。括号为行数。
+责任与保留原因：WP9 的 `kernel/power/` 下 `qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（324）、`umi_pps.c`（467）分别保留 FG 核心、SRAM 事务、代际读数、有线硬件访问、PPS 状态机完整性；同包 `tests/pps_harness.c`（594）保留故障注入桩。WP10 的 `kernel/nfc/sn100x.c`（325）保留传输/PM；WP0 的 `tests/test_boot_l2.py`（355）保留缓存/平台回归。括号为行数。
 
 偿还：各工作包下次修改时复核内聚性，提取独立接口、代际后端或测试职责；所有相关文件≤300 行且适用回归通过后关闭。拆分与验证见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，本项不豁免红灯或供电安全要求。
