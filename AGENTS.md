@@ -9,7 +9,7 @@
 | 本轮问题 | 读取位置 |
 | --- | --- |
 | 产品范围 / 模块接口 / 本机契约 | [PRODUCT](docs/PRODUCT.md) / [ARCHITECTURE](docs/ARCHITECTURE.md) / [platforms](docs/platforms.md) |
-| 实施、审查、提交 | [AI_RULES](docs/AI_RULES.md)；验证要求查 [QUALITY](docs/QUALITY.md) |
+| 实施、审查、提交 | [AI_RULES](docs/AI_RULES.md)；红黄绿灯治理与验证要求查 [QUALITY](docs/QUALITY.md) |
 | 修改 CI / 引入外部代码或固件 | [CI](docs/CI.md) / [PROVENANCE](docs/PROVENANCE.md) |
 | 任务依赖 / 未知假设 / 实现妥协 | [实施计划](docs/implementation-plan.md) / [风险](docs/RISK_REGISTER.md) / [技术债](docs/TECH_DEBT.md) |
 | 文档职责、预算或长期决定 | [GOVERNANCE](docs/GOVERNANCE.md)；仅追溯决策时查 [ADR 索引](docs/ADR/README.md) |
