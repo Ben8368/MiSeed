@@ -8,7 +8,7 @@
 | 设备身份 | DEVICE_OBSERVED：`umi` / Mi 10 / `kona`；hwversion `2.9.1`、board-id `<0x2b 0>`；USER_REPORTED：国行 | SKU、物理板号待核 |
 | 内存 | USER_REPORTED：12GB | 本机容量、保留区、ABL 占用 |
 | 存储 | USER_REPORTED：256GB；UPSTREAM_VERIFIED：UFS；观测到 122 个 by-name 链接，无 A/B 后缀 | GPT/LUN 与分区未知；本地包 `boot` 128MiB，[研究](archive/research/2026-11-06-stock-boot-layout.md)；名称不证明可写 |
-| 显示 | USER_REPORTED：CSOT；DEVICE_OBSERVED：Android cmdline 报告 OLED panel ID 0B；MiSeed VA48/PA48 rotate:3 镜像 RAM boot 后，维护者确认 16×32 大字横向日志及倒转摄像头避让可用 | simpledrm/KMS 已 L2、新镜像未 L3；原生 DSI 未实现 |
+| 显示 | CSOT；旧 VA48/PA48 rotate:3 L3；本镜像 simpledrm 屏幕日志正常、方向正确 L3 | 原生 DSI 未实现 |
 | 触控 | UNVERIFIED；候选树同时含 ST FTS 与 Goodix | 实际 Touch IC、固件及驱动 |
 | Bootloader | Fastboot：`umi`、已解锁、安全启动开启、下载上限 805306368；版本空 | 槽位、ABL 版本、内存图未知；下载上限非启动上限 |
 | ABL / boot header | DEVICE_OBSERVED：官方 LOS 23.2 v2 boot 与仅替换 kernel 的同组件镜像均经 `fastboot boot` 启动；128 MiB boot 中 122.984 MiB kernel 启动完成 | ABL `Load Error` 未定位；最大尺寸未知 |
@@ -50,9 +50,9 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 
 | 功能 | 状态 | 证据 |
 | --- | --- | --- |
-| Linux RAM bring-up / UEFI | `3e7083a7…383489f` RAM→Fastboot→Android L3；PDC/SPMI/PON 正常；UEFI 未测 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [往返](archive/hardware/2026-11-07-direct-fastboot.md) |
+| Linux RAM bring-up / UEFI | `b53705e` / `9f4713db…69e32014` 启动与 Fastboot→Android 往返 L3；UEFI 未测 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)；[PON](archive/hardware/2026-11-08-upstream-power-ramboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | ACM/日志、既有 rotate:3 显示 L3；simpledrm 本地 L2、新镜像未 L3；触控未实现 | [本轮](archive/hardware/2026-11-08-upstream-power-ramboot.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
+| CSOT 显示 / 触控 / USB | 本镜像 simpledrm 屏幕、USB CDC ACM/串口 L3；触控未实现 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | NFC / eSE | 标准 NCI 本地 L2；新驱动 L3/读卡/eSE 未测 | [NFC](NFC.md)；RISK-011 |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
