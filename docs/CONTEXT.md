@@ -4,7 +4,7 @@
 
 WP10 已替换为 SN100T Linux NFC/NCI transport、binding 与标准 Netlink 消费者，本地 L2 通过，见[适配](archive/research/2026-11-10-sn100t-linux-nci.md)。新驱动 L3、Debian 读卡、eSE 与独立复核尚缺；旧 NQ probe/node L3 不沿用。
 
-PR #4 审核核实修复纳入 #5，本地 L0/L1、ARM64 L2 通过；8 项篇幅黄灯归 TD-008，见[复核](archive/reviews/2026-11-10-pr4-review-fixes.md)。
+PR #4 修复本地 L0/L1、ARM64 L2 通过；#5 审核核实见[复核](archive/reviews/2026-11-10-pr5-review-fixes.md)。8 项篇幅黄灯归 TD-008。
 
 镜像 `aa5a4683…bd1b7f7`（HEAD `75e0e38`）：维护者宣告有线**固定 PD**稳定——约 10.3 分钟真机、SOC 81%→89%、中段约 1.9–2.0 A、33–35°C、充电中无故障；源端无 APDO 时 PPS `error=-11` 回落为预期。见[PD 稳定 L3](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md)。既有镜像 `44854093…e98a89f94c` 的 PD/PPS 各约 10 分钟稳定结论仍有效，见[既有稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
 

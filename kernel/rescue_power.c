@@ -116,7 +116,7 @@ void report_tcpm_logs(void) {
     if (!ports) puts("No TCPM debug log ports found");
 }
 
-/* Passive DT/sysfs metadata only: never issue NCI or change RF/power. */
+/* Locate exactly one wired PPS controller; never infer an I2C bus number. */
 int pps_control_path(char *path, size_t size) {
     const char *base = "/sys/class/power_supply";
     DIR *dir = opendir(base);

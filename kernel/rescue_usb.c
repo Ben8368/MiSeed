@@ -141,5 +141,3 @@ int reopen_usb_console(void) {
     clearerr(stderr);
     return 0;
 }
-
-/* Locate exactly one bound PPS controller; never infer an I2C bus number. */

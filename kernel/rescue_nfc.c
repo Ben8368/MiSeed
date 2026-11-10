@@ -18,6 +18,7 @@ static ssize_t nfc_read_property(const char *path, unsigned char *value, size_t 
     return length;
 }
 
+/* Passive DT/sysfs metadata only: never issue NCI or change RF/power. */
 void report_nfc_status(const char *root, const char *class_root) {
     static const char *const properties[] = {
         "reg", "enable-gpios", "firmware-gpios"
