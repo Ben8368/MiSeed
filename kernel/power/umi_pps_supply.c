@@ -10,6 +10,51 @@
  */
 #include "umi_pps_internal.h"
 
+static int umi_pps_health(struct umi_pps *c)
+{
+	return c->stop_pending ||
+		(c->state == PPS_FAULT && c->last_error != -EOPNOTSUPP) ?
+		POWER_SUPPLY_HEALTH_UNSPEC_FAILURE :
+		(c->state == PPS_RUN ? POWER_SUPPLY_HEALTH_GOOD :
+		 POWER_SUPPLY_HEALTH_UNKNOWN);
+}
+
+/* Caller holds c->lock. Read only live status, never latched fault flags.
+ * Keep read errors in the snapshot so failures and recovery each notify once.
+ * Voltage/current telemetry remains available through the standard getters.
+ */
+bool umi_pps_changed(struct umi_pps *c)
+{
+	struct umi_pps_report next = {
+		.state = c->state, .health = umi_pps_health(c),
+		.manual_stop = c->manual_stop, .configured = c->configured,
+		.stop_pending = c->stop_pending,
+	};
+	struct umi_pps_report *prev = &c->reported;
+	unsigned int status;
+	int ret;
+
+	if (!c->psy || !c->ready || c->removing || c->suspended)
+		return false;
+	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &next.online);
+	if (ret)
+		next.online = ret;
+	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_USB_TYPE, &next.usb_type);
+	if (ret)
+		next.usb_type = ret;
+	ret = regmap_read(c->map, 0x0a, &status);
+	next.pump_status = ret ? ret : !!(status & BIT(2));
+	if (c->reported_valid && prev->state == next.state &&
+	    prev->online == next.online && prev->usb_type == next.usb_type &&
+	    prev->pump_status == next.pump_status && prev->health == next.health &&
+	    prev->manual_stop == next.manual_stop &&
+	    prev->configured == next.configured && prev->stop_pending == next.stop_pending)
+		return false;
+	c->reported = next;
+	c->reported_valid = true;
+	return true;
+}
+
 static enum power_supply_property umi_pps_properties[] = {
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_MODEL_NAME,
@@ -54,11 +99,7 @@ static int umi_pps_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		/* Fault flags are read and latched by the policy worker only. */
-		val->intval = c->stop_pending ||
-			(c->state == PPS_FAULT && c->last_error != -EOPNOTSUPP) ?
-			POWER_SUPPLY_HEALTH_UNSPEC_FAILURE :
-			(c->state == PPS_RUN ? POWER_SUPPLY_HEALTH_GOOD :
-			 POWER_SUPPLY_HEALTH_UNKNOWN);
+		val->intval = umi_pps_health(c);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
@@ -90,6 +131,7 @@ static int umi_pps_set_property(struct power_supply *psy,
 {
 	struct umi_pps *c = power_supply_get_drvdata(psy);
 	int ret = 0;
+	bool changed;
 
 	if (prop != POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR ||
 	    (val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
@@ -113,8 +155,10 @@ static int umi_pps_set_property(struct power_supply *psy,
 	}
 	mod_delayed_work(system_wq, &c->work, 0);
 out:
+	changed = umi_pps_changed(c);
 	mutex_unlock(&c->lock);
-	power_supply_changed(psy);
+	if (changed)
+		power_supply_changed(psy);
 	return ret;
 }
 

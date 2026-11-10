@@ -36,6 +36,13 @@
 enum umi_pps_state { PPS_OFF, PPS_WAIT_PLUG,
 	PPS_SETTLE, PPS_RUN, PPS_DONE, PPS_FAULT };
 
+/* Discrete wired supply state last queued for a power_supply notification. */
+struct umi_pps_report {
+	enum umi_pps_state state;
+	int online, usb_type, pump_status, health;
+	bool manual_stop, configured, stop_pending;
+};
+
 /* Expected writable protection image, checked during every control cycle. */
 struct umi_pps {
 	struct device *dev;
@@ -59,6 +66,8 @@ struct umi_pps {
 	u64 deadline, start_deadline, taper_start, last_pps_request_ms;
 	int request_mv, request_ma, max_bat_mv;
 	int last_error;
+	struct umi_pps_report reported;
+	bool reported_valid;
 };
 
 
@@ -69,6 +78,7 @@ int umi_pps_update(struct umi_pps *c, unsigned int reg,
 int umi_pps_disable(struct umi_pps *c);
 int umi_pps_stop(struct umi_pps *c, enum umi_pps_state state, int reason);
 void umi_pps_work(struct work_struct *work);
+bool umi_pps_changed(struct umi_pps *c);
 int umi_pps_parse(struct umi_pps *c);
 int umi_pps_verify(struct umi_pps *c);
 int umi_pps_prepare(struct umi_pps *c);

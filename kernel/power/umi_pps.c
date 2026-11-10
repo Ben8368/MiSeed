@@ -267,6 +267,7 @@ void umi_pps_work(struct work_struct *work)
 	struct umi_pps_sample s = {};
 	u64 now;
 	int ret = 0, online, next;
+	bool changed;
 
 	mutex_lock(&c->lock);
 	if (c->removing || c->suspended)
@@ -459,7 +460,8 @@ out:
 	/* Keep observing unplug after manual stop without active requests. */
 	if (!c->removing && !c->suspended)
 		mod_delayed_work(system_wq, &c->work, msecs_to_jiffies(UMI_PPS_PERIOD_MS));
+	changed = umi_pps_changed(c);
 	mutex_unlock(&c->lock);
-	if (c->psy)
+	if (changed)
 		power_supply_changed(c->psy);
 }

@@ -23,6 +23,8 @@ class PpsTests(unittest.TestCase):
             source += "\n" + (ROOT / "kernel/power" / name).read_text()
         full = "\n".join((ROOT / "kernel/power" / name).read_text() for name in
                          ("umi_pps_driver.c", "umi_pps_supply.c", "umi_pps_thermal.c"))
+        start = full.index("static int umi_pps_health(")
+        source += full[start:full.index("\nstatic enum power_supply_property", start)]
         for name in ("umi_pps_suspend", "umi_pps_resume", "umi_pps_get_property",
                      "umi_pps_set_property", "umi_pps_property_is_writeable",
                      "umi_pps_get_temp", "umi_pps_get_max_state",
@@ -44,7 +46,8 @@ class PpsTests(unittest.TestCase):
             result = subprocess.run(
                 ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                  "-Wno-unused-function", "-Wno-unused-parameter",
-                 "-I", str(ROOT / "kernel/power"), str(entry), "-o", str(binary)],
+                 "-I", str(ROOT / "kernel/power"), "-I", str(ROOT / "tests"),
+                 str(entry), "-o", str(binary)],
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)

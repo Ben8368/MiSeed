@@ -147,7 +147,7 @@
 			bias-pull-up;
 		};
 
-		clock-request-pin {
+		clock-request-pins {
 			pins = "gpio7";
 			function = "gpio";
 			drive-strength = <2>;
