@@ -4,6 +4,8 @@
 
 对应 RQ-14。审计工作树基于 `codex/nfc-wireless-charging` / HEAD `42f54a2d7a338a6e329ec432c5d23c3d085effd2`，含本轮未提交修改。Windows X64 / PowerShell 7.6.9，构建与 C 回归在 WSL Ubuntu 24.04 / Linux x86_64 / bash 执行。未提交、推送或合并。
 
+追溯说明（PR #5 核实）：本表驱动、DTS/config 与诊断工具链接固定到上述基线；与首次归档提交 `abe000d593c2b14f4f2dbd80fd1d46a10efb4ec2` 比较，这些输入未变。审计时未提交的代码差异是 `rescue_init.c` 新增只读 `nfc-status` 元数据诊断及控制台接线，另增对应合成测试并更新来源锁；其余为目标、治理、计划与证据文档。本表 rescue 链接固定到首次归档提交，以包含该差异；有线驱动/配置及 NFC transport 当时未改。后续接口迁移和职责拆分不作为本次历史结论依据。
+
 核查仓库 kernel/、相关移植/构建/打包/采集工具、config/DTS、运行契约和用户空间计划；对照固定 Linux 6.18.60 revision `f45ed76d6791cf72ff1265ee93511175bbbc2f18` 的原始源码、ABI 文档和 binding。通过本地 bare Git 的 `git show <revision>:<path>` 检查，未以移动分支或“最新版”代替项目版本。在线文档抓取未提供可引用结果，以固定源码为事实依据。
 
 **结论：底座使用 Linux，但不能认定内核适配整体完成。** 最明显的目标偏差是 NFC 保留 Android 私有字符设备/ioctl，并曾计划引入 Android 用户空间。其次是有线 BQ25970 缺少标准供电接口、私有诊断/协调、温控框架缺口和设备树语义/binding 问题。已有 FG/SMB5 的 power_supply、PD/PPS 的 TCPM、USB configfs 等不应整体推倒重做。
@@ -14,23 +16,23 @@
 
 | 功能 / 路径 | 当前接口与定位 | 判定 / 优先级 | 后续与验收 |
 | --- | --- | --- | --- |
-| NFC transport | [nq-nci.c](https://github.com/Ben8368/MiSeed/blob/5f00c534c2544ce5ca7e10c3084916cc8139521e/kernel/nfc/nq-nci.c) 的 cdev、私有 ioctl；[nq-nci.h](https://github.com/Ben8368/MiSeed/blob/5f00c534c2544ce5ca7e10c3084916cc8139521e/kernel/nfc/nq-nci.h)、[nfcinfo UAPI](https://github.com/Ben8368/MiSeed/blob/5f00c534c2544ce5ca7e10c3084916cc8139521e/kernel/nfc/nfcinfo-uapi.h)；无 nci_register_device/nfc_register_device | 确认偏离 Linux 产品目标，P1 / TD-003 | SN100T 协议/共享 VEN 评估，接入 NFC/NCI；标准 netlink/AF_NFC 发现、读卡与恢复；旧 ABI 退出 |
-| NFC DTS / 配置 | [umi-csot.dts](../../../kernel/umi-csot.dts) 的 `qcom,nq-nci`、`qcom,nq-*`；[config](../../../kernel/umi-l2.config) 仅本地 MISEED_NFC_NQ 路线 | 下游绑定、未启用标准 NCI 路线，P1 / TD-003/007 | gpiod/IRQ/PM 等资源管理与 YAML；不能只加 CONFIG_NFC 或替换 compatible |
+| NFC transport | [nq-nci.c](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/nfc/nq-nci.c) 的 cdev、私有 ioctl；[nq-nci.h](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/nfc/nq-nci.h)、[nfcinfo UAPI](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/nfc/nfcinfo-uapi.h)；无 nci_register_device/nfc_register_device | 确认偏离 Linux 产品目标，P1 / TD-003 | SN100T 协议/共享 VEN 评估，接入 NFC/NCI；标准 netlink/AF_NFC 发现、读卡与恢复；旧 ABI 退出 |
+| NFC DTS / 配置 | [umi-csot.dts](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/umi-csot.dts) 的 `qcom,nq-nci`、`qcom,nq-*`；[config](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/umi-l2.config) 仅本地 MISEED_NFC_NQ 路线 | 下游绑定、未启用标准 NCI 路线，P1 / TD-003/007 | gpiod/IRQ/PM 等资源管理与 YAML；不能只加 CONFIG_NFC 或替换 compatible |
 | eSE / NFC 服务 | MiSeed 无实现；Android 对照依赖 AIDL HAL、NXP 库、QTEE/eSE | 功能未知 / RISK-011；旧 Android 集成计划已撤换 | Linux 下独立评估固件、协议/权限、共享 VEN；HCE、OMAPI/eSE、支付分别证明，不由读卡推导 |
-| 电池 FG（有线/无线可共享的电池观测） | [qcom_fg.c](../../../kernel/power/qcom_fg.c)：power_supply 注册、属性与 changed 通知；PMIC regmap | 标准子系统已采用；本地驱动未出现在固定上游，非“已上游” | 复核电流符号、温度标度、无效/未就绪状态与通知；电池观测不能证明无线 RX/TX 可用 |
-| **有线** SMB5 / PM8150B | [qcom_pm8150b_charger.c](../../../kernel/power/qcom_pm8150b_charger.c)：power_supply；另有 `charge_test` 和泵所有权接口 | 标准主体 + 私有诊断/内部耦合，P1 / TD-004 | 保留标准属性，限制诊断用途；协同控制/失败退出审查与有线回归，不冒用别的 PMIC compatible |
-| **有线** Type-C / PD / PPS 协商 | [umi_pps.c](../../../kernel/power/umi_pps.c) 经 TCPM power_supply 请求；[PD PHY 补丁](../../../kernel/power/pmic_pdphy_receive.inc) 为内部实现 | TCPM 属于标准路径；ONLINE=2 与 PPS 电压/电流 setter 在固定上游存在 | 保留 Type-C/TCPM 所有权；核对协商、断线、错误/回退；本地 PHY 修复不等于整个路径采用 Android ABI |
+| 电池 FG（有线/无线可共享的电池观测） | [qcom_fg.c](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/qcom_fg.c)：power_supply 注册、属性与 changed 通知；PMIC regmap | 标准子系统已采用；本地驱动未出现在固定上游，非“已上游” | 复核电流符号、温度标度、无效/未就绪状态与通知；电池观测不能证明无线 RX/TX 可用 |
+| **有线** SMB5 / PM8150B | [qcom_pm8150b_charger.c](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/qcom_pm8150b_charger.c)：power_supply；另有 `charge_test` 和泵所有权接口 | 标准主体 + 私有诊断/内部耦合，P1 / TD-004 | 保留标准属性，限制诊断用途；协同控制/失败退出审查与有线回归，不冒用别的 PMIC compatible |
+| **有线** Type-C / PD / PPS 协商 | [umi_pps.c](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/umi_pps.c) 经 TCPM power_supply 请求；[PD PHY 补丁](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/pmic_pdphy_receive.inc) 为内部实现 | TCPM 属于标准路径；ONLINE=2 与 PPS 电压/电流 setter 在固定上游存在 | 保留 Type-C/TCPM 所有权；核对协商、断线、错误/回退；本地 PHY 修复不等于整个路径采用 Android ABI |
 | **有线** BQ25970 泵 | umi_pps.c 未注册独立 power_supply；`fastcharge_test`、printk 提供状态/停机 | 产品接口缺口，P1 / TD-004 | 建立适用 power_supply 状态、通知及受保护控制；先审查新接口如何协同 SMB5，保留现有安全退出 |
-| **有线** 温控 | umi_pps.c / [umi_pps_policy.h](../../../kernel/power/umi_pps_policy.h)：IIO 温度 + 私有虚拟温度/FCC 限流 | IIO 标准，thermal zone/cooling 策略未接入，P1 / TD-005 | 验证板级标度/model，按适用 thermal 接口集成，独立保留传感器失效和硬件保护；不因接入框架删除保护 |
+| **有线** 温控 | umi_pps.c / [umi_pps_policy.h](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/umi_pps_policy.h)：IIO 温度 + 私有虚拟温度/FCC 限流 | IIO 标准，thermal zone/cooling 策略未接入，P1 / TD-005 | 验证板级标度/model，按适用 thermal 接口集成，独立保留传感器失效和硬件保护；不因接入框架删除保护 |
 | **无线接收 RX** | 本仓库未移植 RX 驱动、供电模型与控制服务；Android 基线见 RX1619 | 未实现，不能判定符合/不符合或继承有线验收 | 核实实际器件/协议、power_supply 与 thermal，再单独验证 RX 与 NFC 共存 |
 | **无线反充 TX** | 本仓库无 TX 控制/保护实现 | 未实现，不能由 RX 或 USB OTG 推导 | 单独核实能力、保护、标准接口和 NFC 共存，禁止借用有线使能流程 |
-| PMIC 观测 / 日志 | [power_observer.c](../../../kernel/power_observer.c) 只读 regmap + printk；[charge_log.h](../../../kernel/charge_log.h) / [采集器](../../../tools/collect_charge_log.py) 为 RAM 诊断协议；TCPM debugfs 日志扩容 | 诊断扩展可保留，不能成为产品 ABI，P2 / TD-006 | 产品读取 power_supply/事件；禁止依赖 printk/debugfs 文本实现唯一状态或保护通道，诊断独立验收 |
-| DTS / ABL overlay | [umi-pm8150b.dtsi](../../../kernel/power/umi-pm8150b.dtsi)、[umi-pps.dtsi](../../../kernel/power/umi-pps.dtsi)、ABL 符号隔离；本地扩展缺 YAML 与 schema 证据 | 确认属性语义错误 + 待核拓扑，P1 / TD-007；运行时另有 RISK-010 | 同时修改驱动消费者与 DTS，补 binding、定向 schema 检查及运行时 DT/受影响外设 L3 |
+| PMIC 观测 / 日志 | [power_observer.c](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power_observer.c) 只读 regmap + printk；[charge_log.h](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/charge_log.h) / [采集器](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/tools/collect_charge_log.py) 为 RAM 诊断协议；TCPM debugfs 日志扩容 | 诊断扩展可保留，不能成为产品 ABI，P2 / TD-006 | 产品读取 power_supply/事件；禁止依赖 printk/debugfs 文本实现唯一状态或保护通道，诊断独立验收 |
+| DTS / ABL overlay | [umi-pm8150b.dtsi](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/umi-pm8150b.dtsi)、[umi-pps.dtsi](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/umi-pps.dtsi)、ABL 符号隔离；本地扩展缺 YAML 与 schema 证据 | 确认属性语义错误 + 待核拓扑，P1 / TD-007；运行时另有 RISK-010 | 同时修改驱动消费者与 DTS，补 binding、定向 schema 检查及运行时 DT/受影响外设 L3 |
 | GPIO / 电源 / 时钟 / I²C / 重启 | 主线 TLMM、GENI、SPMI、regulator、RPMh/genpd、PON restart；有 GPIO 保留范围与 ignore_unused | 标准框架 + bring-up 例外，TD-002/006 | 逐消费者恢复板级资源，验证 PM/关停恢复与 ABL 交接；不能把仍保电的资源算作完整电源管理 |
-| USB 诊断 / 登录入口 | DWC3 + configfs ACM / ttyGS0，[rescue_init.c](../../../kernel/rescue_init.c) 诊断协议 | Linux 标准 USB/TTY，命令集是项目诊断 | 标准 Linux/Debian 登录服务后续单独集成；现有 shell/协议不需改成 Android ADB |
+| USB 诊断 / 登录入口 | DWC3 + configfs ACM / ttyGS0，[rescue_init.c](https://github.com/Ben8368/MiSeed/blob/abe000d593c2b14f4f2dbd80fd1d46a10efb4ec2/kernel/rescue_init.c) 诊断协议 | Linux 标准 USB/TTY，命令集是项目诊断 | 标准 Linux/Debian 登录服务后续单独集成；现有 shell/协议不需改成 Android ADB |
 | 显示 | simple-framebuffer / FB_SIMPLE / fbcon，继承 ABL framebuffer | 现有 Linux 接口，不是 Android 私有 API；完整 DRM/DSI 未实现，TD-006 | DRM/KMS 与面板资源、刷新/休眠独立验收；已有横屏控制台 L3 保留 |
 | 触控、GPU、Wi-Fi 等 | 当前仓库无完整对应实现/本机验收；触控变体仍待核 | 功能缺口，不列成“已迁移” | 分别采用 input/evdev、DRM、cfg80211 等适用子系统，核实硬件再移植 |
-| 启动、打包、用户空间 | [pack_android_boot_v2.py](../../../tools/pack_android_boot_v2.py)、Fastboot RAM boot；静态 C initramfs；UEFI/BootShim、完整 Recovery、Debian 构建尚未交付 | ABL 启动兼容封装合法；救援 init 是 Linux 用户空间，非 Debian 完成 | 保留启动契约，产品 UEFI/EFI Stub 与 Debian 目标按 WP3–WP5；不引入 Android HAL 作为硬件功能前提 |
+| 启动、打包、用户空间 | [pack_android_boot_v2.py](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/tools/pack_android_boot_v2.py)、Fastboot RAM boot；静态 C initramfs；UEFI/BootShim、完整 Recovery、Debian 构建尚未交付 | ABL 启动兼容封装合法；救援 init 是 Linux 用户空间，非 Debian 完成 | 保留启动契约，产品 UEFI/EFI Stub 与 Debian 目标按 WP3–WP5；不引入 Android HAL 作为硬件功能前提 |
 | 宿主离线工具 | 固定源码/哈希检查、设备采集、镜像封装、Windows 串口导出 | 构建/维护接口，非手机内核产品 ABI | Android ADB 只作对照采集，Fastboot 作装载/回退；未实施文件系统/分区安装或产品存储管理 |
 
 ## 关键依据与避免误判
@@ -57,7 +59,7 @@ FG/SMB5 注册 power_supply，而 `umi_pps.c` 789 行的 `fastcharge_test`、SMB
 
 固定上游 `Documentation/devicetree/bindings/power/supply/power-supply.yaml` 的 `monitored-battery` 引用 simple-battery；`power-supplies` 表达供电来源。
 
-[umi-pps.dtsi](../../../kernel/power/umi-pps.dtsi) 37 行将 `monitored-battery` 指向 `umi_fg`；`umi_pps.c` 895 行通过它取得运行时 power_supply，这是**已确认的语义误用**。相对地，FG/SMB5 的 `monitored-battery = <&umi_battery>` 引用 simple-battery，本身不是这个问题。
+[umi-pps.dtsi](https://github.com/Ben8368/MiSeed/blob/42f54a2d7a338a6e329ec432c5d23c3d085effd2/kernel/power/umi-pps.dtsi) 37 行将 `monitored-battery` 指向 `umi_fg`；`umi_pps.c` 895 行通过它取得运行时 power_supply，这是**已确认的语义误用**。相对地，FG/SMB5 的 `monitored-battery = <&umi_battery>` 引用 simple-battery，本身不是这个问题。
 
 SMB5 的 `power-supplies = <&umi_fg>` 用于 BMS 查找；FG 是否应被表达为给该 charger 供电的 source 需要核对，列为**拓扑语义待核**，不与上述确定错误混同。不能只更换 DTS phandle：属性和驱动查找必须成套迁移，避免 probe 失败或失去安全观测。
 

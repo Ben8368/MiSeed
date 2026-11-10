@@ -1,13 +1,17 @@
 # 当前状态
 
-日期：2026-11-10。本地工作分支与 PR #4 源分支均为 `codex/nfc-wireless-charging`。RQ-14 明确 UEFI + Linux 主线内核 + Debian；UEFI/交接仍按 WP3/WP4 实施。接口审计与治理更新见 [本轮审计](archive/reviews/2026-11-10-linux-interface-audit.md)，例外归 TD-003–007。被动 nfc-status 已过 L1/L2，本轮镜像未做 L3。
+日期：2026-11-10。工作分支 `codex/mainline-followup` 为 PR #5，基线 PR #4。RQ-14 目标为 UEFI + Linux 主线内核 + Debian；UEFI/交接仍按 WP3/WP4，例外归 TD-003–007。
 
-WP10 已将 NQ 私有字符设备替换为 SN100T Linux NFC/NCI transport、binding 和标准 Netlink 只读消费者，本地 L2 通过，见[适配记录](archive/research/2026-11-10-sn100t-linux-nci.md)。尚无新驱动 L3、Debian 读卡或独立复核，TD-003/RISK-011 仍开放；旧 NQ 的 probe/node L3 不沿用。设备未操作，无线 RX/TX 未移植。
+WP10 已替换为 SN100T Linux NFC/NCI transport、binding 与标准 Netlink 消费者，本地 L2 通过，见[适配](archive/research/2026-11-10-sn100t-linux-nci.md)。新驱动 L3、Debian 读卡、eSE 与独立复核尚缺；旧 NQ probe/node L3 不沿用。
 
-镜像 `44854093…e98a89f94c`：维护者宣告有线 PD 与 PPS 均已稳定，二者分别约 10 分钟真机、充电中无故障。PPS 连续 RUN 约 12 分钟、2400 条样本；固定 PD/SMB5 SOC 70%→83%、净充约 2.3–2.4 A（无 APDO 时 `error=-95` 为预期退出）。见 [稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md)。PR #3 待审查不合并；`4f923319…8540601f` 镜像 PPS 约 81 秒按收尾条件转 PD，见 [复核](archive/reviews/2026-11-09-pr3-coderabbit-verification.md)。
+PR #4 修复本地 L0/L1、ARM64 L2 通过；#5 审核核实见[复核](archive/reviews/2026-11-10-pr5-review-fixes.md)。8 项篇幅黄灯归 TD-008。
+
+镜像 `aa5a4683…bd1b7f7`（HEAD `75e0e38`）：维护者宣告有线**固定 PD**稳定——约 10.3 分钟真机、SOC 81%→89%、中段约 1.9–2.0 A、33–35°C、充电中无故障；源端无 APDO 时 PPS `error=-11` 回落为预期。见[PD 稳定 L3](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md)。既有镜像 `44854093…e98a89f94c` 的 PD/PPS 各约 10 分钟稳定结论仍有效，见[既有稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
+
+Windows `charge-log` 导出：主机专用读线程 + 8 MiB RX + 救援 pacing；修复镜像 `b4026d67…d44e9` 真机全量导出 **1102** 条、`gap_count=0`、`storage_errors=0`（`boot_id=f4152e76-…`）。继续旧 BQ/`-ENOTCONN`、保护标度与精确 HEAD CI，见 RISK-004。无线 RX/TX 未移植。
 
 ## 近期优先级
 
-1. 按 WP10 验证新 SN100T transport 的 reset/init、RF/NDEF 与失败恢复，再集成 Debian；eSE 独立评估。
-2. 有线 power_supply/thermal/DT 源码迁移与本地验证见[本轮记录](archive/reviews/2026-11-10-wired-mainline-power.md)；待新镜像 L3、Debian 消费与独立复核。无线 RX/TX 独立设计。
-3. 修复 Windows 串口导出丢行；继续旧 BQ 故障/间歇 `-ENOTCONN`、保护停机与温度标度专项、独立复核及精确 HEAD CI，见 RISK-004。
+1. WP10：新 NCI reset/init、RF/NDEF、失败恢复 L3，再集成 Debian；eSE 独立评估。
+2. 新标准 ABI、simpledrm 和 DT 真机验收；有线温控标度/保护恢复、Debian 消费与独立复核。无线 RX/TX 独立设计。
+3. 继续旧 BQ 故障/间歇 `-ENOTCONN`、专项复核与精确 HEAD CI，见 RISK-004。

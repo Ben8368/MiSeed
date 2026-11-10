@@ -128,6 +128,33 @@ class BufferedTests(unittest.TestCase):
     def test_receive_limit_covers_maximum_tcpmlog_sized_charge_snapshot(self):
         self.assertGreaterEqual(collector.MAX_BYTES, 262144 * 768)
 
+    def test_windows_reader_thread_publishes_after_background_drain(self):
+        port = Mock()
+        wire = [b"banner\n", BEGIN, ROWS[:20], ROWS[20:], END]
+
+        def read(_size):
+            return wire.pop(0) if wire else b""
+
+        port.read.side_effect = read
+        output = io.BytesIO()
+        bounds = collector.receive_windows(port, output, 2)
+        self.assertEqual(bounds, (0, 2, 2, 0, 0))
+        self.assertEqual(output.getvalue(), SNAPSHOT)
+
+    def test_windows_reader_retains_raw_bytes_on_gap(self):
+        port = Mock()
+        raw = BEGIN + b"seq=1 boot_ms=1 SAMPLE gap\n" + END
+        pending = [raw]
+
+        def read(_size):
+            return pending.pop(0) if pending else b""
+
+        port.read.side_effect = read
+        output = io.BytesIO()
+        with self.assertRaises(collector.ExportError):
+            collector.receive_windows(port, output, 2)
+        self.assertEqual(output.getvalue(), raw)
+
 
 class WindowsTests(unittest.TestCase):
     def port(self, data=SNAPSHOT):
@@ -147,6 +174,12 @@ class WindowsTests(unittest.TestCase):
     def test_main_publishes_only_verified_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             port = self.port()
+            pending = [SNAPSHOT]
+
+            def read(_size):
+                return pending.pop(0) if pending else b""
+
+            port.read.side_effect = read
             result, output = self.invoke(Path(directory).resolve(), port)
             self.assertEqual(result, 0)
             self.assertEqual(output.read_bytes(), SNAPSHOT)
@@ -161,6 +194,13 @@ class WindowsTests(unittest.TestCase):
                 port = self.port(data)
                 if data is None:
                     port.read.side_effect = OSError("removed")
+                else:
+                    pending = [data]
+
+                    def read(_size, pending=pending):
+                        return pending.pop(0) if pending else b""
+
+                    port.read.side_effect = read
                 result, output = self.invoke(Path(directory).resolve(), port)
                 self.assertEqual(result, 1)
                 self.assertFalse(output.exists())
@@ -194,8 +234,9 @@ class WindowsTests(unittest.TestCase):
         port = self.port(b"MiSeed Umi/CSOT USB diagnostic.\r\nmiseed> ")
         result, serial = self.open_port(port, [device], "com6")
         self.assertIs(result, port)
-        serial.Serial.assert_called_once_with("com6", 115200, timeout=0.1, write_timeout=2)
-        port.set_buffer_size.assert_called_once_with(rx_size=1024 * 1024, tx_size=4096)
+        serial.Serial.assert_called_once_with("com6", 115200, timeout=0.05, write_timeout=2)
+        port.set_buffer_size.assert_called_once_with(
+            rx_size=collector.WINDOWS_RX_BUFFER, tx_size=4096)
         port.write.assert_called_once_with(b"help\n")
         port.close.assert_not_called()
         for devices in ([], [device, device], [SimpleNamespace(device="COM6", vid=1, pid=2)]):

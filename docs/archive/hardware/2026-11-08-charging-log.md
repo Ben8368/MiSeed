@@ -12,7 +12,7 @@
 
 ## 实现和边界
 
-- [硬件观察器](../../../kernel/power_observer.c)在现有主线 PM8150B `pmic@2` 下绑定，每秒只读 `0x1310`（USB RT）、`0x1006`（CHGR status1）、`0x1007`（status2）、`0x1042`（enable）。记录 USB present、SMB5 硬件阶段、使能位和原始状态字；任何读取失败输出地址/错误码，不沿用旧值。
+- [硬件观察器](https://github.com/Ben8368/MiSeed/blob/a081ab302a3099eb1825ed76fe8cb011e1cec79c/kernel/power_observer.c)在现有主线 PM8150B `pmic@2` 下绑定，每秒只读 `0x1310`（USB RT）、`0x1006`（CHGR status1）、`0x1007`（status2）、`0x1042`（enable）。记录 USB present、SMB5 硬件阶段、使能位和原始状态字；任何读取失败输出地址/错误码，不沿用旧值。
 - 不申请/确认 IRQ，不写 PMIC，不初始化 SMB5/FG，不加载电池 profile、不读 SRAM 或身份/NV、不调整充电电流/电压/使能。`CONFIG_POWER_SUPPLY=y` 的类存在，但 resolved config 没有启用 `CHARGER_*` / `BATTERY_*` 控制驱动。
 - 状态定义只读对照既有固定 qcom_smbx 补丁（SMB5：Robin Snyders；基础 qcom_smb2：The Linux Foundation / Casey Connolly），没有重新导入或应用其充电控制代码。来源完整提交、补丁路径/哈希、生成器及本地输入哈希见[来源锁](../../../manifests/sources.lock.json)。本地观察器为 GPL-2.0-only，自有用户态/工具为 AGPL-3.0-only；未新增外部固件或下载执行外部代码。
 - [RAM 记录器](../../../kernel/charge_log.h)由 PID 1 持续运行，和 USB 子进程独立。memfd 最多保留 8192 条、每条 768 字节，包含启动标识、递增序号、boottime 毫秒；满后覆盖最旧记录，导出头报告覆盖数。它每秒读取相关内核事件、每两秒读取已有 power_supply 属性和 UDC state；缺失温度/SOC/V/A 明示 unavailable。

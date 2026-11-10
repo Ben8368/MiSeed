@@ -9,17 +9,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from power_test_support import power_source
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PpsTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
     def test_real_controller_success_faults_deadlines_and_cleanup(self):
-        source = (ROOT / "kernel/power/umi_pps.c").read_text()
-        # Compile the real parser, register I/O, negotiation and worker against
-        # synthetic transports. No reimplementation of the tested state machine.
-        source = source[:source.index("static irqreturn_t umi_pps_irq")]
-        full = (ROOT / "kernel/power/umi_pps.c").read_text()
+        # Compile the real worker and hardware helpers with synthetic transports.
+        source = (ROOT / "kernel/power/umi_pps_internal.h").read_text()
+        for name in ("bq25970.c", "umi_pps_hw.c", "umi_pps.c"):
+            source += "\n" + (ROOT / "kernel/power" / name).read_text()
+        full = "\n".join((ROOT / "kernel/power" / name).read_text() for name in
+                         ("umi_pps_driver.c", "umi_pps_supply.c", "umi_pps_thermal.c"))
+        start = full.index("static int umi_pps_health(")
+        source += full[start:full.index("\nstatic enum power_supply_property", start)]
         for name in ("umi_pps_suspend", "umi_pps_resume", "umi_pps_get_property",
                      "umi_pps_set_property", "umi_pps_property_is_writeable",
                      "umi_pps_get_temp", "umi_pps_get_max_state",
@@ -27,7 +32,9 @@ class PpsTests(unittest.TestCase):
             start = full.index("static int " + name + "(")
             source += full[start:full.index("\n}\n", start) + 3]
         source = "\n".join(line for line in source.splitlines()
-                           if not line.startswith("#include <linux/"))
+                           if not line.startswith("#include <linux/")
+                           and line != '#include "umi_pps_internal.h"'
+                           and not line.startswith("extern const struct"))
         harness = (ROOT / "tests/pps_harness.c").read_text()
         power = re.search(r"op-sink-microwatt = <(\d+)>", (ROOT / "kernel/power/umi-pps.dtsi").read_text()).group(1)
         harness = harness.replace("@OPERATING_SINK_MW@", str(int(power) // 1000))
@@ -39,7 +46,8 @@ class PpsTests(unittest.TestCase):
             result = subprocess.run(
                 ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                  "-Wno-unused-function", "-Wno-unused-parameter",
-                 "-I", str(ROOT / "kernel/power"), str(entry), "-o", str(binary)],
+                 "-I", str(ROOT / "kernel/power"), "-I", str(ROOT / "tests"),
+                 str(entry), "-o", str(binary)],
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)
@@ -47,7 +55,7 @@ class PpsTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
     def test_actual_smb5_exclusive_ownership_and_failure_retention(self):
-        source = (ROOT / "kernel/power/qcom_pm8150b_charger.c").read_text()
+        source = power_source("qcom_pm8150b_charger")
         parts = []
         for name in ("static bool smb5_is_ours", "int umi_smb5_claim",
                      "int umi_smb5_check", "int umi_smb5_release"):

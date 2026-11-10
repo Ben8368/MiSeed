@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from rescue_test_support import rescue_includes
+
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = r"""
 #define _GNU_SOURCE
@@ -45,7 +47,7 @@ class NfcDiagnosticsTests(unittest.TestCase):
         cls.build = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.build.cleanup)
         source = Path(cls.build.name) / "harness.c"
-        source.write_text(HARNESS.replace("@SOURCE@", (ROOT / "kernel/rescue_init.c").as_posix()))
+        source.write_text(HARNESS.replace('#include "@SOURCE@"', rescue_includes()))
         cls.binary = Path(cls.build.name) / "nfc-status"
         result = subprocess.run(["gcc", "-O2", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(cls.binary)],
                                 capture_output=True, text=True)

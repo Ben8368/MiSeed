@@ -26,6 +26,14 @@ config CHARGER_MISEED_UMI_PPS
 	  BQ25970. The Umi board profile is sink-only and is exercised on the
 	  maintainer's Umi device through temporary RAM boot.
 
+config MISEED_POWER_DIAGNOSTICS
+	bool "MiSeed read-only wired SMB5 register diagnostics"
+	depends on CHARGER_MISEED_PM8150B
+	help
+	  Log raw status registers from the owning charger's polling worker.
+	  This is an optional diagnostic, not a product ABI or control path.
+	  Normal consumers use power_supply attributes and notifications.
+
 config MISEED_CHARGE_DIAGNOSTICS
 	bool "MiSeed bounded wired charge diagnostic command"
 	depends on CHARGER_MISEED_PM8150B

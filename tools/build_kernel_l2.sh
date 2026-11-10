@@ -20,8 +20,6 @@ fallback_build_tree=""
 readonly template="${work_root}/reference-boot-v2.img"
 readonly input_dts="${repo_root}/kernel/umi-csot.dts"
 readonly config_fragment="${repo_root}/kernel/umi-l2.config"
-readonly observer_applier="${repo_root}/tools/apply_power_observer.py"
-readonly observer_source="${repo_root}/kernel/power_observer.c"
 export KBUILD_BUILD_TIMESTAMP="2026-11-05 00:00:00 UTC"
 export KBUILD_BUILD_VERSION=1
 export KBUILD_BUILD_USER=MiSeed
@@ -51,7 +49,7 @@ require nproc
 readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail "MISEED_JOBS must be a positive integer"
 [[ -f "$input_dts" && -f "$config_fragment" ]] || fail "board DTS or config fragment is missing"
-[[ -f "$observer_source" && -f "$observer_applier" && -f "$repo_root/kernel/charge_log.h" ]] || fail "power log source inputs are missing"
+[[ -f "$repo_root/kernel/power/umi_smb5_diagnostics.h" && -f "$repo_root/kernel/charge_log.h" ]] || fail "power log source inputs are missing"
 [[ "$(aarch64-linux-gnu-gcc -dumpfullversion)" == "13.3.0" ]] || fail "expected aarch64-linux-gnu-gcc 13.3.0"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
 grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must enable ARCH_QCOM"
@@ -110,7 +108,6 @@ readonly qcom_dts_dir="$source_tree/arch/arm64/boot/dts/qcom"
 readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
 readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
-python3 "$observer_applier" --source "$source_tree"
 python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_pd_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_nfc_port.py" --source "$source_tree" --project-root "$repo_root"
@@ -134,7 +131,7 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
 for option in BATTERY_MISEED_QCOM_FG CHARGER_MISEED_PM8150B; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "runtime power driver must be built-in: ${option}"
 done
-for option in MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5 GPIOLIB NET NFC NFC_NCI NFC_SN100X; do
+for option in DRM DRM_SIMPLEDRM DRM_FBDEV_EMULATION DRM_CLIENT_DEFAULT_FBDEV FB_CORE FRAMEBUFFER_CONSOLE MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5 GPIOLIB NET NFC NFC_NCI NFC_SN100X; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "power compile test lost CONFIG_${option}"
 done
 for option in CHARGER_MISEED_UMI_PPS I2C_QCOM_GENI TYPEC_TCPM TYPEC_QCOM_PMIC REGULATOR_QCOM_USB_VBUS USB; do
@@ -157,17 +154,31 @@ make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gn
 install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 
 # Runtime drivers must be built-in; the rescue image needs no module loader.
-for driver in qcom_fg qcom_pm8150b_charger umi_pps; do
+# Kbuild expands built-in composite targets into their constituent objects;
+# a standalone umi-bq25970.o is only materialized for the module case.
+# Check both built-in constituents here and their linked symbols below.
+readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
+    qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply
+    umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970)
+power_objects=()
+for driver in "${power_drivers[@]}"; do
     [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"
     install -m 0644 "$build_tree/drivers/power/supply/${driver}.o" "$output_root/${driver}.o"
+    power_objects+=("$output_root/${driver}.o")
 done
 install -m 0644 "$source_tree/.miseed-pd-diagnostics.json" "$output_root/pd-diagnostics-inputs.json"
 install -m 0644 "$build_tree/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.o" "$output_root/qcom_pmic_typec_pdphy.o"
 cp "$build_tree/.config" "$output_root/resolved.config"
 aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
-for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr sn100x_probe nci_register_device; do
+for symbol in qcom_fg_probe smb5_probe umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr sn100x_probe nci_register_device bq25970_update bq25970_adc bq25970_verify; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
+
+# Require the standard KMS provider, not just an enabled config fragment.
+[[ -s "$build_tree/drivers/gpu/drm/sysfb/simpledrm.o" ]] || fail "simpledrm object missing"
+grep -Eq ' [tT] simpledrm_probe$' "$output_root/vmlinux.symbols" || fail "simpledrm not linked"
+if grep -q '^CONFIG_FB_SIMPLE=' "$build_tree/.config"; then fail "legacy simplefb competes with simpledrm"; fi
+if grep -Eq ' [tT] power_observer_probe$' "$output_root/vmlinux.symbols"; then fail "synthetic observer driver linked"; fi
 
 readonly dtb="$output_root/umi-csot.dtb"
 # Work on a copy: every build starts with dtc's original symbol identities.
@@ -212,8 +223,13 @@ python3 "$repo_root/tools/extract_abl_anchors.py" \
 readonly rescue_bin="$output_root/rescue-init"
 readonly initramfs="$output_root/rescue-initramfs.cpio.gz"
 readonly kernel_image="$build_tree/arch/arm64/boot/Image"
+readonly -a rescue_sources=("$repo_root/kernel/rescue_init.c"
+    "$repo_root/kernel/rescue_fs.c" "$repo_root/kernel/rescue_usb_diag.c"
+    "$repo_root/kernel/rescue_devices.c" "$repo_root/kernel/rescue_power.c"
+    "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_usb.c"
+    "$repo_root/kernel/charge_log.c")
 aarch64-linux-gnu-gcc -Os -static -s -Wall -Wextra -Werror \
-    -o "$rescue_bin" "$repo_root/kernel/rescue_init.c"
+    -o "$rescue_bin" "${rescue_sources[@]}"
 python3 "$repo_root/tools/make_initramfs.py" --init "$rescue_bin" --output "$initramfs"
 python3 "$repo_root/tools/pack_android_boot_v2.py" \
     --template "$template" --template-sha256 "$boot_sha256" \
@@ -223,14 +239,22 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
     "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
-    "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
-    "$observer_source" "$observer_applier" "$repo_root/tools/make_initramfs.py" \
-    "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \
+    "${rescue_sources[@]}" "$repo_root/kernel/charge_log.h" "$repo_root/kernel/rescue_internal.h" \
+    "$repo_root/kernel/power/umi_smb5_diagnostics.h" "$repo_root/tools/make_initramfs.py" \
+    "$repo_root/kernel/power/qcom_fg_core.c" "$repo_root/kernel/power/qcom_fg_io.c" \
+    "$repo_root/kernel/power/qcom_fg_measure.c" "$repo_root/kernel/power/qcom_fg_internal.h" \
+    "$repo_root/kernel/power/qcom_pm8150b_core.c" "$repo_root/kernel/power/qcom_pm8150b_hw.c" \
+    "$repo_root/kernel/power/qcom_pm8150b_policy.c" "$repo_root/kernel/power/qcom_pm8150b_supply.c" \
+    "$repo_root/kernel/power/qcom_pm8150b_internal.h" "$repo_root/kernel/power/qcom_pm8150b_regs.h" \
     "$repo_root/kernel/power/Kconfig" "$repo_root/kernel/power/umi_charge_policy.h" \
     "$repo_root/kernel/power/umi-pm8150b.dtsi" "$repo_root/tools/apply_power_port.py" \
+    "$repo_root/kernel/power/bq25970.c" "$repo_root/kernel/power/bq25970.h" \
     "$repo_root/kernel/power/umi_pps.c" "$repo_root/kernel/power/umi_pps_policy.h" \
+    "$repo_root/kernel/power/umi_pps_hw.c" "$repo_root/kernel/power/umi_pps_supply.c" \
+    "$repo_root/kernel/power/umi_pps_thermal.c" "$repo_root/kernel/power/umi_pps_driver.c" \
+    "$repo_root/kernel/power/umi_pps_internal.h" "$repo_root/tools/source_layout.py" \
     "$repo_root/kernel/power/umi_smb5.h" "$repo_root/kernel/power/umi-pps.dtsi" \
-    "$output_root/umi_pps.o" "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
+    "${power_objects[@]}" \
     "$repo_root/tools/apply_pd_diagnostics.py" "$repo_root/kernel/power/pmic_pdphy_receive.inc" \
     "$output_root/pd-diagnostics-inputs.json" "$output_root/qcom_pmic_typec_pdphy.o" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \

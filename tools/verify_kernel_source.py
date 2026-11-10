@@ -13,9 +13,11 @@ from pathlib import Path
 if __package__:
     from . import apply_pd_diagnostics as pd
     from .apply_power_port import RPMHPD_KCONFIG_RULE
+    from .source_layout import POWER_FILES, POWER_RULES
 else:
     import apply_pd_diagnostics as pd
     from apply_power_port import RPMHPD_KCONFIG_RULE
+    from source_layout import POWER_FILES, POWER_RULES
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
@@ -29,27 +31,22 @@ GENERATED = {
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
     "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
-    "drivers/mfd/miseed_power_observer.c",
-    "drivers/power/supply/qcom_fg.c",
-    "drivers/power/supply/qcom_pm8150b_charger.c",
     "drivers/power/supply/miseed-power.Kconfig",
     "drivers/power/supply/umi_charge_policy.h",
     "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
     "arch/arm64/boot/dts/qcom/umi-pps.dtsi",
     "drivers/power/supply/umi_pps.c",
+    "drivers/power/supply/bq25970.c",
+    "drivers/power/supply/bq25970.h",
     "drivers/power/supply/umi_pps_policy.h",
     "drivers/power/supply/umi_smb5.h",
-}
+    "drivers/power/supply/umi_smb5_diagnostics.h",
+} | {"drivers/power/supply/" + name for name in POWER_FILES}
 OVERLAY_RULES = {
     "drivers/nfc/Makefile": [(b"", b"obj-$(CONFIG_NFC_SN100X) += sn100x.o")],
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
                (b"", b"DTC_FLAGS_umi-csot += -@")],
-    "drivers/mfd/Makefile": [
-        (b"\n", b"obj-$(CONFIG_MFD_SPMI_PMIC) += miseed_power_observer.o")],
-    "drivers/power/supply/Makefile": [
-        (b"\n", b"obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi_pps.o")],
+    "drivers/power/supply/Makefile": [(b"\n", rule.encode()) for rule in POWER_RULES],
     "drivers/power/supply/Kconfig": [
         (b"\n", b'source "drivers/power/supply/miseed-power.Kconfig"')],
 }

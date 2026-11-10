@@ -15,7 +15,7 @@ workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 
 
 ## 自动化覆盖与盲区
 
-- [check_repo.py](../tools/check_repo.py)：检查文件/文本/预算/链接、ADR、优先级、来源候选及 Boot L2 锁身份/哈希与脚本一致性；拦截扫描范围内的产物/密钥、大文件和符号链接。
+- [check_repo.py](../tools/check_repo.py)：检查文本/预算/链接、ADR、优先级、来源与 Boot L2 锁；拦截产物/密钥、大文件及符号链接。源码分级、退出码与覆盖边界见 [QUALITY](QUALITY.md#源码篇幅门禁)。
 - Git 下扫描已跟踪和未忽略新文件；无 Git 时排除约定的本地目录。不能代替凭据扫描、许可审查、锚点/reference-style 链接与语义去重。
 - [check_commits.py](../tools/check_commits.py)：Git 原生 trailer 解析；只检查 PR base..head 的非 merge 新提交。自动检查中文标题与署名分类；正文语言、真实归属和 squash 消息需人工核对，规则见 [AI_RULES](AI_RULES.md)。
 - 校验/回归不联网、不访问手机；runner 和 setup-python 的工具获取仍依赖网络。产品构建覆盖缺口见 [TD-001](TECH_DEBT.md)。
