@@ -26,19 +26,11 @@ static int checked_open(const char *path, int flags, ...) {
     if (strncmp(path, root, strlen(root)) || path[strlen(root)] != '/') _exit(92);
     return open(path, flags);
 }
-static int fixture_lstat(const char *path, struct stat *st) {
-    int result = lstat(path, st);
-    if (!result && getenv("TEST_CHARACTER") && !strcmp(path, getenv("TEST_NFC_NODE")))
-        st->st_mode = S_IFCHR | 0600;
-    return result;
-}
 #define open checked_open
-#define lstat fixture_lstat
 #define main miseed_pid1_main
 #include "@SOURCE@"
 #undef main
 #undef open
-#undef lstat
 int main(int argc, char **argv) {
     if (argc != 3) return 2;
     report_nfc_status(argv[1], argv[2]);
@@ -65,19 +57,20 @@ class NfcDiagnosticsTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / "i2c"
         self.root.mkdir()
-        self.node = Path(self.temp.name) / "nq-nci"
-        self.node.write_text("must never be opened")
+        self.node = Path(self.temp.name) / "nfc"
+        self.node.mkdir()
+        (self.node / "nfc0").mkdir()
 
-    def device(self, name="7-0028", compatible=b"qcom,nq-nci\0", bound=True):
+    def device(self, name="7-0028", compatible=b"nxp,sn100t\0", bound=True):
         dev = self.root / name
         of = dev / "of_node"
         of.mkdir(parents=True)
         (of / "compatible").write_bytes(compatible)
         (of / "reg").write_bytes(struct.pack(">I", 0x28))
-        for prop, gpio in (("irq", 111), ("ven", 83), ("firm", 110), ("clkreq", 7)):
-            (of / ("qcom,nq-" + prop)).write_bytes(struct.pack(">III", 0x65, gpio, 0))
+        for prop, gpio in (("enable-gpios", 83), ("firmware-gpios", 110)):
+            (of / prop).write_bytes(struct.pack(">III", 0x65, gpio, 0))
         if bound:
-            (dev / "driver").symlink_to("../../drivers/nq-nci")
+            (dev / "driver").symlink_to("../../drivers/sn100x")
         return of
 
     def run_status(self, character=True, root=None):
@@ -95,23 +88,24 @@ class NfcDiagnosticsTests(unittest.TestCase):
 
     def test_dynamic_adapter_and_exact_compatible_list(self):
         for index in (0, 1, 7):
-            self.device(f"{index}-0028", b"vendor,board\0qcom,nq-nci\0")
+            self.device(f"{index}-0028", b"vendor,board\0nxp,sn100t\0")
         output = self.run_status()
         for index in (0, 1, 7):
-            self.assertIn(f"device={index}-0028 driver=nq-nci", output)
-        for prop, gpio in (("irq", 111), ("ven", 83), ("firm", 110), ("clkreq", 7)):
-            self.assertIn(f"qcom,nq-{prop}=gpio{gpio}", output)
+            self.assertIn(f"device={index}-0028 driver=sn100x", output)
+        for prop, gpio in (("enable-gpios", 83), ("firmware-gpios", 110)):
+            self.assertIn(f"{prop}=gpio{gpio}", output)
         self.assertIn("reg=0x28", output)
         self.assertIn("matches=3 scan=finished", output)
-        self.assertIn("type=character mode=600", output)
+        self.assertIn("class device=nfc0", output)
+        self.assertIn("Interface: Linux NFC/NCI", output)
 
     def test_near_match_is_not_an_nfc_device(self):
-        self.device(compatible=b"qcom,nq-nci-fake\0")
+        self.device(compatible=b"nxp,sn100t-fake\0")
         self.assertIn("matches=0", self.run_status())
 
     def test_malformed_or_truncated_compatible_is_incomplete(self):
         of = self.device()
-        for value in (b"qcom,nq-nci", b"qcom,nq-nci\0" + b"x" * 600):
+        for value in (b"nxp,sn100t", b"nxp,sn100t\0" + b"x" * 600):
             with self.subTest(length=len(value)):
                 (of / "compatible").write_bytes(value)
                 output = self.run_status()
@@ -124,32 +118,35 @@ class NfcDiagnosticsTests(unittest.TestCase):
 
     def test_bad_gpio_and_missing_address_are_reported(self):
         of = self.device()
-        (of / "qcom,nq-irq").write_bytes(b"\0\0\0")
+        (of / "firmware-gpios").write_bytes(b"\0\0\0")
         (of / "reg").unlink()
         output = self.run_status()
-        self.assertIn("qcom,nq-irq=unavailable-or-invalid", output)
+        self.assertIn("firmware-gpios=unavailable-or-invalid", output)
         self.assertIn("reg=unavailable-or-invalid", output)
-        self.assertIn("qcom,nq-ven=gpio83", output)
+        self.assertIn("enable-gpios=gpio83", output)
         self.assertIn("matches=1 scan=incomplete", output)
 
     def test_missing_root_and_device(self):
-        self.node.unlink()
+        shutil.rmtree(self.node)
         output = self.run_status(root=self.root / "missing")
         self.assertIn("I2C metadata unavailable", output)
         self.assertIn("scan=incomplete", output)
-        self.assertIn(f"node={self.node} unavailable", output)
+        self.assertIn(f"class={self.node} unavailable", output)
 
-    def test_regular_or_symlink_node_is_not_character_device(self):
-        self.assertIn("type=unexpected", self.run_status(character=False))
-        self.node.unlink()
-        self.node.symlink_to("/dev/null")
-        self.assertIn("type=unexpected", self.run_status(character=False))
+    def test_only_numeric_class_names_are_reported(self):
+        for name in ("nfc", "nfcx", "other", "nfc1junk"):
+            (self.node / name).mkdir()
+        self.assertIn("class devices=1", self.run_status())
+
+    def test_legacy_compatible_is_not_a_standard_device(self):
+        self.device(compatible=b"qcom,nq-nci\0")
+        self.assertIn("matches=0", self.run_status())
 
     def test_fifo_property_does_not_block(self):
         of = self.device()
-        (of / "qcom,nq-irq").unlink()
-        os.mkfifo(of / "qcom,nq-irq")
-        self.assertIn("qcom,nq-irq=unavailable-or-invalid", self.run_status())
+        (of / "firmware-gpios").unlink()
+        os.mkfifo(of / "firmware-gpios")
+        self.assertIn("firmware-gpios=unavailable-or-invalid", self.run_status())
 
     def test_scan_has_a_bound(self):
         for i in range(270):

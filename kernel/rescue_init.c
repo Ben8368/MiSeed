@@ -659,9 +659,7 @@ static void report_tcpm_logs(void) {
     if (!ports) puts("No TCPM debug log ports found");
 }
 
-/* Only DT/sysfs metadata is read. Even opening /dev/nq-nci would run
- * nfc_open(), changing IRQ/FIRM state; never open the character device here.
- */
+/* Passive DT/sysfs metadata only: never issue NCI or change RF/power. */
 static ssize_t nfc_read_property(const char *path, unsigned char *value, size_t size) {
     struct stat st;
     ssize_t length;
@@ -677,14 +675,13 @@ static ssize_t nfc_read_property(const char *path, unsigned char *value, size_t 
     return length;
 }
 
-static void report_nfc_status(const char *root, const char *device) {
+static void report_nfc_status(const char *root, const char *class_root) {
     static const char *const properties[] = {
-        "reg", "qcom,nq-irq", "qcom,nq-ven", "qcom,nq-firm", "qcom,nq-clkreq"
+        "reg", "enable-gpios", "firmware-gpios"
     };
-    const char *compatible = "qcom,nq-nci";
+    const char *compatible = "nxp,sn100t";
     DIR *dir = opendir(root);
     struct dirent *entry;
-    struct stat st;
     unsigned int scanned = 0, found = 0;
     int incomplete = 0;
 
@@ -765,15 +762,25 @@ static void report_nfc_status(const char *root, const char *device) {
     }
     if (dir) closedir(dir);
     printf("NFC DT matches=%u scan=%s\n", found, incomplete ? "incomplete" : "finished");
-    if (lstat(device, &st)) {
-        printf("NFC node=%s unavailable: %s\n", device, strerror(errno));
-    } else {
-        printf("NFC node=%s type=%s mode=%03o\n", device,
-               S_ISCHR(st.st_mode) ? "character" : "unexpected",
-               (unsigned int)(st.st_mode & 0777));
+    dir = opendir(class_root);
+    unsigned int registered = 0;
+    scanned = 0;
+    if (!dir) printf("NFC class=%s unavailable: %s\n", class_root, strerror(errno));
+    while (dir && (entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+        if (scanned++ == 256) {
+            puts("NFC class scan truncated after 256 entries");
+            break;
+        }
+        if (strncmp(entry->d_name, "nfc", 3) || !entry->d_name[3] ||
+            strspn(entry->d_name + 3, "0123456789") != strlen(entry->d_name + 3)) continue;
+        printf("NFC class device=%s (registration metadata only)\n", entry->d_name);
+        registered++;
     }
+    if (dir) closedir(dir);
+    printf("NFC class devices=%u (all controllers, not a transport test)\n", registered);
     puts("NFC transport/IRQ/wakeup/recovery and reader/HCE/eSE functionality: not tested");
-    puts("Interface: Android NQ character ABI; Linux AF_NFC/NCI registration not established by this check");
+    puts("Interface: Linux NFC/NCI; generic netlink NFC_GENL_NAME and AF_NFC; no private character ABI");
 }
 
 static void report_runtime_status(void) {
@@ -789,7 +796,7 @@ static void report_runtime_status(void) {
     report_platform_driver("PON", "qcom,pm8998-pon");
     report_platform_driver("QUP wrapper", "qcom,geni-se-qup");
     report_i2c_devices();
-    report_nfc_status("/sys/bus/i2c/devices", "/dev/nq-nci");
+    report_nfc_status("/sys/bus/i2c/devices", "/sys/class/nfc");
     report_power_supply_diagnostics();
     list_directory("USB UDC entries", "/sys/class/udc");
     report_spmi_dt_nodes();
@@ -1006,7 +1013,7 @@ static void usb_console(void) {
         if (!strcmp(line, "help")) continue;
         if (!strcmp(line, "status")) report_runtime_status();
         else if (!strcmp(line, "nfc-status"))
-            report_nfc_status("/sys/bus/i2c/devices", "/dev/nq-nci");
+            report_nfc_status("/sys/bus/i2c/devices", "/sys/class/nfc");
         else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");

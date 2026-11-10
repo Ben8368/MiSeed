@@ -20,7 +20,7 @@
 
 ## TD-003：NFC Android 私有 ABI（P1，2026-11-10；WP10）
 
-取舍：RQ-13 曾采用 NQ-NCI `/dev/nq-nci`/ioctl 作 bring-up；RQ-14 已改为 Linux 目标，暂保留以关联旧证据，不扩建 Android HAL。偿还：按 [NFC](NFC.md) 完成 Linux NFC/NCI、binding 与 Debian 标准入口分项验证后移除旧 ABI 默认依赖；SN100T 未知能力归 RISK-011。
+源码偿还：移除 NQ 字符设备/ioctl 与私有 UAPI 默认构建输入，替换为 SN100T Linux NFC/NCI transport、标准资源 binding 和只读 Netlink 消费者，旧来源与 L3 保留为历史。验证见[适配记录](archive/research/2026-11-10-sn100t-linux-nci.md)。剩余：新驱动 reset/init、RF/NDEF、错误/关闭恢复 L3、Debian 服务与独立复核；本项仍开放，未知固件/共享 VEN/eSE 能力归 RISK-011。
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
@@ -36,4 +36,4 @@
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-本轮偿还有线部分：新增 FG/SMB5/BQ25970 YAML；同时修正驱动查找和 DTS，monitored-battery 只指向 simple-battery，电量计用独立遥测 phandle，TCPM 作为真实 power-supplies；定向 schema 与 L2 见[记录](archive/reviews/2026-11-10-wired-mainline-power.md)。剩余：新 DT/标准消费者 L3、binding 上游评审，以及 NFC/observer 原有例外；不将本地 schema 通过写成上游合入或整机 DT 合规。
+本轮偿还有线部分：新增 FG/SMB5/BQ25970 YAML；同时修正驱动查找和 DTS，monitored-battery 只指向 simple-battery，电量计用独立遥测 phandle，TCPM 作为真实 power-supplies；定向 schema 与 L2 见[记录](archive/reviews/2026-11-10-wired-mainline-power.md)。剩余：新 DT/标准消费者 L3、binding 上游评审，以及 observer 原有例外；NFC 新增专用 YAML 与标准 GPIO/IRQ 属性，证据见[NFC 适配](archive/research/2026-11-10-sn100t-linux-nci.md)；不将本地 schema 通过写成上游合入或整机 DT 合规。

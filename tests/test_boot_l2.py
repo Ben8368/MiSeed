@@ -32,6 +32,8 @@ class SourceCacheTests(unittest.TestCase):
                            "drivers/mfd/Makefile": "# MFD upstream rules\n",
                            "drivers/power/supply/Makefile": "# upstream power rules\n",
                            "drivers/power/supply/Kconfig": "# upstream power config\n",
+                           "drivers/nfc/Kconfig": "menu NFC\nendmenu\n",
+                           "drivers/nfc/Makefile": "# upstream NFC rules\n",
                            "include/board.dtsi": "original\n",
                            ".gitignore": "*.o\n"}.items():
             path = self.repo / name
@@ -60,6 +62,21 @@ class SourceCacheTests(unittest.TestCase):
         with (self.source / verifier.MAKEFILE).open("a", newline="\n") as stream:
             stream.write("\ndtb-y += umi-csot.dtb\nDTC_FLAGS_umi-csot += -@\n")
         self.verify()
+
+    def test_nfc_cache_allows_only_the_reviewed_kconfig_and_makefile_rules(self):
+        kconfig = self.source / "drivers/nfc/Kconfig"
+        kconfig.write_text('menu NFC\nsource "drivers/nfc/sn100x.Kconfig"\nendmenu\n',
+                          encoding="utf-8", newline="\n")
+        makefile = self.source / "drivers/nfc/Makefile"
+        makefile.write_text('# upstream NFC rules\nobj-$(CONFIG_NFC_SN100X) += sn100x.o\n',
+                           encoding="utf-8", newline="\n")
+        self.verify()
+        for path in (kconfig, makefile):
+            original = path.read_bytes()
+            path.write_bytes(original + b"unreviewed rule\n")
+            with self.assertRaisesRegex(ValueError, "differs from pinned commit"):
+                self.verify()
+            path.write_bytes(original)
 
     def test_pd_cache_and_manifest_are_rederived_from_git_not_trusted_hashes(self):
         name = verifier.pd.PDPHY
@@ -216,6 +233,7 @@ class SourceCacheTests(unittest.TestCase):
         (inputs / "tools/build_kernel_l2.sh").write_text(script, encoding="utf-8", newline="\n")
         record["sources"][0]["revision"] = self.revision
         profile["kernel_source"] = "linux-stable@" + self.revision
+        profile["nfc_driver_reference"] = profile["kernel_source"]
         profile["boot_header_template"]["sha256"] = hashlib.sha256(template).hexdigest()
         profile["input_sha256"]["tools/build_kernel_l2.sh"] = hashlib.sha256(
             (inputs / "tools/build_kernel_l2.sh").read_bytes()).hexdigest()

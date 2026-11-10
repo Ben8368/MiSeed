@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config NFC_SN100X
+	tristate "NXP SN100T NCI I2C transport"
+	depends on I2C && NFC_NCI && GPIOLIB
+	help
+	  Standard Linux NFC/NCI transport for NXP SN100T. Uses resident
+	  firmware and retains shared NFCC/eSE VEN on close. Firmware download,
+	  eSE access and active NFC suspend/wakeup are not supported.
+	  If built as a module, this driver is called sn100x.

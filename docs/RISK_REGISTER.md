@@ -14,6 +14,6 @@
 | RISK-009 / P2（历史设备标识） | PR1 的 4 处和 PR3 的 2 处设备序列号已在当前树脱敏，但 `8f67d5f` 及已合并历史仍有副本，见[核实记录](archive/reviews/2026-11-06-pr1-coderabbit-verification.md) | 不宣称托管历史已脱敏；不得擅自改写已推送历史 | 维护者在公开分发前复核历史与导出副本并明确处理策略；历史清理须另行授权 |
 
 | RISK-010 / P1（运行时 DTBO/PMIC 完整性） | 2026-11-07 诊断镜像已完成本机两轮直接 Fastboot 往返，但串口显示 ABL/DTBO 加入的下游命名 PMIC 节点与主线节点重复，SPMI 注册有 `-EEXIST`；PM8150/PON、USB 已绑定。证据与已关闭 RISK-008 见[本轮记录](archive/hardware/2026-11-07-direct-fastboot.md) | 不宣称 DTBO/全部 PMIC 子设备已正确适配；当前结果只覆盖该诊断镜像的 USB/PON 路径 | 已隔离 soc/SPMI/TLMM 具名符号并保留主线 phandle；target-path/数值 phandle/别名不在覆盖内，见[续查](archive/research/2026-11-08-pps-topology-followup.md)；仍须锁定本机 DTBO、完成新镜像启动/重启及受影响外设 L3 后关闭。TLMM 最小恢复另见 TD-002 |
-| RISK-011 / P1（SN100T Linux NCI / eSE 支持） | NQ-NCI 已有 L2 与 probe/node L3；SN100T 在固定 mainline NXP NCI 驱动中的适配范围、固件需求及共享 VEN/eSE 恢复尚未闭合。Android 基线仅作硬件线索 | 不宣称 Linux NFC/NCI、Debian 读卡、HCE 或 eSE 可用；不冒用其他芯片 compatible | 按 [NFC](NFC.md) 固定协议/固件与许可、验证标准 NCI 注册和用户空间 discovery/NDEF，HCE/eSE 分项证明或明确不支持；旧 ABI 取舍归 TD-003 |
+| RISK-011 / P1（SN100T Linux NCI / eSE 支持） | SN100T 本地标准 NCI transport 已过 L2，见[NFC 适配](archive/research/2026-11-10-sn100t-linux-nci.md)；新驱动的 reset/init、驻留固件、RF 与共享 VEN/eSE 恢复尚无 L3。旧 NQ probe/node 与 Android 基线仅作历史线索 | 不宣称 Linux NFC/NCI、Debian 读卡、HCE 或 eSE 可用；不冒用其他芯片 compatible | 按 [NFC](NFC.md) 固定协议/固件与许可、验证标准 NCI 注册和用户空间 discovery/NDEF，HCE/eSE 分项证明或明确不支持；旧 ABI 取舍归 TD-003 |
 
 关闭条目按 [GOVERNANCE](GOVERNANCE.md) 移入带日期归档，不以“已登记”解除阻断。

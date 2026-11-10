@@ -1,20 +1,23 @@
 # Umi Linux NFC / eSE 适配
 
-RQ-14 / WP10：目标是通过 Linux NFC/NCI 接入 Debian。RQ-13 的 Android NQ 字符设备方案保留为历史 bring-up 证据及 TD-003，不再作为产品用户空间路线。统一规则见 [ARCHITECTURE](ARCHITECTURE.md#linux-接口准则)。
+RQ-14 / WP10：目标是通过 Linux NFC/NCI 接入 Debian。RQ-13 的 Android NQ 字符设备方案仅保留历史 bring-up 证据，旧 ABI 退出验收归 TD-003。统一规则见 [ARCHITECTURE](ARCHITECTURE.md#linux-接口准则)。
 
 ## 硬件与已有接口
 
 - 原 NQ-NCI 来自 LineageOS `android_kernel_xiaomi_sm8250` revision `6fcac56423a078c7bd180e8d2c626c7d66bf1677`，GPL-2.0-only，归属及输入哈希在来源锁中；迁移时继续保留。
 - 实机节点 `soc/i2c@984000/nq@28`，地址 `0x28`；Android 总线号为 0，MiSeed 固定主线树为 I2C1，不能硬编码跨系统总线号。GPIO4/5 为 I²C，IRQ111、VEN83、FIRM110、CLKREQ7 来自匹配本机接线。
 - 既有 L3 确认 `1-0028` 绑定 `nq-nci` 与 `/dev/nq-nci` 存在。该驱动使用私有 ioctl/read/write，未注册 Linux NFC/NCI；probe/node 不是完整内核适配完成的判据。
-- NFCC 与 eSE 共用 VEN；probe 会切换 VEN 并发送 reset/version 命令，open/close 也会影响 IRQ/FIRM，不能把打开节点当成无副作用查询。不得虚构独立 eSE 电源 GPIO。
+- NFCC 与 eSE 共用 VEN；旧 NQ 驱动 probe 会切换 VEN 并发送 reset/version，open/close 也有副作用。新 transport 不复用这些入口；不得虚构独立 eSE 电源 GPIO。
 
-## Linux 内核迁移
+## Linux 内核 transport
 
-1. 对照锁定 Linux 的 `drivers/nfc/nxp-nci/`、NFC/NCI core 与 `net/nfc/nxp,nci.yaml`，确认 SN100T 的 NCI 版本、I²C 帧、IRQ、启动/固件流程和共享 VEN。上游 binding 未显式列 SN100T，不能仅改 compatible 便认定支持。
-2. 证据支持时扩展上游驱动；否则在 NFC/NCI 子系统实现可审查的 transport，使用适用的 gpiod、IRQ、regulator、PM/wakeup 与固件加载接口，补对应 binding。不得并行绑定旧 NQ 驱动争用控制器。
-3. 分项验证 NCI 注册、reset/init、帧收发、IRQ、超时/错误、关停/恢复及休眠唤醒；按 QUALITY 取得 L2、DT schema 与授权 L3。保护共享 VEN，禁止附带 eSE 操作或固件升级。
-4. Linux 标准路径成立且回归通过后，移除旧私有 ABI 构建依赖和诊断绑定，偿还 TD-003；迁移期间不将其标记为 Debian 功能入口。
+`kernel/nfc/sn100x.c` 使用锁定 Linux 6.18.60 的 NCI core；标准控制经 generic netlink、数据经 AF_NFC。`CONFIG_NET/NFC/NFC_NCI/NFC_SN100X` 与 `nxp,sn100t` binding 配套；不导出字符设备或私有 ioctl，不同时绑定旧 NQ 驱动。来源、差异与验证见[适配记录](archive/research/2026-11-10-sn100t-linux-nci.md)；本地实现不等于已上游合入。
+
+- 独立 transport 的理由：固定 `nxp-nci` 通用驱动 close 会拉低 VEN，且带独立固件下载流程；SN100T 的共享 VEN 不适用。沿用上游 I²C 三字节头/长度帧模型与内核 skb、gpiod、IRQ、PM 接口，NCI core 负责 reset/init 与 RF 协议。
+- probe 仅获取 VEN/FIRM，IRQ 注册后保持禁用；open 拒绝继承的 FIRM 高电平，设置正常模式并使能 VEN/IRQ。close、错误、移除均不拉低共享 VEN；不执行硬复位或固件下载。
+- 短读、短写、I²C 错误和 RX 内存不足均关闭 IRQ 并锁存故障；不做未验证的电源循环恢复。close 必须观察对应 CORE_RESET 成功，NCI 2.x 还需请求触发的通知，否则锁存超时。
+- PM 仅允许已关闭且无故障的 NFC 进入 suspend；活动/故障状态返回 EBUSY。不声明 RF 保持、唤醒或 eSE 可用。板级仅定义 default pinctrl，CLKREQ7 不声明为主机输出。
+- 真机须分项验证注册、reset/init、帧收发、IRQ、失败/恢复、close/reopen 与 PM；协议掩码是待验证范围，固件/读卡不能由注册推导。按 QUALITY 取得 L2、schema 与授权 L3。
 
 ## Debian 用户空间
 
@@ -26,7 +29,9 @@ Debian 是 MVP 的正常用户空间；当前静态诊断 initramfs 也是 Linux
 
 ## 被动诊断
 
-控制台 `nfc-status`（亦由 `status` 调用）动态扫描 I²C 的 `qcom,nq-nci` compatible，打印驱动绑定、DT 地址/引脚分配及节点类型。只读元数据，不打开 NFC 字符设备、不发 ioctl/NCI/RF 命令；不可证明传输、IRQ、唤醒、读卡、HCE 或 eSE。这是迁移期诊断，标准 NCI 驱动接入后须更新发现方式；构建与回归证据见本轮审计。
+控制台 `nfc-status`（亦由 `status` 调用）按 `nxp,sn100t` 动态扫描 I²C/DT 元数据与 `/sys/class/nfc/nfcN` 注册信息，不依赖总线号，不发 ioctl/NCI/RF 命令。类目录计数包含全部控制器，不代表均属于 SN100T，更不能证明 IRQ、读卡或 eSE。
+
+Linux/Debian 可运行 `python3 tools/nfc_inventory.py --timeout 3`：仅查询 generic-netlink 的 family 与 GET_DEVICE，输出设备索引、名称、协议与 powered；空列表合法，family 缺失、不支持、权限、超时、中断/畸形响应均报错。它不执行 DEV_UP、轮询或写卡，缺少 Python 的静态 initramfs 继续用上述被动诊断。此工具是最小标准消费者，非 Debian 服务集成证明。
 
 ## 有线、无线共存
 

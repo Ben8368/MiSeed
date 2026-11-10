@@ -14,7 +14,7 @@
 
 | 功能 / 路径 | 当前接口与定位 | 判定 / 优先级 | 后续与验收 |
 | --- | --- | --- | --- |
-| NFC transport | [nq-nci.c](../../../kernel/nfc/nq-nci.c) 的 cdev、私有 ioctl；[nq-nci.h](../../../kernel/nfc/nq-nci.h)、[nfcinfo UAPI](../../../kernel/nfc/nfcinfo-uapi.h)；无 nci_register_device/nfc_register_device | 确认偏离 Linux 产品目标，P1 / TD-003 | SN100T 协议/共享 VEN 评估，接入 NFC/NCI；标准 netlink/AF_NFC 发现、读卡与恢复；旧 ABI 退出 |
+| NFC transport | [nq-nci.c](https://github.com/Ben8368/MiSeed/blob/5f00c534c2544ce5ca7e10c3084916cc8139521e/kernel/nfc/nq-nci.c) 的 cdev、私有 ioctl；[nq-nci.h](https://github.com/Ben8368/MiSeed/blob/5f00c534c2544ce5ca7e10c3084916cc8139521e/kernel/nfc/nq-nci.h)、[nfcinfo UAPI](https://github.com/Ben8368/MiSeed/blob/5f00c534c2544ce5ca7e10c3084916cc8139521e/kernel/nfc/nfcinfo-uapi.h)；无 nci_register_device/nfc_register_device | 确认偏离 Linux 产品目标，P1 / TD-003 | SN100T 协议/共享 VEN 评估，接入 NFC/NCI；标准 netlink/AF_NFC 发现、读卡与恢复；旧 ABI 退出 |
 | NFC DTS / 配置 | [umi-csot.dts](../../../kernel/umi-csot.dts) 的 `qcom,nq-nci`、`qcom,nq-*`；[config](../../../kernel/umi-l2.config) 仅本地 MISEED_NFC_NQ 路线 | 下游绑定、未启用标准 NCI 路线，P1 / TD-003/007 | gpiod/IRQ/PM 等资源管理与 YAML；不能只加 CONFIG_NFC 或替换 compatible |
 | eSE / NFC 服务 | MiSeed 无实现；Android 对照依赖 AIDL HAL、NXP 库、QTEE/eSE | 功能未知 / RISK-011；旧 Android 集成计划已撤换 | Linux 下独立评估固件、协议/权限、共享 VEN；HCE、OMAPI/eSE、支付分别证明，不由读卡推导 |
 | 电池 FG（有线/无线可共享的电池观测） | [qcom_fg.c](../../../kernel/power/qcom_fg.c)：power_supply 注册、属性与 changed 通知；PMIC regmap | 标准子系统已采用；本地驱动未出现在固定上游，非“已上游” | 复核电流符号、温度标度、无效/未就绪状态与通知；电池观测不能证明无线 RX/TX 可用 |
