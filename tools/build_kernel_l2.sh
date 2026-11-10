@@ -157,9 +157,14 @@ install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 # Kbuild expands built-in composite targets into their constituent objects;
 # a standalone umi-bq25970.o is only materialized for the module case.
 # Check both built-in constituents here and their linked symbols below.
-for driver in qcom_fg qcom_pm8150b_charger umi_pps bq25970; do
+readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
+    qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply
+    umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970)
+power_objects=()
+for driver in "${power_drivers[@]}"; do
     [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"
     install -m 0644 "$build_tree/drivers/power/supply/${driver}.o" "$output_root/${driver}.o"
+    power_objects+=("$output_root/${driver}.o")
 done
 install -m 0644 "$source_tree/.miseed-pd-diagnostics.json" "$output_root/pd-diagnostics-inputs.json"
 install -m 0644 "$build_tree/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.o" "$output_root/qcom_pmic_typec_pdphy.o"
@@ -218,8 +223,13 @@ python3 "$repo_root/tools/extract_abl_anchors.py" \
 readonly rescue_bin="$output_root/rescue-init"
 readonly initramfs="$output_root/rescue-initramfs.cpio.gz"
 readonly kernel_image="$build_tree/arch/arm64/boot/Image"
+readonly -a rescue_sources=("$repo_root/kernel/rescue_init.c"
+    "$repo_root/kernel/rescue_fs.c" "$repo_root/kernel/rescue_usb_diag.c"
+    "$repo_root/kernel/rescue_devices.c" "$repo_root/kernel/rescue_power.c"
+    "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_usb.c"
+    "$repo_root/kernel/charge_log.c")
 aarch64-linux-gnu-gcc -Os -static -s -Wall -Wextra -Werror \
-    -o "$rescue_bin" "$repo_root/kernel/rescue_init.c"
+    -o "$rescue_bin" "${rescue_sources[@]}"
 python3 "$repo_root/tools/make_initramfs.py" --init "$rescue_bin" --output "$initramfs"
 python3 "$repo_root/tools/pack_android_boot_v2.py" \
     --template "$template" --template-sha256 "$boot_sha256" \
@@ -229,15 +239,22 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
     "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
-    "$repo_root/kernel/rescue_init.c" "$repo_root/kernel/charge_log.h" \
+    "${rescue_sources[@]}" "$repo_root/kernel/charge_log.h" "$repo_root/kernel/rescue_internal.h" \
     "$repo_root/kernel/power/umi_smb5_diagnostics.h" "$repo_root/tools/make_initramfs.py" \
-    "$repo_root/kernel/power/qcom_fg.c" "$repo_root/kernel/power/qcom_pm8150b_charger.c" \
+    "$repo_root/kernel/power/qcom_fg_core.c" "$repo_root/kernel/power/qcom_fg_io.c" \
+    "$repo_root/kernel/power/qcom_fg_measure.c" "$repo_root/kernel/power/qcom_fg_internal.h" \
+    "$repo_root/kernel/power/qcom_pm8150b_core.c" "$repo_root/kernel/power/qcom_pm8150b_hw.c" \
+    "$repo_root/kernel/power/qcom_pm8150b_policy.c" "$repo_root/kernel/power/qcom_pm8150b_supply.c" \
+    "$repo_root/kernel/power/qcom_pm8150b_internal.h" "$repo_root/kernel/power/qcom_pm8150b_regs.h" \
     "$repo_root/kernel/power/Kconfig" "$repo_root/kernel/power/umi_charge_policy.h" \
     "$repo_root/kernel/power/umi-pm8150b.dtsi" "$repo_root/tools/apply_power_port.py" \
     "$repo_root/kernel/power/bq25970.c" "$repo_root/kernel/power/bq25970.h" \
     "$repo_root/kernel/power/umi_pps.c" "$repo_root/kernel/power/umi_pps_policy.h" \
+    "$repo_root/kernel/power/umi_pps_hw.c" "$repo_root/kernel/power/umi_pps_supply.c" \
+    "$repo_root/kernel/power/umi_pps_thermal.c" "$repo_root/kernel/power/umi_pps_driver.c" \
+    "$repo_root/kernel/power/umi_pps_internal.h" "$repo_root/tools/source_layout.py" \
     "$repo_root/kernel/power/umi_smb5.h" "$repo_root/kernel/power/umi-pps.dtsi" \
-    "$output_root/umi_pps.o" "$output_root/qcom_fg.o" "$output_root/qcom_pm8150b_charger.o" \
+    "${power_objects[@]}" \
     "$repo_root/tools/apply_pd_diagnostics.py" "$repo_root/kernel/power/pmic_pdphy_receive.inc" \
     "$output_root/pd-diagnostics-inputs.json" "$output_root/qcom_pmic_typec_pdphy.o" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \

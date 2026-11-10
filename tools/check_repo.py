@@ -34,6 +34,11 @@ REQUIRED = (
 )
 EXCLUDED = {".git", ".work", "out", "local", ".venv", "__pycache__"}
 TEXT_SUFFIXES = {".md", ".py", ".json", ".yml", ".yaml", ".toml", ".sh", ".ps1"}
+SOURCE_SUFFIXES = {
+    ".c", ".h", ".inc", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx",
+    ".rs", ".s", ".asm", ".py", ".sh", ".ps1", ".dts", ".dtsi", ".mk",
+}
+SOURCE_NAMES = {"Kconfig", "Kbuild", "Makefile", "Dockerfile"}
 FORBIDDEN_SUFFIXES = {
     ".img", ".bin", ".elf", ".dtb", ".dtbo", ".cpio", ".log", ".pem", ".key",
     ".pyc", ".pyo",
@@ -61,6 +66,26 @@ def document_budget(name):
             return None
         return ADR_BUDGET if name.startswith("docs/ADR/") else DOC_BUDGET
     return None
+
+
+def is_source(name):
+    path = Path(name)
+    return (path.suffix.lower() in SOURCE_SUFFIXES or path.name in SOURCE_NAMES
+            or any(path.name.startswith(base + ".") for base in SOURCE_NAMES)
+            or path.name.endswith(".Dockerfile"))
+
+
+def source_diagnostics(name, data):
+    """Count physical lines, including comments and blanks; never exempt imports."""
+    if not is_source(name):
+        return [], []
+    lines = data.count(b"\n") + int(bool(data) and not data.endswith(b"\n"))
+    if lines > 600:
+        return [f"{name}: RED: {lines} source lines > 600; split by responsibility"], []
+    if lines > 300:
+        return [], [f"{name}: YELLOW: {lines} source lines > 300; "
+                    "record owner, reason and repayment in docs/TECH_DEBT.md"]
+    return [], []
 
 
 def text_errors(name, data):
@@ -166,8 +191,10 @@ def adr_errors(root, texts):
     return errors
 
 
-def check_repository(root):
+def check_repository(root, warnings=None):
     root = root.resolve()
+    if warnings is None:
+        warnings = []
     errors, texts = [], {}
     for name in REQUIRED:
         if not (root / name).is_file():
@@ -187,8 +214,14 @@ def check_repository(root):
         if path.stat().st_size > 1_000_000:
             errors.append(f"{name}: oversized file; review outside Git")
             continue
-        if path.suffix in TEXT_SUFFIXES or path.name.startswith("."):
-            found, content = text_errors(name, path.read_bytes())
+        is_text = path.suffix in TEXT_SUFFIXES or path.name.startswith(".")
+        if is_text or is_source(name):
+            data = path.read_bytes()
+            found, followups = source_diagnostics(name, data)
+            errors.extend(found)
+            warnings.extend(followups)
+        if is_text:
+            found, content = text_errors(name, data)
             errors.extend(found)
             if content is not None:
                 texts[name] = content
@@ -213,12 +246,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
-    errors = check_repository(args.root)
+    warnings = []
+    errors = check_repository(args.root, warnings)
+    for warning in warnings:
+        print("WARNING:", warning)
     for error in errors:
         print("ERROR:", error)
     if errors:
         return 1
-    print("PASS: repository text, links, budgets, ADRs, candidates and Boot L2 lock (L0 only)")
+    print("PASS: repository text, links, budgets, source limits, ADRs, candidates and Boot L2 lock (L0 only)")
     return 0
 
 

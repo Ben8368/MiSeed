@@ -47,9 +47,12 @@ class BuildLockTests(unittest.TestCase):
         self.assertTrue(any("pinned Linux NCI" in error for error in self.errors()))
 
     def test_changed_source_and_host_tool_fail(self):
-        for name in ("kernel/power/umi_pps.c", "tools/collect_charge_log.py"):
+        paths = ("kernel/power/umi_pps.c", "tools/collect_charge_log.py",
+                 "kernel/power/qcom_fg_io.c", "kernel/rescue_internal.h",
+                 "tools/source_layout.py")
+        for name in paths:
             (self.root / name).write_bytes(b"changed\n")
-        self.assertEqual(sum("SHA-256 mismatch" in e for e in self.errors()), 2)
+        self.assertEqual(sum("SHA-256 mismatch" in e for e in self.errors()), len(paths))
 
     def test_removing_both_inventory_and_digest_cannot_hide_pps_input(self):
         profile = self.data["build_profiles"][0]

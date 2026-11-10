@@ -13,9 +13,11 @@ from pathlib import Path
 if __package__:
     from . import apply_pd_diagnostics as pd
     from .apply_power_port import RPMHPD_KCONFIG_RULE
+    from .source_layout import POWER_FILES, POWER_RULES
 else:
     import apply_pd_diagnostics as pd
     from apply_power_port import RPMHPD_KCONFIG_RULE
+    from source_layout import POWER_FILES, POWER_RULES
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
@@ -29,8 +31,6 @@ GENERATED = {
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
     "arch/arm64/boot/dts/qcom/umi-csot-abl-anchors.dtsi",
-    "drivers/power/supply/qcom_fg.c",
-    "drivers/power/supply/qcom_pm8150b_charger.c",
     "drivers/power/supply/miseed-power.Kconfig",
     "drivers/power/supply/umi_charge_policy.h",
     "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
@@ -41,16 +41,12 @@ GENERATED = {
     "drivers/power/supply/umi_pps_policy.h",
     "drivers/power/supply/umi_smb5.h",
     "drivers/power/supply/umi_smb5_diagnostics.h",
-}
+} | {"drivers/power/supply/" + name for name in POWER_FILES}
 OVERLAY_RULES = {
     "drivers/nfc/Makefile": [(b"", b"obj-$(CONFIG_NFC_SN100X) += sn100x.o")],
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
                (b"", b"DTC_FLAGS_umi-csot += -@")],
-    "drivers/power/supply/Makefile": [
-        (b"\n", b"obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o"),
-        (b"\n", b"obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi-bq25970.o"),
-        (b"\n", b"umi-bq25970-y := umi_pps.o bq25970.o")],
+    "drivers/power/supply/Makefile": [(b"\n", rule.encode()) for rule in POWER_RULES],
     "drivers/power/supply/Kconfig": [
         (b"\n", b'source "drivers/power/supply/miseed-power.Kconfig"')],
 }

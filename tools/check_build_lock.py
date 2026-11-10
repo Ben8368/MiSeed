@@ -8,6 +8,11 @@ import re
 import stat
 from pathlib import Path, PurePosixPath
 
+if __package__:
+    from .source_layout import SPLIT_INPUTS
+else:
+    from source_layout import SPLIT_INPUTS
+
 
 PROFILE = "umi-csot-boot-l2"
 MANIFEST = "manifests/sources.lock.json"
@@ -22,8 +27,7 @@ REQUIRED_INPUTS = {
     "tools/pack_android_boot_v2.py", "tests/test_abl_isolation.py",
     "kernel/umi-csot.dts", "kernel/umi-csot-dtbo-targets.txt",
     "kernel/umi-l2.config", "kernel/rescue_init.c", "kernel/charge_log.h",
-    "kernel/power/umi_smb5_diagnostics.h", "kernel/power/qcom_fg.c",
-    "kernel/power/qcom_pm8150b_charger.c", "kernel/power/Kconfig",
+    "kernel/power/umi_smb5_diagnostics.h", "kernel/power/Kconfig",
     "kernel/power/umi_charge_policy.h", "kernel/power/umi-pm8150b.dtsi",
     "kernel/power/bq25970.c", "kernel/power/bq25970.h",
     "kernel/power/umi_pps.c", "kernel/power/umi_pps_policy.h",
@@ -32,7 +36,7 @@ REQUIRED_INPUTS = {
     "kernel/nfc/sn100x.c", "kernel/nfc/Kconfig",
     "kernel/nfc/bindings/nxp,sn100t.yaml",
     "LICENSES/BSD-3-Clause.txt", "LICENSES/GPL-2.0-only.txt",
-}
+} | SPLIT_INPUTS
 
 
 def read_input(root, name):
