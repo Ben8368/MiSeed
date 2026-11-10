@@ -41,7 +41,7 @@
 			io-channels = <&pm8150b_adc ADC5_USB_IN_I>, <&pm8150b_adc ADC5_USB_IN_V_16>;
 			io-channel-names = "usb_in_i_uv", "usb_in_v_div_16";
 			monitored-battery = <&umi_battery>;
-			power-supplies = <&umi_fg>;
+			qcom,fuel-gauge = <&umi_fg>;
 		};
 	};
 };

@@ -939,7 +939,7 @@ static int reopen_usb_console(void) {
 
 /* Locate exactly one bound PPS controller; never infer an I2C bus number. */
 static int pps_control_path(char *path, size_t size) {
-    const char *base = "/sys/bus/i2c/drivers/umi-bq25970-pps";
+    const char *base = "/sys/class/power_supply";
     DIR *dir = opendir(base);
     struct dirent *entry;
     struct stat st;
@@ -947,8 +947,18 @@ static int pps_control_path(char *path, size_t size) {
     int found = 0;
     if (!dir) return -1;
     while ((entry = readdir(dir))) {
+        char model[64];
+        FILE *identity;
         if (entry->d_name[0] == '.') continue;
-        int n = snprintf(candidate, sizeof(candidate), "%s/%s/fastcharge_test", base, entry->d_name);
+        int n = snprintf(candidate, sizeof(candidate), "%s/%s/model_name", base, entry->d_name);
+        if (n < 0 || (size_t)n >= sizeof(candidate)) continue;
+        identity = fopen(candidate, "r");
+        if (!identity) continue;
+        int matches = fgets(model, sizeof(model), identity) &&
+                      !strcmp(model, "BQ25970\n");
+        fclose(identity);
+        if (!matches) continue;
+        n = snprintf(candidate, sizeof(candidate), "%s/%s/charge_behaviour", base, entry->d_name);
         if (n < 0 || (size_t)n >= sizeof(candidate)) continue;
         if (stat(candidate, &st) || !S_ISREG(st.st_mode)) continue;
         if (++found != 1 || (size_t)n >= size) { found = -1; break; }
@@ -964,7 +974,12 @@ static int pps_control(const char *value) {
     int rc = pps_control_path(path, sizeof(path));
     if (!rc) {
         if (value) rc = write_value(path, value);
-        else rc = print_file(path);
+        else {
+            char *attribute = strrchr(path, '/');
+            if (!attribute) return -1;
+            strcpy(attribute + 1, "uevent");
+            rc = print_file(path);
+        }
     }
     if (value) charge_log_append("CONTROL", "pps_control action=%s rc=%d", value, rc);
     return rc;
@@ -979,7 +994,7 @@ static void usb_console(void) {
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
         puts("Commands: help, status, nfc-status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
-        puts("Charging controls: charge-test (60 s), charge-test-10min (600 s), charge-stop.");
+        puts("Wired controls: charge-stop; bounded charge-test commands require a diagnostic kernel.");
         puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
@@ -1010,14 +1025,14 @@ static void usb_console(void) {
         } else if (!strcmp(line, "pps-status")) {
             if (pps_control(NULL)) puts("PPS controller unavailable or ambiguous; board qualification may be incomplete.");
         } else if (!strcmp(line, "pps-stop")) {
-            puts(pps_control("stop") ? "PPS stop unavailable/failed; disconnect charger." : "PPS stopped; SMB5 fallback policy resumed.");
+            puts(pps_control("inhibit-charge") ? "PPS stop unavailable/failed; disconnect charger." : "PPS stopped; SMB5 fallback policy resumed.");
         } else if (!strcmp(line, "charge-stop")) {
             /* Also stop PPS when present, before releasing the ordinary charger. */
             char path[512];
             int pps_rc = pps_control_path(path, sizeof(path));
-            if (!pps_rc) pps_rc = write_value(path, "stop");
+            if (!pps_rc) pps_rc = write_value(path, "inhibit-charge");
             else if (errno == ENOENT || errno == ENODEV) pps_rc = 0;
-            int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_test", "stop");
+            int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_behaviour", "inhibit-charge");
             if (pps_rc) rc = pps_rc;
             charge_log_append("CONTROL", "charge_test_stop rc=%d", rc);
             puts(rc ? "Charge stop failed; disconnect the charger." : "Charging inhibited; test cancelled.");

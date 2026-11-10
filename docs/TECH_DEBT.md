@@ -24,11 +24,11 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-取舍：FG/SMB5 已使用 power_supply、PD/PPS 已用 TCPM；但 BQ25970 未注册独立 power_supply，控制/状态依赖 `fastcharge_test` 与日志，SMB5 保留 `charge_test`，泵/SMB5 通过内部 `umi_smb5_*` 协调。偿还：补标准供电状态/通知与适用控制接口，审查驱动内部所有权和失败退出，迁移 Debian 消费者后将私有命令限于诊断；有线 PD/PPS 回归及保护专项不可省略，不以重命名节点代替实现。不影响已通过的有线稳定运行结论。
+本轮源码偿还：BQ25970 注册 power_supply、标准属性/事件和 charge_behaviour，移除 fastcharge_test；SMB5 使用 input_current_limit，charge_test 默认关闭；消费者改读写标准 ABI。内核内部 umi_smb5_* 仍保留失败锁定互锁，不能用非原子的用户空间属性写入替代；后续拆分通用泵驱动/板级策略并完成所有权专项复核。FG 标准遥测及原始电流符号保持；本轮 L1/L2 与标准接口证据见[记录](archive/reviews/2026-11-10-wired-mainline-power.md)。有线 PD/PPS、新 ABI 的 Debian 消费与保护恢复 L3 未做，故本项仍开放；既有稳定运行结论不变。
 
 ## TD-005：有线温控策略未接入 thermal（P1，2026-11-10；WP9/WP6）
 
-取舍：有线 PPS 用 IIO 温度采样，但虚拟温度/限流策略在私有驱动中；`wireless_therm` 为被复用的传感器名称，不代表无线驱动。偿还：核实标度与板级模型，接入适用 thermal zone/cooling 接口并保留独立保护，取得超温/传感器失败/恢复 L3；无线 RX/TX 另做设计。
+本轮源码偿还：有线 PPS 的既有六路模型接入 thermal zone/cooling device，DT 显式绑定既有 trip/滞回/FCC 档位，独立采样与保护继续生效；wireless_therm 仅是被复用的 ADC 名称。剩余：核实板级温度标度、超温/传感器失败/恢复 L3、固定 PD 热策略及独立复核；未将无线 RX/TX 纳入该 zone。验证范围见[记录](archive/reviews/2026-11-10-wired-mainline-power.md)，未因增加节点关闭本债务。
 
 ## TD-006：诊断启动与用户空间临时路径（P2，2026-11-10；WP2–WP5）
 
@@ -36,4 +36,4 @@
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-取舍：本地 NFC/FG/SMB5/PPS/observer 扩展缺少 YAML/schema 证据；PPS 将标准 `monitored-battery` 指向 FG，偏离 simple-battery 语义，SMB5 `power-supplies` 用作 BMS 查找也须核对拓扑。偿还：按固定上游定义修正消费者/提供者、配套驱动查找与 binding，逐项通过 dt_binding_check/dtbs_check、L2 与受影响 L3；不得只改 DTS 造成驱动失配，也不冒用近似芯片 compatible。详见 [接口审计](archive/reviews/2026-11-10-linux-interface-audit.md)。
+本轮偿还有线部分：新增 FG/SMB5/BQ25970 YAML；同时修正驱动查找和 DTS，monitored-battery 只指向 simple-battery，电量计用独立遥测 phandle，TCPM 作为真实 power-supplies；定向 schema 与 L2 见[记录](archive/reviews/2026-11-10-wired-mainline-power.md)。剩余：新 DT/标准消费者 L3、binding 上游评审，以及 NFC/observer 原有例外；不将本地 schema 通过写成上游合入或整机 DT 合规。

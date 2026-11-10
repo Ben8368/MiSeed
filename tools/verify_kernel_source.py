@@ -19,6 +19,9 @@ else:
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
+    "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-fg.yaml",
+    "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-charger.yaml",
+    "Documentation/devicetree/bindings/power/supply/xiaomi,umi-bq25970.yaml",
     ".miseed-source-revision",
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",

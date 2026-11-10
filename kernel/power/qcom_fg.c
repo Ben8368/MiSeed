@@ -1015,12 +1015,24 @@ static int qcom_fg_get_property(struct power_supply *psy,
 	return ret;
 }
 
+/* Charger changes propagate through power_supply's supplier graph, without
+ * making the gauge depend on a charger that itself requires gauge telemetry.
+ */
+static void qcom_fg_external_power_changed(struct power_supply *psy)
+{
+	struct qcom_fg_chip *chip = power_supply_get_drvdata(psy);
+
+	if (READ_ONCE(chip->initialized))
+		power_supply_changed(psy);
+}
+
 static const struct power_supply_desc batt_psy_desc = {
 	.name = "qcom-battery",
 	.type = POWER_SUPPLY_TYPE_BATTERY,
 	.properties = qcom_fg_props,
 	.num_properties = ARRAY_SIZE(qcom_fg_props),
 	.get_property = qcom_fg_get_property,
+	.external_power_changed = qcom_fg_external_power_changed,
 };
 
 /********************

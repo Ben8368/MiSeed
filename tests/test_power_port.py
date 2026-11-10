@@ -37,6 +37,25 @@ class PowerPortTests(unittest.TestCase):
     def stage(self):
         apply_power_port.stage(self.source, ROOT / "kernel/power")
 
+    @unittest.skipUnless(shutil.which("cc"), "C compiler required")
+    def test_standard_input_limit_and_behaviour_failure_paths(self):
+        source = (ROOT / "kernel/power/qcom_pm8150b_charger.c").read_text()
+        functions = []
+        for name in ("smb5_set_current_limit", "smb5_set_property", "smb5_property_is_writable"):
+            start = source.rindex("static int " + name + "(")
+            functions.append(source[start:source.index("\n}\n", start) + 3])
+        harness = (ROOT / "tests/smb5_abi_harness.c").read_text().replace(
+            "/* MISEED_SMB5_ABI_UNDER_TEST */", "\n".join(functions))
+        with tempfile.TemporaryDirectory() as directory:
+            src, binary = Path(directory) / "abi.c", Path(directory) / "abi"
+            src.write_text(harness)
+            result = subprocess.run(["cc", "-std=c11", "-Wall", "-Werror",
+                                     "-Wno-unused-function", str(src), "-o", str(binary)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_restage_replaces_stale_generated_driver_without_duplicate_rules(self):
         self.stage()
         snapshot = {p.name: p.read_bytes() for p in self.target.iterdir()}

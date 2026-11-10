@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-2.0-only
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/power/supply/qcom,pm8150b-fg.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Qualcomm PM8150B fuel gauge
+
+maintainers:
+  - Ben <Ben8368@vip.qq.com>
+
+description: |
+  Gen4 fuel-gauge peripheral. The Umi driver reads the inherited profile;
+  this binding does not authorize programming a new battery profile.
+
+allOf:
+  - $ref: power-supply.yaml#
+
+properties:
+  compatible:
+    const: qcom,pm8150b-fg
+  reg:
+    maxItems: 1
+  interrupts:
+    maxItems: 1
+  interrupt-names:
+    const: soc-delta
+  monitored-battery: true
+
+required:
+  - compatible
+  - reg
+  - interrupts
+  - interrupt-names
+  - monitored-battery
+
+additionalProperties: false

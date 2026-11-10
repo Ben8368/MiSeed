@@ -25,16 +25,18 @@
 	status = "okay";
 
 	umi_pps: charger@66 {
-		compatible = "miseed,umi-bq25970-pps";
+		compatible = "xiaomi,umi-bq25970";
 		reg = <0x66>;
 		status = "okay";
 		interrupt-parent = <&tlmm>;
 		interrupts = <68 IRQ_TYPE_EDGE_FALLING>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&umi_bq_irq_default>;
-		miseed,pd-source = <&pm8150b_typec>;
-		miseed,switch-charger = <&umi_charger>;
-		monitored-battery = <&umi_fg>;
+		power-supplies = <&pm8150b_typec>;
+		xiaomi,switch-charger = <&umi_charger>;
+		xiaomi,fuel-gauge = <&umi_fg>;
+		#thermal-sensor-cells = <0>;
+		#cooling-cells = <2>;
 		io-channels = <&pm8150l_adc ADC5_AMUX_THM1_100K_PU>,
 			      <&pm8150b_adc ADC5_AMUX_THM3_100K_PU>,
 			      <&pm8150_adc ADC5_AMUX_THM1_100K_PU>,
@@ -43,7 +45,7 @@
 		io-channel-names = "cam_therm1", "conn_therm", "quiet_therm",
 				   "wireless_therm", "xo_therm";
 		/* This Android kernel has no board_sensor_temp_comp node. */
-		miseed,thermal-board-compensation-millicelsius = <0>;
+		xiaomi,thermal-board-compensation-millicelsius = <0>;
 		ti,bat-ovp-millivolt = <4550>;
 		ti,bat-ovp-alarm-millivolt = <4525>;
 		ti,bus-ovp-millivolt = <12000>;
@@ -130,4 +132,102 @@
 	regulator-min-microamp = <500000>;
 	regulator-max-microamp = <3000000>;
 	status = "okay";
+};
+
+/* Wired PPS only. wireless_therm above is a shared ADC name, not wireless RX/TX.
+ * The in-driver protection path remains active independently of this governor.
+ */
+/ {
+	thermal-zones {
+		wired-pps-thermal {
+			polling-delay-passive = <500>;
+			polling-delay = <1000>;
+			thermal-sensors = <&umi_pps>;
+			trips {
+				umi_wired_trip0: trip-0 {
+					temperature = <41000>;
+					hysteresis = <3000>;
+					type = "passive";
+				};
+				umi_wired_trip1: trip-1 {
+					temperature = <43000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+				umi_wired_trip2: trip-2 {
+					temperature = <45000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+				umi_wired_trip3: trip-3 {
+					temperature = <46000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				umi_wired_trip4: trip-4 {
+					temperature = <47000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				umi_wired_trip5: trip-5 {
+					temperature = <48000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				umi_wired_trip6: trip-6 {
+					temperature = <49000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				umi_wired_trip7: trip-7 {
+					temperature = <50000>;
+					hysteresis = <1000>;
+					type = "passive";
+				};
+				umi_wired_trip8: trip-8 {
+					temperature = <63000>;
+					hysteresis = <12000>;
+					type = "passive";
+				};
+			};
+			cooling-maps {
+				map-0 {
+					trip = <&umi_wired_trip0>;
+					cooling-device = <&umi_pps 8 8>;
+				};
+				map-1 {
+					trip = <&umi_wired_trip1>;
+					cooling-device = <&umi_pps 11 11>;
+				};
+				map-2 {
+					trip = <&umi_wired_trip2>;
+					cooling-device = <&umi_pps 12 12>;
+				};
+				map-3 {
+					trip = <&umi_wired_trip3>;
+					cooling-device = <&umi_pps 12 12>;
+				};
+				map-4 {
+					trip = <&umi_wired_trip4>;
+					cooling-device = <&umi_pps 12 12>;
+				};
+				map-5 {
+					trip = <&umi_wired_trip5>;
+					cooling-device = <&umi_pps 14 14>;
+				};
+				map-6 {
+					trip = <&umi_wired_trip6>;
+					cooling-device = <&umi_pps 15 15>;
+				};
+				map-7 {
+					trip = <&umi_wired_trip7>;
+					cooling-device = <&umi_pps 15 15>;
+				};
+				map-8 {
+					trip = <&umi_wired_trip8>;
+					cooling-device = <&umi_pps 15 15>;
+				};
+			};
+		};
+	};
 };

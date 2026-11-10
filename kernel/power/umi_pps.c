@@ -21,6 +21,7 @@
 #include <linux/property.h>
 #include <linux/regmap.h>
 #include <linux/workqueue.h>
+#include <linux/thermal.h>
 
 #include "umi_pps_policy.h"
 #include "umi_smb5.h"
@@ -44,7 +45,11 @@ struct umi_pps_reg { unsigned int reg, mask, value; };
 struct umi_pps {
 	struct device *dev;
 	struct regmap *map;
-	struct power_supply *pd, *bms, *sw;
+	struct power_supply *pd, *bms, *sw, *psy;
+	struct thermal_zone_device *tzd;
+	struct thermal_cooling_device *cooling;
+	unsigned long cooling_state;
+	bool ready;
 	struct delayed_work work;
 	struct mutex lock;
 	struct umi_pps_caps caps;
@@ -217,7 +222,7 @@ static int umi_pps_parse(struct umi_pps *c)
 {
 	int ret;
 
-	ret = umi_pps_property(c, "miseed,thermal-board-compensation-millicelsius",
+	ret = umi_pps_property(c, "xiaomi,thermal-board-compensation-millicelsius",
 			       &c->thermal_comp_mc);
 	if (ret)
 		return ret;
@@ -351,7 +356,8 @@ static int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 	 */
 	if (umi_pps_thermal_update(&c->thermal, temp_mc, -1, c->thermal_comp_mc))
 		return -ERANGE;
-	s->thermal_bat_ma = c->thermal.max_bat_ma;
+	s->thermal_bat_ma = min(c->thermal.max_bat_ma,
+			       umi_pps_cooling_current(c->cooling_state));
 	return 0;
 }
 
@@ -562,7 +568,6 @@ static void umi_pps_work(struct work_struct *work)
 			umi_pps_stop(c, PPS_WAIT_PLUG, 0);
 		else {
 			c->state = PPS_WAIT_PLUG;
-			c->manual_stop = false;
 		}
 		goto out;
 	}
@@ -740,6 +745,8 @@ out:
 	if (!c->removing && !c->suspended)
 		mod_delayed_work(system_wq, &c->work, msecs_to_jiffies(UMI_PPS_PERIOD_MS));
 	mutex_unlock(&c->lock);
+	if (c->psy)
+		power_supply_changed(c->psy);
 }
 
 static irqreturn_t umi_pps_irq(int irq, void *data)
@@ -748,47 +755,221 @@ static irqreturn_t umi_pps_irq(int irq, void *data)
 
 	/* Fault flags are collected by the same serialized reader as polling. */
 	mutex_lock(&c->lock);
-	if (!c->removing)
+	if (c->ready && !c->removing)
 		mod_delayed_work(system_wq, &c->work, 0);
 	mutex_unlock(&c->lock);
 	return IRQ_HANDLED;
 }
 
-static ssize_t fastcharge_test_show(struct device *dev, struct device_attribute *attr, char *buf)
+/* Standard wired supply ABI. Reading it never consumes latched fault flags. */
+static enum power_supply_property umi_pps_properties[] = {
+	POWER_SUPPLY_PROP_MANUFACTURER,
+	POWER_SUPPLY_PROP_MODEL_NAME,
+	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_HEALTH,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_USB_TYPE,
+	POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
+};
+
+static int umi_pps_get_property(struct power_supply *psy,
+		enum power_supply_property prop, union power_supply_propval *val)
 {
-	struct umi_pps *c = dev_get_drvdata(dev);
-	ssize_t ret;
+	struct umi_pps *c = power_supply_get_drvdata(psy);
+	unsigned int status;
+	int ret = 0, raw;
 
 	mutex_lock(&c->lock);
-	ret = sysfs_emit(buf, "state=%u error=%d requested_mv=%d requested_ma=%d stop_pending=%u\n",
-		c->state, c->last_error, c->request_mv, c->request_ma, c->stop_pending);
+	if (c->removing || !c->ready) {
+		ret = c->removing ? -ENODEV : -EAGAIN;
+		goto out;
+	}
+	switch (prop) {
+	case POWER_SUPPLY_PROP_MANUFACTURER:
+		val->strval = "Texas Instruments";
+		break;
+	case POWER_SUPPLY_PROP_MODEL_NAME:
+		val->strval = "BQ25970";
+		break;
+	case POWER_SUPPLY_PROP_ONLINE:
+		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &raw);
+		if (!ret)
+			val->intval = !!raw;
+		break;
+	case POWER_SUPPLY_PROP_STATUS:
+		ret = regmap_read(c->map, 0x0a, &status);
+		if (!ret)
+			val->intval = status & BIT(2) ? POWER_SUPPLY_STATUS_CHARGING :
+				POWER_SUPPLY_STATUS_NOT_CHARGING;
+		break;
+	case POWER_SUPPLY_PROP_HEALTH:
+		/* Fault flags are read and latched by the policy worker only. */
+		val->intval = c->stop_pending ||
+			(c->state == PPS_FAULT && c->last_error != -EOPNOTSUPP) ?
+			POWER_SUPPLY_HEALTH_UNSPEC_FAILURE :
+			(c->state == PPS_RUN ? POWER_SUPPLY_HEALTH_GOOD :
+			 POWER_SUPPLY_HEALTH_UNKNOWN);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		if (!c->configured) {
+			ret = -ENODATA;
+			break;
+		}
+		ret = umi_pps_adc(c, prop == POWER_SUPPLY_PROP_CURRENT_NOW ? 0 : 1, &raw);
+		if (!ret)
+			val->intval = raw * 1000; /* ADC mA/mV -> power_supply uA/uV */
+		break;
+	case POWER_SUPPLY_PROP_USB_TYPE:
+		ret = umi_pps_get(c->pd, prop, &val->intval);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
+		val->intval = c->manual_stop ? POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE :
+			POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+out:
 	mutex_unlock(&c->lock);
 	return ret;
 }
 
-static ssize_t fastcharge_test_store(struct device *dev, struct device_attribute *attr,
-		const char *buf, size_t count)
+static int umi_pps_set_property(struct power_supply *psy,
+		enum power_supply_property prop, const union power_supply_propval *val)
 {
-	struct umi_pps *c = dev_get_drvdata(dev);
-	int ret;
+	struct umi_pps *c = power_supply_get_drvdata(psy);
+	int ret = 0;
 
-	if (!sysfs_streq(buf, "stop"))
+	if (prop != POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR ||
+	    (val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
+	     val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE))
 		return -EINVAL;
 	mutex_lock(&c->lock);
-	if (c->removing) {
-		ret = -ENODEV;
+	if (c->removing || !c->ready) {
+		ret = c->removing ? -ENODEV : -EAGAIN;
 		goto out;
 	}
-	ret = umi_pps_stop(c, PPS_OFF, 0);
-	c->manual_stop = true;
+	if (val->intval == POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE) {
+		/* Latch the intent even if stop fails. Retry retains SMB5 ownership. */
+		c->manual_stop = true;
+		ret = umi_pps_stop(c, PPS_OFF, 0);
+	} else if (c->stop_pending || c->suspended || c->state == PPS_FAULT) {
+		ret = -EBUSY;
+	} else {
+		c->manual_stop = false;
+		if (c->state == PPS_OFF)
+			c->state = PPS_WAIT_PLUG;
+	}
 	mod_delayed_work(system_wq, &c->work, 0);
 out:
 	mutex_unlock(&c->lock);
-	return ret ? ret : count;
+	power_supply_changed(psy);
+	return ret;
 }
-static DEVICE_ATTR_RW(fastcharge_test);
-static struct attribute *umi_pps_attrs[] = { &dev_attr_fastcharge_test.attr, NULL };
-static const struct attribute_group umi_pps_group = { .attrs = umi_pps_attrs };
+
+static int umi_pps_property_is_writeable(struct power_supply *psy,
+		enum power_supply_property prop)
+{
+	return prop == POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR;
+}
+
+static const struct power_supply_desc umi_pps_desc = {
+	.name = "bq25970-charger",
+	.type = POWER_SUPPLY_TYPE_USB,
+	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_UNKNOWN) | BIT(POWER_SUPPLY_USB_TYPE_PD) |
+		BIT(POWER_SUPPLY_USB_TYPE_PD_PPS),
+	.properties = umi_pps_properties,
+	.num_properties = ARRAY_SIZE(umi_pps_properties),
+	.get_property = umi_pps_get_property,
+	.set_property = umi_pps_set_property,
+	.property_is_writeable = umi_pps_property_is_writeable,
+	.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO) |
+		BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE),
+};
+
+/* thermal uses milli-C; the FG power_supply uses deci-C. This callback reads
+ * sensors without changing the protection controller's hysteresis state.
+ */
+static int umi_pps_get_temp(struct thermal_zone_device *tz, int *temp)
+{
+	struct umi_pps *c = thermal_zone_device_priv(tz);
+	struct umi_pps_thermal thermal = {};
+	int samples[UMI_PPS_THERMAL_SENSORS], ret, i;
+
+	mutex_lock(&c->lock);
+	if (c->removing || c->suspended || !c->ready) {
+		ret = -EAGAIN;
+		goto out;
+	}
+	ret = umi_pps_get(c->bms, POWER_SUPPLY_PROP_TEMP, &samples[0]);
+	if (ret)
+		goto out;
+	if (samples[0] <= -400 || samples[0] >= 1250) {
+		ret = -ERANGE;
+		goto out;
+	}
+	samples[0] *= 100;
+	for (i = 1; i < UMI_PPS_THERMAL_SENSORS; i++) {
+		ret = iio_read_channel_processed(c->thermal_channels[i - 1], &samples[i]);
+		if (ret < 0)
+			goto out;
+	}
+	ret = umi_pps_thermal_update(&thermal, samples, -1, c->thermal_comp_mc);
+	if (ret)
+		ret = -ERANGE;
+	else
+		*temp = thermal.virtual_mc;
+out:
+	mutex_unlock(&c->lock);
+	return ret;
+}
+
+static const struct thermal_zone_device_ops umi_pps_thermal_ops = {
+	.get_temp = umi_pps_get_temp,
+};
+
+static int umi_pps_get_max_state(struct thermal_cooling_device *dev, unsigned long *state)
+{
+	*state = 15;
+	return 0;
+}
+
+static int umi_pps_get_cur_state(struct thermal_cooling_device *dev, unsigned long *state)
+{
+	struct umi_pps *c = dev->devdata;
+
+	mutex_lock(&c->lock);
+	*state = c->cooling_state;
+	mutex_unlock(&c->lock);
+	return 0;
+}
+
+static int umi_pps_set_cur_state(struct thermal_cooling_device *dev, unsigned long state)
+{
+	struct umi_pps *c = dev->devdata;
+	int ret = 0;
+
+	if (umi_pps_cooling_current(state) < 0)
+		return -EINVAL;
+	mutex_lock(&c->lock);
+	if (c->removing || !c->ready) {
+		ret = -EAGAIN;
+	} else if (c->cooling_state != state) {
+		c->cooling_state = state;
+		mod_delayed_work(system_wq, &c->work, 0);
+	}
+	mutex_unlock(&c->lock);
+	return ret;
+}
+
+static const struct thermal_cooling_device_ops umi_pps_cooling_ops = {
+	.get_max_state = umi_pps_get_max_state,
+	.get_cur_state = umi_pps_get_cur_state,
+	.set_cur_state = umi_pps_set_cur_state,
+};
 
 static void umi_pps_cleanup(void *data)
 {
@@ -796,6 +977,7 @@ static void umi_pps_cleanup(void *data)
 
 	mutex_lock(&c->lock);
 	c->removing = true;
+	c->ready = false;
 	mutex_unlock(&c->lock);
 	cancel_delayed_work_sync(&c->work);
 	mutex_lock(&c->lock);
@@ -845,6 +1027,11 @@ static int umi_pps_probe(struct i2c_client *client)
 		"cam_therm1", "conn_therm", "quiet_therm", "wireless_therm", "xo_therm"
 	};
 	struct device *dev = &client->dev;
+	static char *supplied_to[] = { "qcom-battery" };
+	struct power_supply_config config = {
+		.fwnode = dev_fwnode(dev), .supplied_to = supplied_to,
+		.num_supplicants = ARRAY_SIZE(supplied_to),
+	};
 	struct umi_pps *c;
 	unsigned int id, mode;
 	int ret, i;
@@ -887,17 +1074,17 @@ static int umi_pps_probe(struct i2c_client *client)
 			return dev_err_probe(dev, ret ? ret : -EINVAL,
 					     "thermal channel must report temperature\n");
 	}
-	c->sw = devm_power_supply_get_by_reference(dev, "miseed,switch-charger");
+	c->sw = devm_power_supply_get_by_reference(dev, "xiaomi,switch-charger");
 	if (IS_ERR(c->sw))
 		return PTR_ERR(c->sw);
 	if (!c->sw)
 		return -EPROBE_DEFER;
-	c->bms = devm_power_supply_get_by_reference(dev, "monitored-battery");
+	c->bms = devm_power_supply_get_by_reference(dev, "xiaomi,fuel-gauge");
 	if (IS_ERR(c->bms))
 		return PTR_ERR(c->bms);
 	if (!c->bms)
 		return -EPROBE_DEFER;
-	c->pd = devm_power_supply_get_by_reference(dev, "miseed,pd-source");
+	c->pd = devm_power_supply_get_by_reference(dev, "power-supplies");
 	if (IS_ERR(c->pd))
 		return PTR_ERR(c->pd);
 	if (!c->pd)
@@ -907,21 +1094,34 @@ static int umi_pps_probe(struct i2c_client *client)
 	    !device_link_add(dev, c->bms->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER) ||
 	    !device_link_add(dev, c->pd->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER))
 		return -ENOMEM;
-	ret = devm_add_action_or_reset(dev, umi_pps_cleanup, c);
-	if (ret)
-		return ret;
 	if (client->irq <= 0)
 		return dev_err_probe(dev, -EINVAL, "qualified fault IRQ is required\n");
 	ret = devm_request_threaded_irq(dev, client->irq, NULL, umi_pps_irq,
 			IRQF_ONESHOT, dev_name(dev), c);
 	if (ret)
 		return ret;
-	ret = devm_device_add_group(dev, &umi_pps_group);
-	if (!ret) {
-		c->state = PPS_WAIT_PLUG;
-		dev_info(dev, "automatic PPS policy active; waiting for USB-PD attach\n");
-		mod_delayed_work(system_wq, &c->work, 0);
-	}
+	config.drv_data = c;
+	c->psy = devm_power_supply_register(dev, &umi_pps_desc, &config);
+	if (IS_ERR(c->psy))
+		return PTR_ERR(c->psy);
+	c->cooling = devm_thermal_of_cooling_device_register(dev, dev->of_node,
+			"umi-wired-pps", c, &umi_pps_cooling_ops);
+	if (IS_ERR(c->cooling))
+		return PTR_ERR(c->cooling);
+	c->tzd = devm_thermal_of_zone_register(dev, 0, c, &umi_pps_thermal_ops);
+	if (IS_ERR(c->tzd))
+		return PTR_ERR(c->tzd);
+	/* Registered last: drain the worker before devres frees any interface. */
+	ret = devm_add_action_or_reset(dev, umi_pps_cleanup, c);
+	if (ret)
+		return ret;
+	mutex_lock(&c->lock);
+	c->state = PPS_WAIT_PLUG;
+	c->ready = true;
+	mutex_unlock(&c->lock);
+	power_supply_changed(c->psy);
+	dev_info(dev, "wired PPS power_supply/thermal ready; waiting for USB-PD attach\n");
+	mod_delayed_work(system_wq, &c->work, 0);
 	return ret;
 }
 
@@ -931,7 +1131,7 @@ static void umi_pps_shutdown(struct i2c_client *client)
 }
 
 static const struct of_device_id umi_pps_match[] = {
-	{ .compatible = "miseed,umi-bq25970-pps" }, {}
+	{ .compatible = "xiaomi,umi-bq25970" }, {}
 };
 MODULE_DEVICE_TABLE(of, umi_pps_match);
 static struct i2c_driver umi_pps_driver = {
