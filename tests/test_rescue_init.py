@@ -19,6 +19,87 @@ from rescue_test_support import RescueFixture
 
 
 class RescueInitTests(RescueFixture):
+    def test_wired_thermal_sysfs_and_bounded_cooling_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cooler = root / "cooling_device7"
+            cooler.mkdir()
+            (cooler / "type").write_text("umi-wired-pd\n")
+            (cooler / "cur_state").write_text("0\n")
+            (cooler / "max_state").write_text("1\n")
+            zone = root / "thermal_zone8"
+            zone.mkdir()
+            (zone / "type").write_text("wired-pd-thermal\n")
+            (zone / "temp").write_text("29000\n")
+            env = dict(os.environ, TEST_THERMAL_ROOT=str(root))
+
+            report = subprocess.run([self.program, "thermal-report"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(report.returncode, 0, report.stderr)
+            self.assertIn("type=wired-pd-thermal temp_millic=29000", report.stdout)
+            self.assertIn("type=umi-wired-pd cur_state=0 max_state=1", report.stdout)
+
+            stop = subprocess.run([self.program, "thermal-stop"], env=env,
+                                  capture_output=True, text=True, timeout=5)
+            self.assertEqual(stop.returncode, 0, stop.stderr)
+            self.assertIn("old_state=0 requested_state=1 readback=1 max_state=1 rc=0",
+                          stop.stdout)
+            self.assertEqual((cooler / "cur_state").read_text(), "1\n")
+
+            clear = subprocess.run([self.program, "thermal-clear"], env=env,
+                                   capture_output=True, text=True, timeout=5)
+            self.assertEqual(clear.returncode, 0, clear.stderr)
+            self.assertIn("old_state=1 requested_state=0 readback=0 max_state=1 rc=0",
+                          clear.stdout)
+            self.assertEqual((cooler / "cur_state").read_text(), "0\n")
+
+    def test_wired_thermal_override_rejects_ambiguous_or_unsupported_devices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, maximum in (("cooling_device1", "1"),
+                                  ("cooling_device2", "1")):
+                cooler = root / name
+                cooler.mkdir()
+                (cooler / "type").write_text("umi-wired-pd\n")
+                (cooler / "cur_state").write_text("0\n")
+                (cooler / "max_state").write_text(maximum + "\n")
+            env = dict(os.environ, TEST_THERMAL_ROOT=str(root))
+            result = subprocess.run([self.program, "thermal-stop"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 24)
+            for name in ("cooling_device1", "cooling_device2"):
+                self.assertEqual((root / name / "cur_state").read_text(), "0\n")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cooler = root / "cooling_device1"
+            cooler.mkdir()
+            (cooler / "type").write_text("umi-wired-pd\n")
+            (cooler / "cur_state").write_text("0\n")
+            (cooler / "max_state").write_text("2\n")
+            env = dict(os.environ, TEST_THERMAL_ROOT=str(root))
+            result = subprocess.run([self.program, "thermal-stop"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 24)
+            self.assertEqual((cooler / "cur_state").read_text(), "0\n")
+
+    def test_wired_thermal_write_failure_is_reported_and_state_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cooler = root / "cooling_device1"
+            cooler.mkdir()
+            (cooler / "type").write_text("umi-wired-pd\n")
+            (cooler / "cur_state").write_text("0\n")
+            (cooler / "max_state").write_text("1\n")
+            env = dict(os.environ, TEST_THERMAL_ROOT=str(root),
+                       TEST_THERMAL_WRITE_FAIL="1")
+            result = subprocess.run([self.program, "thermal-stop"], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 24)
+            self.assertIn("requested_state=1", result.stdout)
+            self.assertNotIn("readback=1", result.stdout)
+            self.assertEqual((cooler / "cur_state").read_text(), "0\n")
+
     def test_informational_probe_messages_and_existing_filters_are_retained(self):
         result = subprocess.run([self.program, "logs"], capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stderr)

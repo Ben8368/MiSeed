@@ -87,7 +87,7 @@
       "input_sha256": {
         "kernel/umi-csot.dts": "db92d9df49bd9640a8bb733167778ca26182d4fc3305af4f4ab388050779f125",
         "kernel/umi-l2.config": "a1e411841f58ee7e13e00ac19322b8fcd4fc3ab09acbd8fc32734e5d45b29fd1",
-        "kernel/rescue_init.c": "3699852fa67bbe6713b6d3fd15a4a1c46e0e13177ed890db8d2d55156cf2f387",
+        "kernel/rescue_init.c": "a7fdd040e49de98e124637cac03142f135afd51c8f970b6d9faa1612792f99aa",
         "tools/build_kernel_l2.sh": "2b2d8c0230458e2f6cd6e45490376e0d6c7aa1476e833092894194b0a6894302",
         "tools/extract_abl_anchors.py": "2b892b003d29fb4f5ea6e8b0dc45a7598e38a1b3005eea454288a4179bd2aebc",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",

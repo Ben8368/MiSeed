@@ -28,7 +28,7 @@
 
 ## TD-005：有线温控模型与验收（P1，2026-11-10；WP9/WP6）
 
-源码偿还：有线 PPS 六路 thermal zone/cooling device 保留；有线固定 PD 新增独立电池温度 zone 与二态停充 cooling，沿用 45°C 暖端，冷端/读错独立保护保留，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。未把 PPS 多传感器/FCC 表移用于固定 PD，wireless_therm 名称不代表无线 RX/TX。剩余：板级标度、两条有线路径的超温/读错/恢复 L3、完整板级热模型与独立复核；未因标准节点存在关闭本债务。
+源码偿还：有线 PPS 六路 thermal zone/cooling device 保留；有线固定 PD 新增独立电池温度 zone 与二态停充 cooling，沿用 45°C 暖端，冷端/读错独立保护保留，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。未把 PPS 多传感器/FCC 表移用于固定 PD，wireless_therm 名称不代表无线 RX/TX。固定 PD 的 cooling state 强制停充/释放已在真机验证；剩余：板级温标/阈值验证、实际温度越限与读错 L3、PPS 路径传感器异常 L3、完整板级热模型与独立复核；未因标准节点存在关闭本债务。
 
 ## TD-006：诊断启动与用户空间临时路径（P2，2026-11-10；WP2–WP5）
 

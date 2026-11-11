@@ -38,6 +38,25 @@
 | 温控限流 | 虚拟温度约 39.887–40.558°C、level=8、battery cap=4100 mA；请求电流均 2050 mA，实测 IBUS 不越请求值、电池电流不越 thermal cap。电池 temperature 为 370–380 deci-C，即 37–38°C；SOC 总体 64→68% |
 | BQ 状态 | 断开前健康采样 fault/latch=0、alarm=0x06、status=0x04、watchdog=0x44、control=0x87；启停/故障路径均由驱动自身读取与保护，不直接操作寄存器 |
 
+### 当前 HEAD 的 Thermal 真机验证
+
+2026-11-11 主机 Windows 10.0.26200 x64 / PowerShell 7.6.9、WSL Ubuntu 24.04 x86_64；源码基线 HEAD `af32a2b120a7c4f14fea5cb027e039563acc6a75`，含本轮未提交的一次性 thermal sysfs 诊断命令。Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18`、GCC 13.3.0、GNU make 4.3。容器用 `--network none`，本机锁定输入齐备；被修改的源码缓存原样保留，构建脚本从本地 Git 对象库导出锁定版本到临时干净树完成构建，无联网取料。
+
+构建产物仅供 RAM 启动：`boot.img` SHA-256 `15134d80309f5d211469c30bcc3ae9e5a3ce49d829ec462b71c58daf5e4b47e2`，resolved config `08b70762778823dac5ffdbd0c72f7516c9d69c0dc0f18c4d4d7b93f4a3634030`，DTB `8c7f8455cf3b6310648971daf38861a495ad354b359dc0572f58f700f03cb8de`，rescue initramfs `3a0ee783723dadbe9c580eded83d68afd62a497d0ccc6a96e6bf8ade6b7b03df`。唯一设备 `product=umi`、`is-userspace=no`；执行 `fastboot boot`，未写分区、改变阈值或操作无线 RX/TX。
+
+标准 thermal sysfs 读数单位为毫摄氏度：初始 `qcom-battery=32000` 与 FG/power_supply `temp=320` deci°C 一致（32.0°C），`wired-pd-thermal=32000`、`wired-pps-thermal=36263`；`umi-wired-pd` cooling `cur_state=0/max_state=1`，PPS cooling `0/15`。这验证接口单位换算与当前读数的一致性，不单独证明板级标定准确。USB CDC 主机连接被识别为 SDP，不存在实际 PD/PPS 合约；SMB5 初始 `Charging`、health `Good`、`charge_behaviour=[auto]`、输入限流 `3000000` µA，故只验证固定 PD thermal cooling 回调，不把结果称为实际 PD 协商/温度越限。
+
+1. 只读 `thermal` 枚举 zone 和 cooling device，确认设备唯一且状态合法。
+2. 执行 `thermal-stop`，回执 `old_state=0 requested_state=1 readback=1 max_state=1 rc=0`。其后 cooling 状态为 1；标准 SMB5 连续采样 `status=Not charging`、health `Good`、行为枚举仍为 `[auto]`，内核遥测为 `chg_enable=0/enabled=0`，证明 cooling stop 生效且未写充电策略枚举。
+3. 执行 `thermal-clear`，回执 `old_state=1 requested_state=0 readback=0 max_state=1 rc=0`。4 秒后 cooling 状态为 0，SMB5 与电池均恢复 `Charging`、health `Good`、内核 `chg_enable=1/enabled=1`，`charge_behaviour=[auto]`。无手工恢复策略或充电限值。
+4. `bootloader` 返回 Fastboot；再次核实唯一设备 `product=umi`、`is-userspace=no`。回到维护者接入前的 Fastboot 状态。
+
+停充时间线 `.work/thermal-stop-l3-20261111/thermal-stopped-charge.log` 为 331 条、无覆盖/存储错误，SHA-256 `0d9d7322bf0d374d07d01fbf8748c800233410144a5d69b7e77879b5c2a3793d`；释放后 `.work/thermal-stop-l3-20261111/thermal-cleared-charge.log` 为 468 条、无覆盖/存储错误，SHA-256 `5629a5d4748fac9fb08736ae3544d086e3f013c2d8bf89f20a5b7a2b6e65147f`。原始日志只保留于忽略目录，不入库。
+
+本轮新增 `thermal` / 有线 `thermal-stop` / `thermal-clear` 一次性救援台命令，严格只允许唯一 `umi-wired-pd` cooling state 0/1；不改变 Linux thermal governor、温度表、阈值、传感器驱动或无线路径。验证证明温度单位/读数可见、固定 PD cooling 回调可停止并自动释放；**不证明 45°C 实际热触发、板级温标准确性、传感器断路/越界时行为，也不证明 PPS 冷却硬件停泵**。未人为加热或拔传感器。传感器异常的合成故障路径由 `test_kernel_thermal.py`、`test_charge_policy.py`、`test_pps.py` 覆盖，仍需真实故障专项及独立复核。
+
+全量 WSL 单测 194 项通过、4 项因测试时无 compiled Umi DTB/dtschema 而跳过；本机 `tools/check_repo.py` 通过（既有 8 项源码篇幅黄灯保持可见），`git diff --check` 通过。源码篇幅按 QUALITY 执行：301 行起黄灯并登记、超过 600 行红灯阻断；本轮未以 300 行作为实现硬门槛。
+
 `-EOPNOTSUPP` 发生在接回只提供固定 PDO 的 Mac 后；此时不启泵、PD/SMB5 路径保留，不能将此码归为绿联 PPS 运行期异常。旧的 PD/PPS 各约 10 分钟稳定结论保留，本次增加指定修复镜像的专项证据。
 
 ## 固定 PD、禁止与回退
