@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,7 +47,8 @@ class EvidenceFrameTests(unittest.TestCase):
                 validate_frame(changed, b"KMSG")
 
 
-@unittest.skipUnless(shutil.which("cc"), "C compiler required")
+@unittest.skipUnless(sys.platform == "linux" and shutil.which("cc"),
+                     "Linux and C compiler required")
 class DisplayDiagnosticsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
