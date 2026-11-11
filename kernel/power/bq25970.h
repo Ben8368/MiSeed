@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* BQ25970 register/ADC backend, private to the composite wired driver.
+/* BQ25970 register/ADC backend, exported only to kernel consumers.
  * This layer knows no Umi policy, TCPM, fuel gauge or charger ownership.
  * Register provenance and attribution are retained in bq25970.c/NOTICE.md.
  */

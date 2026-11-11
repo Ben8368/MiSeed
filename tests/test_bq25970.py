@@ -15,7 +15,8 @@ class Bq25970Tests(unittest.TestCase):
     def test_identity_fault_consumption_configuration_and_adc_bounds(self):
         source = (ROOT / "kernel/power/bq25970.c").read_text()
         source = "\n".join(line for line in source.splitlines()
-                           if not line.startswith("#include <linux/"))
+                           if not line.startswith("#include <linux/")
+                           and not line.startswith("EXPORT_SYMBOL_GPL"))
         harness = (ROOT / "tests/bq25970_harness.c").read_text().replace(
             "/* DRIVER_UNDER_TEST */", source)
         with tempfile.TemporaryDirectory() as directory:

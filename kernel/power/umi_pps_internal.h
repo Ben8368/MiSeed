@@ -47,6 +47,7 @@ struct umi_pps_report {
 struct umi_pps {
 	struct device *dev;
 	struct regmap *map;
+	struct bq25970_device *chip;
 	struct power_supply *pd, *bms, *sw, *psy;
 	struct thermal_zone_device *tzd;
 	struct thermal_cooling_device *cooling;

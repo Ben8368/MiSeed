@@ -9,8 +9,9 @@
  * No vendor power_supply ABI, pmic-voter, charger authentication or QC writes.
  */
 #include "umi_pps_internal.h"
+#include "bq25970_device.h"
 
-static irqreturn_t umi_pps_irq(int irq, void *data)
+static void umi_pps_event(void *data)
 {
 	struct umi_pps *c = data;
 
@@ -19,7 +20,7 @@ static irqreturn_t umi_pps_irq(int irq, void *data)
 	if (c->ready && !c->removing)
 		mod_delayed_work(system_wq, &c->work, 0);
 	mutex_unlock(&c->lock);
-	return IRQ_HANDLED;
+
 }
 
 /* Standard wired supply ABI. Reading it never consumes latched fault flags. */
@@ -35,6 +36,8 @@ static void umi_pps_cleanup(void *data)
 	mutex_lock(&c->lock);
 	umi_pps_stop(c, PPS_OFF, 0);
 	mutex_unlock(&c->lock);
+	/* Keep IRQ owned until policy work has drained and the pump is stopped. */
+	bq25970_unsubscribe(c->chip);
 }
 
 static int umi_pps_suspend(struct device *dev)
@@ -68,17 +71,14 @@ static int umi_pps_resume(struct device *dev)
 }
 static DEFINE_SIMPLE_DEV_PM_OPS(umi_pps_pm, umi_pps_suspend, umi_pps_resume);
 
-static const struct regmap_config umi_pps_regmap = {
-	.reg_bits = 8, .val_bits = 8, .max_register = 0x2e,
-	.cache_type = REGCACHE_NONE,
-};
 
-static int umi_pps_probe(struct i2c_client *client)
+static int umi_pps_probe(struct auxiliary_device *aux,
+			 const struct auxiliary_device_id *id)
 {
 	static const char * const thermal_names[] = {
 		"cam_therm1", "conn_therm", "quiet_therm", "wireless_therm", "xo_therm"
 	};
-	struct device *dev = &client->dev;
+	struct device *dev = &aux->dev;
 	static char *supplied_to[] = { "qcom-battery" };
 	struct power_supply_config config = {
 		.fwnode = dev_fwnode(dev), .supplied_to = supplied_to,
@@ -93,13 +93,9 @@ static int umi_pps_probe(struct i2c_client *client)
 	c->dev = dev;
 	mutex_init(&c->lock);
 	INIT_DELAYED_WORK(&c->work, umi_pps_work);
-	i2c_set_clientdata(client, c);
-	c->map = devm_regmap_init_i2c(client, &umi_pps_regmap);
-	if (IS_ERR(c->map))
-		return PTR_ERR(c->map);
-	ret = bq25970_check_identity(c->map);
-	if (ret)
-		return dev_err_probe(dev, ret, "BQ25970 identity/standalone mode not verified\n");
+	dev_set_drvdata(dev, c);
+	c->chip = to_bq25970_device(aux);
+	c->map = c->chip->map;
 	ret = umi_pps_disable(c);
 	if (ret)
 		return ret;
@@ -138,12 +134,6 @@ static int umi_pps_probe(struct i2c_client *client)
 	    !device_link_add(dev, c->bms->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER) ||
 	    !device_link_add(dev, c->pd->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER))
 		return -ENOMEM;
-	if (client->irq <= 0)
-		return dev_err_probe(dev, -EINVAL, "qualified fault IRQ is required\n");
-	ret = devm_request_threaded_irq(dev, client->irq, NULL, umi_pps_irq,
-			IRQF_ONESHOT, dev_name(dev), c);
-	if (ret)
-		return ret;
 	config.drv_data = c;
 	c->psy = devm_power_supply_register(dev, &umi_pps_desc, &config);
 	if (IS_ERR(c->psy))
@@ -155,7 +145,10 @@ static int umi_pps_probe(struct i2c_client *client)
 	c->tzd = devm_thermal_of_zone_register(dev, 0, c, &umi_pps_thermal_ops);
 	if (IS_ERR(c->tzd))
 		return PTR_ERR(c->tzd);
-	/* Registered last: drain the worker before devres frees any interface. */
+	ret = bq25970_subscribe(c->chip, umi_pps_event, c);
+	if (ret)
+		return ret;
+	/* Detach callbacks and drain work before interfaces or state are freed. */
 	ret = devm_add_action_or_reset(dev, umi_pps_cleanup, c);
 	if (ret)
 		return ret;
@@ -169,21 +162,20 @@ static int umi_pps_probe(struct i2c_client *client)
 	return ret;
 }
 
-static void umi_pps_shutdown(struct i2c_client *client)
+static void umi_pps_shutdown(struct auxiliary_device *aux)
 {
-	umi_pps_cleanup(i2c_get_clientdata(client));
+	umi_pps_cleanup(dev_get_drvdata(&aux->dev));
 }
-
-static const struct of_device_id umi_pps_match[] = {
-	{ .compatible = "xiaomi,umi-bq25970" }, {}
+static const struct auxiliary_device_id umi_pps_match[] = {
+	{ .name = "bq25970_core.charger" }, { }
 };
-MODULE_DEVICE_TABLE(of, umi_pps_match);
-static struct i2c_driver umi_pps_driver = {
-	.driver = { .name = "umi-bq25970-pps", .of_match_table = umi_pps_match,
-		.pm = pm_sleep_ptr(&umi_pps_pm) },
+MODULE_DEVICE_TABLE(auxiliary, umi_pps_match);
+static struct auxiliary_driver umi_pps_driver = {
+	.name = "umi-pps-policy", .id_table = umi_pps_match,
 	.probe = umi_pps_probe, .shutdown = umi_pps_shutdown,
+	.driver = { .pm = pm_sleep_ptr(&umi_pps_pm) },
 };
-module_i2c_driver(umi_pps_driver);
+module_auxiliary_driver(umi_pps_driver);
 MODULE_AUTHOR("Texas Instruments; MiSeed contributors");
-MODULE_DESCRIPTION("Umi guarded BQ25970/mainline TCPM PPS charging");
+MODULE_DESCRIPTION("Umi wired PPS board policy with SMB5 safety ownership");
 MODULE_LICENSE("GPL");

@@ -34,7 +34,8 @@ class PpsTests(unittest.TestCase):
         source = "\n".join(line for line in source.splitlines()
                            if not line.startswith("#include <linux/")
                            and line != '#include "umi_pps_internal.h"'
-                           and not line.startswith("extern const struct"))
+                           and not line.startswith("extern const struct")
+                           and not line.startswith("EXPORT_SYMBOL_GPL"))
         harness = (ROOT / "tests/pps_harness.c").read_text()
         power = re.search(r"op-sink-microwatt = <(\d+)>", (ROOT / "kernel/power/umi-pps.dtsi").read_text()).group(1)
         harness = harness.replace("@OPERATING_SINK_MW@", str(int(power) // 1000))

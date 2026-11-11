@@ -3,9 +3,10 @@
  * BQ25970 register access, separated from the Umi wired PPS policy.
  * Register encodings adapted from LineageOS 71b13e62f057a649b77fe4062feb73ee72ad609c.
  * BQ source: Copyright (C) 2017 Texas Instruments; GPL version 2.
- * See NOTICE.md. No private UAPI or exported cross-driver symbols.
+ * See NOTICE.md. Kernel-only GPL exports; no private userspace ABI.
  */
 #include <linux/errno.h>
+#include <linux/module.h>
 #include <linux/regmap.h>
 #include <linux/types.h>
 
@@ -125,3 +126,12 @@ int bq25970_fault_snapshot(struct regmap *map, struct bq25970_status *s)
 		ret = regmap_read(map, BQ_CONTROL, &s->control);
 	return ret;
 }
+
+EXPORT_SYMBOL_GPL(bq25970_check_identity);
+EXPORT_SYMBOL_GPL(bq25970_update);
+EXPORT_SYMBOL_GPL(bq25970_disable);
+EXPORT_SYMBOL_GPL(bq25970_verify);
+EXPORT_SYMBOL_GPL(bq25970_adc);
+EXPORT_SYMBOL_GPL(bq25970_configure);
+EXPORT_SYMBOL_GPL(bq25970_live_status);
+EXPORT_SYMBOL_GPL(bq25970_fault_snapshot);

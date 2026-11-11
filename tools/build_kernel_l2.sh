@@ -10,6 +10,8 @@ readonly boot_url="https://github.com/misaka-link/umi-linux/releases/download/v2
 readonly boot_api_url="https://api.github.com/repos/misaka-link/umi-linux/releases/assets/592897637"
 readonly boot_sha256="a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f2d842a"
 readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
+readonly native_dsi="${MISEED_NATIVE_DSI:-0}"
+[[ "$native_dsi" == 0 || "$native_dsi" == 1 ]] || { echo "MISEED_NATIVE_DSI must be 0 or 1" >&2; exit 1; }
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
 readonly source_cache="${work_root}/linux-stable.git"
 source_tree="${MISEED_EXTRACTED_SOURCE:-${work_root}/linux-source-${kernel_revision}}"
@@ -56,6 +58,9 @@ readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
 grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must enable ARCH_QCOM"
 
+if [[ "$native_dsi" == 1 && -z "${MISEED_OUTPUT_ROOT:-}" ]]; then
+    fail "native DSI requires a distinct explicit MISEED_OUTPUT_ROOT"
+fi
 mkdir -p "$work_root" "$output_root"
 if [[ ! -f "$template" ]]; then
     python3 "$repo_root/tools/download_locked.py" --url "$boot_url" \
@@ -122,10 +127,18 @@ install -m 0644 "$anchor_dtsi" "$qcom_dts_dir/umi-csot-abl-anchors.dtsi"
 grep -Fqx 'dtb-y += umi-csot.dtb' "$qcom_dts_dir/Makefile" || printf '\ndtb-y += umi-csot.dtb\n' >> "$qcom_dts_dir/Makefile"
 grep -Fqx 'DTC_FLAGS_umi-csot += -@' "$qcom_dts_dir/Makefile" || printf 'DTC_FLAGS_umi-csot += -@\n' >> "$qcom_dts_dir/Makefile"
 
+display_args=()
+[[ "$native_dsi" == 0 ]] || display_args+=(--native)
+python3 "$repo_root/tools/apply_display_port.py" --source "$source_tree" "${display_args[@]}"
+printf '%s\n' "$native_dsi" > "$output_root/native-dsi-profile"
 mkdir -p "$build_tree"
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- allnoconfig
 "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
     "$build_tree/.config" "$config_fragment"
+if [[ "$native_dsi" == 1 ]]; then
+    "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
+        "$build_tree/.config" "$repo_root/kernel/display/umi-native-dsi.config"
+fi
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 # Regenerate compiler inputs explicitly: host clock skew can otherwise leave
 # allnoconfig's auto.conf newer than the merged .config and skip this step.
@@ -149,6 +162,11 @@ grep -Fqx 'CONFIG_ARM64_VA_BITS=48' "$build_tree/.config" || fail "resolved conf
 grep -Fqx 'CONFIG_ARM64_PA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit physical addresses"
 grep -Fqx 'CONFIG_CMDLINE="console=ttyMSM0,115200n8 console=tty0 loglevel=8 keep_bootcon earlycon pd_ignore_unused clk_ignore_unused regulator_ignore_unused fbcon=font:TER16x32,rotate:3 rdinit=/init"' "$build_tree/.config" || fail "resolved config lost the forced diagnostic command line"
 
+if [[ "$native_dsi" == 1 ]]; then
+    for option in DRM_MSM DRM_MSM_DPU DRM_MSM_DSI DRM_MSM_DSI_7NM_PHY SM_DISPCC_8250 DRM_PANEL_XIAOMI_UMI_CSOT; do
+        grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "native display lost CONFIG_${option}"
+    done
+fi
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
     -j"$jobs" Image qcom/umi-csot.dtb modules
 
@@ -161,7 +179,7 @@ install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 # Check both built-in constituents here and their linked symbols below.
 readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
     qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply qcom_pm8150b_thermal
-    umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970)
+    umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970 bq25970_i2c)
 power_objects=()
 for driver in "${power_drivers[@]}"; do
     [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"
@@ -176,6 +194,9 @@ for symbol in qcom_fg_probe smb5_probe smb5_register_thermal umi_pps_probe qcom_
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
+if [[ "$native_dsi" == 1 ]]; then
+    grep -Eq ' [tT] umi_csot_probe$' "$output_root/vmlinux.symbols" || fail "native panel not linked"
+fi
 # Require the standard KMS provider, not just an enabled config fragment.
 [[ -s "$build_tree/drivers/gpu/drm/sysfb/simpledrm.o" ]] || fail "simpledrm object missing"
 grep -Eq ' [tT] simpledrm_probe$' "$output_root/vmlinux.symbols" || fail "simpledrm not linked"
@@ -185,7 +206,7 @@ if grep -Eq ' [tT] power_observer_probe$' "$output_root/vmlinux.symbols"; then f
 readonly dtb="$output_root/umi-csot.dtb"
 # Work on a copy: every build starts with dtc's original symbol identities.
 install -m 0644 "$build_tree/arch/arm64/boot/dts/qcom/umi-csot.dtb" "$dtb"
-python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb"
+python3 "$repo_root/tools/isolate_abl_targets.py" "$dtb" "${display_args[@]}"
 # The Umi L3 test image intentionally enables the sink-only PD/PPS profile.
 for label in umi_pps pm8150b_typec i2c15 qupv3_id_2 pm8150b_vbus; do
     node="$(fdtget "$dtb" /__symbols__ "$label")"
@@ -228,7 +249,8 @@ readonly kernel_image="$build_tree/arch/arm64/boot/Image"
 readonly -a rescue_sources=("$repo_root/kernel/rescue_init.c"
     "$repo_root/kernel/rescue_fs.c" "$repo_root/kernel/rescue_usb_diag.c"
     "$repo_root/kernel/rescue_devices.c" "$repo_root/kernel/rescue_power.c"
-    "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_usb.c"
+    "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_usb.c" "$repo_root/kernel/rescue_dt.c"
+    "$repo_root/kernel/rescue_display.c" "$repo_root/kernel/rescue_thermal.c"
     "$repo_root/kernel/charge_log.c")
 aarch64-linux-gnu-gcc -Os -static -s -Wall -Wextra -Werror \
     -o "$rescue_bin" "${rescue_sources[@]}"
@@ -238,6 +260,7 @@ python3 "$repo_root/tools/pack_android_boot_v2.py" \
     --kernel "$kernel_image" --ramdisk "$initramfs" --dtb "$dtb" \
     --output "$output_root/boot.img"
 
+cp "$repo_root/manifests/sources.lock.json" "$output_root/build-source-lock.json"
 printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
     "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \

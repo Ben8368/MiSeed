@@ -4,15 +4,15 @@
 
 ## TD-001：构建环境闭包不完整（P2，2026-11-05）
 
-取舍：首个 Boot L2 固定 Linux、DTS、配置、header 模板及直接工具版本；Ubuntu runner 和 apt 传递依赖尚未逐包哈希锁定。Boot L2 已增加来源/脚本/本地输入的一致性检查，但仍非声明式依赖解析器，完整闭包及自动消费锁文件继续延期。
+取舍：Boot L2 固定 Linux、DTS、配置、header 与直接工具版本，并校验来源/脚本/输入一致性；Ubuntu runner、apt 传递依赖哈希与声明式依赖解析尚未闭合。
 
 影响：首个 Umi/CSOT boot L2 本机和 hosted Ubuntu 24.04 均通过，`boot.img` 哈希完全一致，证据见 [Boot L2 复核](archive/reviews/2026-11-05-first-board-l2.md)。PR #1 首次 hosted Boot L2 run 因全 ARM64 `defconfig` 编译无关驱动、达到 30 分钟上限取消；脚本已改为 `allnoconfig` + 板级配置。直接 apt 包版本已钉住，传递包哈希和 runner 镜像 digest 未闭合；UEFI/rootfs 尚无构建 job，分支保护依维护者决定延期。
 
-偿还：首个 L2 的远端结果与本机构建已独立比对一致；剩余闭合传递依赖与 runner digest，再分别接入 UEFI/rootfs 构建和产物校验。
+偿还：闭合传递依赖与 runner digest，接入 UEFI/rootfs 构建与产物校验。
 
 ## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：原 GPIO-free RAM 诊断禁用 TLMM。PPS 测试 profile 按 LOS 接线只开放 UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68，其余仍保留；GPIO8 暂未接入。下游 TLMM overlay 继续隔离；来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。扩展掩码已通过 ARM64 L2，尚无新镜像 L3，不能继承旧镜像验证。本机两轮直接 Fastboot 证据及参考来源见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
+取舍：原 GPIO-free RAM 诊断禁用 TLMM。PPS 测试 profile 按 LOS 接线只开放 UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68，其余仍保留；原生 DSI profile 另开放 GPIO12 复位，待 L3；GPIO8 暂未接入。下游 TLMM overlay 继续隔离；来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。本轮掩码 L2、新镜像 L3 待验；旧 Fastboot 证据见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 
@@ -24,7 +24,7 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-源码偿还：FG/SMB5/BQ 已采用 power_supply，修正 FG 电流符号/SMB5 ADC 换算，诊断独立可选；BQ 身份检查、停泵后配置/读回、故障快照与 ADC 下沉芯片后端，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。umi_smb5_* 保留失败锁定互锁，不以用户空间分步写入替代；独立通用芯片驱动、板级策略拆分及所有权专项复核仍开放。新 ABI/保护恢复 L3 在本分支继续，Debian 消费后续进行；既有稳定运行结论不变。
+源码偿还：FG/SMB5/BQ 已采用 power_supply，修正电流换算，诊断独立可选；BQ 寄存器层已独立，见[接口](archive/reviews/2026-11-10-linux-standard-interfaces.md)。umi_smb5_* 保留失败锁定互锁，不以用户空间分步写入替代；已拆为BQ I2C/IRQ 提供者与 auxiliary PPS 策略，见[本轮](archive/research/2026-11-11-native-dsi-chip-boundaries.md)；其他板型复用、新生命周期 L3 与所有权专项复核仍开放。新生命周期/保护 L3、Debian 待验；既有稳定结论保留。
 
 ## TD-005：有线温控模型与验收（P1，2026-11-10；WP9/WP6）
 
@@ -32,11 +32,11 @@
 
 ## TD-006：诊断启动与用户空间临时路径（P2，2026-11-10；WP2–WP5）
 
-偿还：继承 framebuffer 已改上游 simpledrm/KMS + fbdev 控制台；撤除独立 observer 与虚构 DT 节点，原始只读采样归 SMB5 可选诊断，见[续修](archive/reviews/2026-11-10-mainline-interface-followup.md)。剩余原生 DSI/面板、资源/PM 交接、Debian 服务；ignore_unused、强制诊断命令行、静态 rescue/CHARGE_LOG 与 TCPM debugfs 仍限 bring-up 用途。Android boot header/Fastboot 属 ABL 加载契约，UEFI 产品路径按 WP3/WP4 验收；DTBO/GPIO 风险另见 RISK-010/TD-002。
+偿还：已用 simpledrm/KMS + fbdev；固定 CSOT DRM panel/DSC 与可选原生 DSI 见[本轮](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。临时保留 ignore_unused、诊断命令行、静态 rescue/CHARGE_LOG、TCPM debugfs；ABL 覆写根使 UBWC 失配，仅 CSOT 诊断 profile 核对 Umi/SM8250 身份后复用标准配置，已 L3；原生 DSC/点屏及亮度命令 L3 通过，启动 SMMU 故障待闭合。WP2/WP4 在第二阶段 UEFI 恢复主线 DT 身份并 L2/L3 后撤除 quirk；仍需变体、面板独立供电/PM 和 Debian 消费。Android boot header/Fastboot 限 ABL 诊断，不替代 WP3/WP4 产品路径；DTBO/GPIO 归 RISK-010/TD-002。
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-源码偿还：FG/SMB5/BQ25970 与 NFC 已补 YAML，电池/遥测/真实供电源引用已修；撤除 observer 虚构节点。有线 BQ IRQ 删除 TLMM 不支持的 input-enable，输入方向由 IRQ 资源申请设置；新增固定 PD thermal binding，并将 TLMM 加入有线检查范围，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。剩余新 DT/标准消费者 L3、binding 上游评审、整机 schema/运行时 DTBO 与专项复核；定向检查不等于整机合规。
+源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线 BQ IRQ 删除 TLMM 不支持的 input-enable，输入方向由 IRQ 资源申请设置；新增固定 PD thermal binding，并将 TLMM 加入有线检查范围，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。新增 CSOT binding、显示链路定向 schema 与最终 FDT 审计；剩余新 DT/标准消费者 L3、binding 上游评审、整机 schema/实际 DTBO 与专项复核；定向检查不等于整机合规。
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 

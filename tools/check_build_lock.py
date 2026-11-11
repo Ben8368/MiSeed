@@ -39,6 +39,16 @@ REQUIRED_INPUTS = {
     "kernel/nfc/sn100x.c", "kernel/nfc/Kconfig",
     "kernel/nfc/bindings/nxp,sn100t.yaml",
     "LICENSES/BSD-3-Clause.txt", "LICENSES/GPL-2.0-only.txt",
+    "tools/apply_display_port.py", "tools/check_runtime_dt.py",
+    "tests/test_runtime_dt.py", "tests/test_native_display.py", "tests/native_panel_harness.c",
+    "tools/collect_display_evidence.py", "tests/test_display_diagnostics.py",
+    "tools/collect_dtbo.py", "tools/dtbo_table.py", "tests/test_dtbo_table.py",
+    "tests/display_diagnostics_harness.c",
+    "tests/test_bq_lifecycle.py", "tests/bq_lifecycle_harness.c",
+    "kernel/display/panel-xiaomi-umi-csot.c", "kernel/display/umi_csot_commands.h",
+    "kernel/display/umi_abl_ubwc.h",
+    "kernel/display/Kconfig", "kernel/display/umi-native-dsi.dtsi",
+    "kernel/display/umi-native-dsi.config", "kernel/display/bindings/xiaomi,umi-csot.yaml",
 } | SPLIT_INPUTS
 
 

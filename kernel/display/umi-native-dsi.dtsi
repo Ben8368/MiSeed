@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* Pinned Umi wiring: display/NOTICE.md. Panel rails remain ABL-owned. */
+&apps_rsc {
+	regulators-0 {
+		vdd-l6-l9-supply = <&vreg_s8c_1p35>;
+		vreg_l9a_1p2: ldo9 {
+			regulator-name = "vreg_l9a_1p2";
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+	regulators-1 {
+		vdd-s8-supply = <&vph_pwr>;
+		vreg_s8c_1p35: smps8 {
+			regulator-name = "vreg_s8c_1p35";
+			regulator-min-microvolt = <1350000>;
+			regulator-max-microvolt = <1400000>;
+			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
+		};
+	};
+};
+&tlmm {
+	/* Open only the known panel reset GPIO12 in addition to existing pins. */
+	gpio-reserved-ranges = <0 4>, <6 1>, <8 4>, <13 21>, <36 8>,
+		<46 22>, <69 14>, <84 26>, <112 69>;
+};
+&mdss { status = "okay"; };
+&mdss_dsi0_phy { vdds-supply = <&vreg_l5a_0p88>; status = "okay"; };
+&mdss_dsi0 {
+	vdda-supply = <&vreg_l9a_1p2>;
+	status = "okay";
+	umi_csot: panel@0 {
+		compatible = "xiaomi,umi-csot";
+		reg = <0>;
+		reset-gpios = <&tlmm 12 GPIO_ACTIVE_LOW>;
+		port { umi_csot_in: endpoint { remote-endpoint = <&mdss_dsi0_out>; }; };
+	};
+};
+&mdss_dsi0_out { data-lanes = <0 1 2 3>; remote-endpoint = <&umi_csot_in>; };

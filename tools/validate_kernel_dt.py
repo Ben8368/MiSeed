@@ -23,7 +23,12 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 DTSCHEMA_VERSION = "2025.8"
 YAMLLINT_VERSION = "1.38.0"
-SCOPE = SCHEMAS + ("net/nfc/nxp,sn100t.yaml", "display/simple-framebuffer.yaml")
+SCOPE = SCHEMAS + ("net/nfc/nxp,sn100t.yaml", "display/simple-framebuffer.yaml",
+                   "display/panel/xiaomi,umi-csot.yaml",
+                   "display/msm/qcom,sm8250-mdss.yaml",
+                   "display/msm/dsi-controller-main.yaml",
+                   "display/msm/dsi-phy-7nm.yaml",
+                   "regulator/qcom,rpmh-regulator.yaml")
 
 
 def checked(command, env, *, silent=False):

@@ -1,6 +1,6 @@
 # 经验索引
 
-仅在任务涉及对应问题时读取专题；新增经验须可复发，已有规则不重复收录。
+仅在任务涉及对应问题时读取专题；新增经验须可复发，已有规则不重复收录。厂商 DTO 须核对真实合并器的根属性复制，普通 fdtoverlay 不替代 ABL，见[续修](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。Android 版本用 release/SDK/ROM 字段交叉核实，不能仅看 fingerprint；无 su 不等于 adbd root 不可用。
 
 ## 真机已闭合结论的表述
 

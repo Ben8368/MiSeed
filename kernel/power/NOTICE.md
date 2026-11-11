@@ -43,3 +43,5 @@ PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 mi
 ## 固定主线 PD 接收修正
 
 `pmic_pdphy_receive.inc` 改编自固定 Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18` 的 `drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.c`（GPL-2.0；Copyright (c) 2023 Linaro Ltd.），保留文件头。构建器保留原驱动其他代码和署名，只替换接收函数并增加复位诊断；同一固定内核的 `tcpm.c` 只调整诊断环形缓冲容量。输入文件完整 SHA-256 由 `tools/apply_pd_diagnostics.py` 固定，构建产物另保存修改后文件哈希。无效长度不转交报文、确认失败不当成功；真实零头报文仍交给原 TCPM 校验。接收错误路径回归和本机协议故障的因果关系分开，见[调查记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
+
+2026-11-11 有线芯片边界：`bq25970_core` 独立拥有 I2C/regmap、身份与 IRQ；`umi-bq25970` 经 auxiliary bus 消费充电功能，保留板级 TCPM/SMB5 策略。TI 后端归属不变，未引入新外部驱动或改动 watchdog/电气阈值。范围与验证见[实施记录](../../docs/archive/research/2026-11-11-native-dsi-chip-boundaries.md)。无线 RX/TX 未移植。

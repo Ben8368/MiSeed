@@ -16,12 +16,21 @@ config CHARGER_MISEED_PM8150B
 	  current/voltage profile and automatic attach policy. The optional
 	  bounded insertion command is diagnostic only.
 
+config CHARGER_BQ25970_CORE
+	tristate "BQ25970 standalone silicon driver"
+	depends on I2C && OF
+	select REGMAP_I2C
+	select AUXILIARY_BUS
+	help
+	  Owns the I2C device, register backend and IRQ. The pump starts
+	  disabled. A separate kernel consumer owns charging policy.
+
 config CHARGER_MISEED_UMI_PPS
 	tristate "MiSeed Umi guarded BQ25970 PPS controller"
 	depends on I2C && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
 	depends on THERMAL && THERMAL_OF
 	depends on CHARGER_MISEED_PM8150B && BATTERY_MISEED_QCOM_FG
-	select REGMAP_I2C
+	select CHARGER_BQ25970_CORE
 	help
 	  Automatic LOS-style PPS policy using mainline TCPM and a standalone
 	  BQ25970. The Umi board profile is sink-only and is exercised on the
