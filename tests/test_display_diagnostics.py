@@ -14,6 +14,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class EvidenceFrameTests(unittest.TestCase):
+    def test_invalid_dtb_capture_retains_raw_response(self):
+        frames = (b"DTB_BEGIN 40\nDTB 00000000 00\nDTB_END\n",
+                  b"DTB_BEGIN 40\nDTB 00000000 " + b"00" * 40 + b"\nDTB_END\n",
+                  b"DTB_BEGIN 40\n\xff\nDTB_END\n")
+        for frame in frames:
+            class Port:
+                chunks = iter([frame])
+
+                def read(self, count):
+                    return next(self.chunks)
+
+                def write(self, data):
+                    return len(data)
+
+            with self.subTest(frame=frame), tempfile.TemporaryDirectory() as tmp:
+                output = Path(tmp) / "runtime-fdt.txt"
+                with self.assertRaises(ExportError):
+                    collector.capture(Port(), output, "dtb", b"DTB")
+                self.assertFalse(output.exists())
+                self.assertEqual(output.with_suffix(".txt.partial").read_bytes(), frame)
+
     def test_completed_control_failure_still_collects_kernel_and_fdt(self):
         frame = b"DISPLAY_CONTROL_BEGIN\nDISPLAY_CONTROL value=1500 readback=0 rc=-1 (software readback only)\nDISPLAY_CONTROL_END\n"
         with self.assertRaises(collector.ControlError):

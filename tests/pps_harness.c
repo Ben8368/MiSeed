@@ -92,7 +92,8 @@ static void adc(int channel, int value) {
 static int regmap_read(struct regmap *map, unsigned int r, unsigned int *v) {
  int ret = io_fail(); if (ret) return ret;
  if (read_delay_ms && r == delayed_reg) { clock_ms += read_delay_ms; read_delay_ms=0; }
- *v = regs[r]; if (bad_readback && r == 0x02) *v ^= 0x80;
+ *v=regs[r];if(r==0x0b)regs[r]&=~BIT(3); /* Watchdog timeout is read-to-clear. */
+ if (bad_readback && r == 0x02) *v ^= 0x80;
  return 0;
 }
 static int regmap_write(struct regmap *map, unsigned int r, unsigned int v) {
@@ -469,10 +470,9 @@ int main(void) {
 	reset();run();clock_ms+=600000;tick();assert(c.state==PPS_RUN);
 	bms.prop[POWER_SUPPLY_PROP_CAPACITY]=95;clock_ms+=200;tick();
 	assert(c.state==PPS_DONE && release_count==1 && !claim_owned);
- /* Match LOS: disable only bit 2, preserve frequency/timing and do not feed.
-  * A historical timeout flag is not an active watchdog with DIS set.
-  */
- reset();regs[0x0b]=0x4b;run();assert(regs[0x0b]==0x4f && wd_writes==1);
+ /* A latched timeout blocks startup; the clean 30 s setting runs normally. */
+ reset();regs[0x0b]=0x4b;begin();assert(c.state==PPS_FAULT&&!enable_count&&!wd_writes&&!(regs[0x0b]&BIT(3)));
+ reset();regs[0x0b]=0x43;run();assert(regs[0x0b]==0x43&&wd_writes==1);
  for(int i=0;i<10;i++){clock_ms+=200;tick();assert(c.state==PPS_RUN && wd_writes==1);}
  assert(!umi_pps_stop(&c,PPS_OFF,0) && wd_writes==1);
  /* Current/voltage/temperature/SOC/protection/contract/ownership failures. */
@@ -487,7 +487,7 @@ int main(void) {
    case 5: bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=6001000;break;
    case 6: regs[0x10]=0x80;break;
    case 7: regs[0x11]=0x01;break;
-   case 8: regs[0x0b]&=~BIT(2);break;
+   case 8: regs[0x0b]|=BIT(2);break; /* Wrong watchdog timeout encoding. */
    case 9: bad_readback=1;break;
    case 10: adc(0,3001);break;
    case 11: adc(4,4450);break;

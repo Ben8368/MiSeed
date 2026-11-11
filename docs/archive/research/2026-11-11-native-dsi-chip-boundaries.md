@@ -23,18 +23,20 @@ L1/L2 与 L3 分列，不继承参考项目硬件结论。
 
 ## Watchdog 评估：有线 BQ25970
 
-核对固定 LOS `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq25970_reg.h` 与 `bq2597x_charger.c`：0x0b bit2 禁用、bit3 timeout 标志、bits1:0 编码 0.5/1/5/30 秒；参考初始化关闭 watchdog。这些源码证明寄存器用法，不能替代芯片到期行为规格或真机证据。公开资料检索未取得足以确认完整到期/恢复语义的资料，不以 BQ25980/BQ25968 等型号推断。
+核对固定 LOS `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq25970_reg.h` 与 `bq2597x_charger.c`：0x0b bit2 禁用、bit3 timeout 标志、bits1:0 编码 0.5/1/5/30 秒；参考初始化关闭 watchdog。TI 的 [TIDA-01582 BQ25970 参考设计](https://www.ti.com/lit/pdf/TIDUDL7) 也明确要求通过 0x0b bit2 禁用 watchdog；TI [BQ25968 数据手册 CONTROL(0x0b) 表](https://www.ti.com/lit/ds/symlink/bq25968.pdf) 明确任意完成的 I²C 读或写事务都会清计时器，并给出 0.5/1/5/30 秒档位及寄存器位定义。两份 TI 资料与 BQ25970 LOS 定义相互吻合，构成较强的同系列机制依据；但读写刷新和时序仍是 BQ25968 的直接规格，不是 BQ25970 自身数据手册条款。当前公开 BQ25970 Rev.B 数据手册未含寄存器级 watchdog 章节；参考设计选择禁用，且没有给出到期后完整状态/恢复语义。
 
 潜在收益是控制循环/CPU/I2C 失去进展后，由独立硬件超时进入受控状态；只有确认到期确实停泵且恢复安全后，这项收益才成立。它不能替代 OVP/OCP/OTP、板级温控、PD 合约检查或 SMB5 所有权。
 
 风险与需要的证据：
 
 - 调度延迟、I2C 重试、PD 协商或 suspend 超过周期会误触发；当前策略允许部分操作等待 10 秒，因此不能照搬 0.5/1/5 秒，更不能仅凭存在 30 秒档就认定安全。
-- 必须确认实际喂狗动作、普通寄存器访问是否也会重置计时、读操作有无副作用；独立定时器盲目喂狗可能掩盖策略已失效。
+- 普通已完成 I²C 读/写刷新机制有 BQ25968 TI 规格支持，且其位定义/时间档与 BQ25970 TI 参考设计及本机 LOS 定义吻合；精确型号书面确认仍可消除跨型号推断。还须确认读操作副作用。独立定时器盲目喂狗可能掩盖策略已失效。
 - 必须确认到期停泵、保护寄存器是否复位、默认值、故障标志清除与 IRQ 行为；未核实前不能保证当前保护配置继续有效。
 - 到期后不能只清标志重新启泵；必须重新验证保护、遥测与合约，保留原停止/固定 PD/SMB5 释放事务。挂起、解绑、重启及 I2C 故障都需独立反例。
 
-当前 `umi_pps_hw.c` 配置并验证 WD_DISABLED；直接清 bit2 会被现有保护校验判为故障。因此本轮保持禁用。后续应先取得精确型号规格或受控实验依据，再设计受健康状态约束的喂狗与到期恢复，最后经独立复核和明确授权做失联/超时 L3；本轮未主动启用或测试到期。
+源码现已尝试将 watchdog 配置为启用、30 秒档（`0x0b & 0x07 == 0x03`）；正常 200 ms PPS 控制轮询中的成功事务刷新计时器，不增加独立定时器。校验捕获 read-to-clear timeout flag 后走既有停泵/固定 PD/SMB5 释放流程；配置前也单独检查该标志，避免 `REGCACHE_NONE` 的 `regmap_update_bits()` 先读寄存器并清掉超时证据。挂起前同步停泵，恢复后重新准备。该实现依据 BQ25970 TI 参考设计与 BQ25968 TI 同系列规格，目标 L2 已通过；仍须独立代码复核和获授权的 L3 核实 BQ25970 到期停泵、超时恢复、挂起恢复及 I²C 故障行为。本轮没有刷写、启用真机充电或测试到期。
+
+本次后续验证：Windows 10 x64 / PowerShell 7.6.9；`python -X utf8 tools/check_repo.py` 通过（保留既有篇幅黄灯），`git diff --check` 通过。首次 `bash tools/build_kernel_l2.sh` 检测到 Linux 缓存树与锁定提交不符，保留旧缓存并改用新树；此前曾因误判测试约束而中断。用户澄清后重跑，ABL 隔离 6 项通过，完整目标 L2 编译退出 0，产物位于 `.work/boot-l2/`。补齐 WSL 的 GCC、dtc、fdtoverlay、dtschema、已构建 wired DTB 与 processed schema 后运行全量 unittest：首轮 235 项、0 跳过，发现 PPS 合成寄存器桩未实现 `0x0b` bit 3 read-to-clear 及旧禁用编码断言；后续审查还发现配置阶段读改写可清除超时证据，因此改用显式检查/写入/读回，并在 BQ 与 PPS 桩覆盖。最终定向 BQ/PPS 测试 2 项通过；重跑最终源码目标 L2 退出 0（日志 `.work/bq-wd-l2-20261111.log`），随后全量 235 项、0 跳过、47.300 秒通过。最终 `check_repo.py` 与 `git diff --check` 通过；PPS harness 为 599 行并登记于 TECH_DEBT。无设备操作。
 
 ## 离线验证与材料
 
@@ -384,3 +386,31 @@ SMMU 的 SID 0x820/0xc20 匹配 MDSS 的 stream-mask；故障 IOVA 位于 /chose
 | simpledrm | 7bd5ada203ec7166ee1ffcb0e12eec00fbe6e7cacbbeb4db6b889059e67e58d6 | 5cbd07260ec34a7d10bc98bc687f4ee01b05a5754ae31776ae0131eb10ccb184 |
 
 本轮没有新 L3：新 reset/SMMU、panel 生命周期与有线 PPS 拆除恢复的真机结论仍待验；此前点屏和有线 PD/PPS/旁路 L3 继续保留。既有工作区的 QUALITY 收尾例外规则、DTBO 输出路径 resolve、诊断 harness 的 stdlib include 与对应来源锁一并验证、提交。构建物、原始 DTBO/运行树及长日志不入库。推送仅更新原有 PR6 工作分支，精确 HEAD、GitHub 规模和查询当时的异步 CI/机器人状态以 PR 描述和本轮汇报为准，不等待完成，不合并。
+
+## PR6 最新完整 review 复核（2026-11-11）
+
+本轮用户要求核实 CodeRabbit 完整审查并修复真实问题，未授权提交、推送或设备操作。主机 Windows 10.0.26200 x64 / PowerShell 7.6.9，验证使用 WSL Ubuntu 24.04 x86_64。本地 `codex/native-dsi-dt-power` 与 PR head 同为 `809b06cd4937a0c126e6c481ec5ee840a6fd7d74`，base 仍为 `d9a65dca4a1a9530a44047273f61cabbb5f8b572`；保留进入本轮前的 watchdog 源码、测试与文档修改。
+
+已读取两次 review 提交、全部 8 条行内意见、讨论回复及总评。最新[完整范围 review](https://github.com/Ben8368/MiSeed/pull/6#pullrequestreview-5856505271)的 run ID 为 `89c36f83-aa03-443c-a75d-32fa07e0c76a`，列出 base→上述 HEAD 的 99 文件；它是独立于先前限流命令的已完成审核。前一轮四项修复在当前源码中仍有效，由本次全量回归复验。机器人 docstring 检查另跳过 49 文件，不把文件选择清单或覆盖率统计当成逐文件审查质量证据，也不引入其 80% 指标。
+
+| 最新意见 | 实际核实与处理 |
+| --- | --- |
+| [固定 PD cooling 记录](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4536103577) | 硬件记录明确为 USB SDP，验证了 SMB5 cooling 停充/释放；修正 TD-005 与 CONTEXT 的摘要，实际固定 PD 合约下 cooling 专项仍待验，保留已完成的接口/回调 L3。 |
+| [持续失败下有界关机](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4536103588) | 当前 cleanup 在 BQ 持续读错时确实无限重试；但缺少经验证的安全硬件回退，不能直接增加次数上限并释放资源。本轮不改停机控制；仅在 TD-004 限定未闭合故障条件，watchdog 草稿不能作为已验证回退。 |
+| [原生输出目录](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4536103595) | 原检查只拒绝空变量，显式默认路径会绕过。改在任何构建/下载/目录创建前用 Path.resolve 比较实际目标；拒绝绝对/相对默认路径、点路径和符号链接别名，允许独立显式目录。 |
+| [损坏 DTB 原始响应](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4536103602) | receive_windows 仅为 ExportError/OSError 保留缓冲区，decode_export 的 ValueError 会绕过。采集回调将解码/校验 ValueError 转成 ExportError；截断、无效 FDT 与非 ASCII 响应均经真实接收器验证完整保留 .partial，失败不生成正式结果。 |
+
+用户追问后再次核对[既有有线 L3](../hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)：156.606831 s 协议故障时停泵成功，PD 清理失败保留 owned=1；156.902940 s 清理成功才释放 owned=0，后续拔插恢复、禁止保持及旁路供电也已通过。这些已闭合结论全部保留；新增待办仅指持续 BQ I²C 不可读时的有界卸载/关机，不能混写为一般安全停泵未验证。无线 RX/TX 未修改。
+
+### 本轮验证
+
+源码修改后先输出 Audit：PR 规模 99 文件继续红灯收尾；既有 8 项源码黄灯归 TD-008；有界关机未解决，未以工具修复关闭供电验收。来源锁仅更新本轮修改的构建脚本、采集器及显示测试哈希，保留既有 watchdog 哈希。
+
+- WSL 定向：`python3 -X utf8 -m unittest discover -s tests -p test_build_validation.py -v` 与 `-p test_display_diagnostics.py -v` 各 7 项通过，无跳过；`shellcheck --severity=error tools/build_kernel_l2.sh` 退出 0。
+- Windows：显示诊断 4 项 Python 测试通过，3 项 Linux C harness 按平台跳过；同一批 C harness 已在 WSL 通过。
+- 全量：设置 `PATH=/tmp/miseed-dtschema/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`、`MISEED_WIRED_DTB=/mnt/c/MiSeed/.work/pr6-review-native-20261111/umi-csot.dtb`、`MISEED_DT_SCHEMA=/mnt/c/MiSeed/.work/pr6-review-processed-schema-20261111.json`，在 `/mnt/c/MiSeed` 执行 `python3 -X utf8 -m unittest discover -s tests -v`。首轮 237 项仅文档预算检查失败；压缩重复摘要后重跑，退出 0，**237 项、0 跳过、49.075 秒**，包含工作区原有 watchdog 修改及停泵/PD/SMB5 生命周期反例。最终日志 `.work/pr6-full-review-final-tests-20261111.log`，不入库。
+- `python -X utf8 tools/check_repo.py` 与 `git diff --check` 退出 0；输入哈希、文档预算与源码篇幅检查通过，8 项既有黄灯保留。本轮没有修改内核 C/DTS 或新增接口，没有重跑目标 L2，也没有新 L3；历史编译/真机证据不改写为本轮新载荷验收。
+
+本轮交付为未提交工作区修复与核实记录；未发 GitHub 评论、触发机器人、标记线程解决、推送、合并或发布。当前远端 99 文件/5440 新增行是读取 PR 时的规模，本地修复尚未进入远端。
+
+后续维护者明确授权「本地提交」：将上述已验证的工具/记录修复与工作区原有有线 watchdog 源码、回归和来源锁一并提交到 `codex/native-dsi-dt-power`，不推送、不合并。沿用全量 237 项零跳过结果；本次仅补授权记录并复核仓库与 diff 检查，watchdog 的 BQ25970 到期停泵/恢复 L3 仍待验。

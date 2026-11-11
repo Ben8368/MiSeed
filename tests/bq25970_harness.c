@@ -19,6 +19,8 @@ static int regmap_read(struct regmap *map, unsigned int reg, unsigned int *value
 		latch_reads++;
 		regs[reg] = 0;
 	}
+	if (reg == 0x0b)
+		regs[reg] &= ~BIT(3);
 	return 0;
 }
 static int regmap_update_bits(struct regmap *map, unsigned int reg,
@@ -28,6 +30,13 @@ static int regmap_update_bits(struct regmap *map, unsigned int reg,
 		return -EIO;
 	writes++;
 	regs[reg] = (regs[reg] & ~mask) | value;
+	return 0;
+}
+static int regmap_write(struct regmap *map, unsigned int reg, unsigned int value)
+{
+	if (++io_count == fail_at)
+		return -EIO;
+	regs[reg] = value;
 	return 0;
 }
 static int regmap_bulk_read(struct regmap *map, unsigned int reg, void *value, unsigned int count)
@@ -82,5 +91,9 @@ int main(void)
 	assert(bq25970_configure(NULL, protection, 2) == -EBUSY && regs[0] == 0);
 	reset(); assert(!bq25970_configure(NULL, protection, 2));
 	assert(regs[0] == 0x2b && regs[6] == 0x79 && !(regs[BQ_CONTROL] & BQ_ENABLE));
+	const struct bq25970_reg watchdog[] = {{BQ_WATCHDOG, BQ_WD_CONFIG_MASK, BQ_WD_ENABLED_30S}};
+	reset(); regs[BQ_WATCHDOG] = BQ_WD_TIMEOUT_FLAG;
+	assert(bq25970_configure(NULL, watchdog, 1) == -ETIME);
+	assert(!(regs[BQ_WATCHDOG] & BQ_WD_TIMEOUT_FLAG) && !(regs[BQ_WATCHDOG] & BQ_WD_CONFIG_MASK));
 	return 0;
 }

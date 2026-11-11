@@ -4,13 +4,50 @@
 
 import io
 import contextlib
+import os
+from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
 from tools import run_build_command, validate_kernel_dt
+
+
+@unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "POSIX bash required")
+class NativeOutputTests(unittest.TestCase):
+    def test_native_output_preflight_rejects_default_aliases(self):
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "tools/build_kernel_l2.sh").read_text(encoding="utf-8")
+        # Execute the actual script preflight without build/download operations.
+        preflight = script.split("# Capture recursive make diagnostics too:", 1)[0]
+        preflight = preflight.replace(
+            'readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
+            'readonly repo_root="$MISEED_TEST_REPO_ROOT"')
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            default = repo / ".work/boot-l2"
+            default.mkdir(parents=True)
+            alias = repo / "default-alias"
+            alias.symlink_to(default, target_is_directory=True)
+            for output in (None, str(default), ".work/boot-l2",
+                           str(default) + "/../boot-l2/.", str(alias), str(repo / "native")):
+                env = dict(os.environ, MISEED_NATIVE_DSI="1", MISEED_TEST_REPO_ROOT=str(repo))
+                env.pop("MISEED_OUTPUT_ROOT", None)
+                if output is not None:
+                    env["MISEED_OUTPUT_ROOT"] = output
+                with self.subTest(output=output):
+                    result = subprocess.run(["bash", "-c", preflight], cwd=repo, env=env,
+                                            capture_output=True, text=True)
+                    if output == str(repo / "native"):
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("distinct explicit MISEED_OUTPUT_ROOT", result.stderr)
+            self.assertFalse((repo / "native").exists())
 
 
 class BuildCommandTests(unittest.TestCase):

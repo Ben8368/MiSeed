@@ -64,6 +64,11 @@ int bq25970_verify(struct regmap *map,
 		ret = regmap_read(map, r->reg, &v);
 		if (ret)
 			return ret;
+		/* WD_TIMEOUT_FLAG is read-to-clear. Catch it on the first watchdog
+		 * read so ordinary configuration verification cannot hide an expiry.
+		 */
+		if (r->reg == BQ_WATCHDOG && (v & BQ_WD_TIMEOUT_FLAG))
+			return -ETIME;
 		if ((v & r->mask) != r->value)
 			return -EPERM;
 		/* Native Android 0x2b was 0xd0. Preserve and require its VOUT
@@ -94,13 +99,28 @@ int bq25970_adc(struct regmap *map, int channel, int *value)
 int bq25970_configure(struct regmap *map,
 		     const struct bq25970_reg *protection, unsigned int count)
 {
-	unsigned int i;
+	unsigned int i, watchdog;
 	int ret = bq25970_disable(map);
 
 	for (i = 0; !ret && i < count; i++) {
 		const struct bq25970_reg *r = &protection[i];
 
-		ret = bq25970_update(map, r->reg, r->mask, r->value);
+		if (r->reg == BQ_WATCHDOG) {
+			ret = regmap_read(map, BQ_WATCHDOG, &watchdog);
+			if (!ret && (watchdog & BQ_WD_TIMEOUT_FLAG))
+				ret = -ETIME;
+			if (!ret)
+				ret = regmap_write(map, BQ_WATCHDOG,
+						   (watchdog & ~r->mask) | r->value);
+			if (!ret)
+				ret = regmap_read(map, BQ_WATCHDOG, &watchdog);
+			if (!ret && (watchdog & BQ_WD_TIMEOUT_FLAG))
+				ret = -ETIME;
+			if (!ret && (watchdog & r->mask) != r->value)
+				ret = -EIO;
+		} else {
+			ret = bq25970_update(map, r->reg, r->mask, r->value);
+		}
 	}
 	return ret ? ret : bq25970_verify(map, protection, count);
 }

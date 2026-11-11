@@ -17,7 +17,9 @@ struct bq25970_status {
 #define BQ_CONTROL 0x0c
 #define BQ_ENABLE BIT(7)
 #define BQ_WATCHDOG 0x0b
-#define BQ_WD_DISABLED BIT(2)
+#define BQ_WD_TIMEOUT_FLAG BIT(3)
+#define BQ_WD_CONFIG_MASK 0x07
+#define BQ_WD_ENABLED_30S 0x03
 #define BQ_ADC 0x14
 #define BQ_ADC_BASE 0x16
 

@@ -11,7 +11,7 @@
 | 项目 | 固定 LOS Umi | MiSeed 主线适配 |
 | --- | --- | --- |
 | 入口 | SE15 I2C、0x66 BQ25970、GPIO68；`usbpd_pm` 自动管理 PPS | 主线 TCPM + 本控制器；测试镜像 enabled，RPMh/I2C15/BQ 绑定已 L3 |
-| BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 关闭 | 按 LOS 保留明确数值，准确复现其禁用位；外部温控/FCC 路径承担软件限流。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
+| BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 30 秒档启用（源码尝试，待 L2/L3） | 限值继续按 LOS；watchdog 刷新方式参考同系列 BQ25968，依靠成功 I²C 事务，不设独立喂狗任务。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
 | 热控与电量 | `mi_thermald` 通过 SMB5 thermal FCC 投票；常规 Umi PPS 上限表为 16 档；PD 策略在 95% SOC 退出 charge pump | 已移植同一六路虚拟温度及 FCC 表；PPS 在 LOS 的 95% SOC 门槛退出，普通充电不再额外卡 70% |
 | 运行方式 | USB/PD 事件驱动，符合条件即进入持续策略，拔线/故障/高电量时退出 | 驱动 probe 后轮询 PD attach 并自动尝试 PPS；拔线回到等待态，故障回固定 PDO 并恢复 SMB5 策略 |
 
@@ -27,7 +27,7 @@
 
 任何活动期间遥测错误、合约不匹配、保护读回不符、温控/过压/过流或硬件锁存故障都会停泵。退出读回 CHG_EN 与 switching 状态，返回固定合约并确认 5 V / ≤3 A，最后释放 SMB5 并恢复 LOS 普通主充策略。无法停止时保留独占、记录错误并重试，不发送独立 watchdog 保活。卸载/关机清理同样在原资源存活时同步重试，全部停机步骤确认前不释放策略或退订 IRQ；持久故障会阻塞清理完成。硬件失效无法被软件保证消除，必须断开充电器。
 
-BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b bit2，保留频率/时间选择位，删除周期刷新。关闭位读回不符仍退出，关闭状态下不把历史 timeout flag 当作当前超时。不再要求验证一个未启用的泵 watchdog 刷新/到期机制；关闭模式没有该硬件超时停泵保障，软件循环和 I/O 挂死后的退出能力仍须如实分项验证。来源与变更见[对齐记录](../../docs/archive/reviews/2026-11-08-los-watchdog-alignment.md)。
+BQ watchdog 现尝试启用为 30 秒档（0x0b[2]=0、bits[1:0]=3）。依据是 TI BQ25970 TIDA-01582 参考设计确认 0x0b[2] 为禁用位，TI BQ25968 数据手册规定任意成功 I²C 读写刷新计时器及 30 秒档；同系列对照，不是 BQ25970 自身数据手册直接规格。PPS 控制周期为 200 ms，成功的常规寄存器读取自然刷新；超时标志在第一次 watchdog 寄存器读回时识别并进入现有停泵/固定 PD/SMB5 释放路径。启动时先停泵，单独检查 timeout flag，再显式写入并读回 watchdog 配置，避免 `REGCACHE_NONE` 下读改写清掉超时证据；系统挂起前同步停泵，恢复后重新准备。L2 和全量离线测试已通过；仍需独立代码复核及 L3 核实超时确实停泵、恢复不自动误启、挂起恢复和 I²C 故障路径。相关评估见[芯片边界记录](../../docs/archive/research/2026-11-11-native-dsi-chip-boundaries.md)。
 
 阻塞 I/O 返回后重新检查操作窗口：PPS 激活、电压/电流请求、保护复核与启泵分别检查，SETTLE 还受 5 秒窗口约束。超出操作窗口时不继续提交主动请求，进入停泵/固定合约回退；清理操作不被窗口拦截。这不能中止已经发出的挂死事务，也不是硬实时保证。
 

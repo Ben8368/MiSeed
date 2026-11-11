@@ -253,7 +253,7 @@ static int umi_pps_validate_cycle(struct umi_pps *c)
 {
 	int ret = umi_pps_check_deadline(c);
 
-	/* Readback only: LOS disables the pump watchdog; no periodic keepalive. */
+	/* Each successful watchdog-register read refreshes the 30 s window. */
 	if (!ret)
 		ret = umi_pps_verify(c);
 	if (!ret)
@@ -270,7 +270,8 @@ static bool umi_pps_pump_lost(struct umi_pps *c, struct umi_pps_sample *s)
 
 	if (c->state != PPS_RUN || !s->fault || s->fault_raw || s->latched_raw ||
 	    s->status_raw || s->alarm_raw != BIT(1) ||
-	    !(s->watchdog_raw & BQ_WD_DISABLED) || (s->control_raw & BQ_ENABLE))
+	    (s->watchdog_raw & BQ_WD_CONFIG_MASK) != BQ_WD_ENABLED_30S ||
+	    (s->watchdog_raw & BQ_WD_TIMEOUT_FLAG) || (s->control_raw & BQ_ENABLE))
 		return false;
 	live.online = 1;
 	live.fault = 0;

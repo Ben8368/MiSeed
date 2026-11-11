@@ -49,7 +49,10 @@ def capture(port, output, command, kind):
     partial = output.with_suffix(output.suffix + ".partial")
     def validate(snapshot, stream, remaining):
         if kind == b"DTB":
-            decode_export(snapshot.decode("ascii"))
+            try:
+                decode_export(snapshot.decode("ascii"))
+            except ValueError as exc:
+                raise ExportError(f"invalid DTB export: {exc}") from exc
         else:
             validate_frame(snapshot, kind)
         stream.write(snapshot)  # receive_windows preserves raw bytes itself on failure.

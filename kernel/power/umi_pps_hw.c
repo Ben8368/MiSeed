@@ -84,9 +84,12 @@ int umi_pps_parse(struct umi_pps *c)
 	 */
 	c->protection[c->nprotection++] = (struct bq25970_reg){0x14, 0xed, 0xa8};
 	c->protection[c->nprotection++] = (struct bq25970_reg){0x15, 0xff, 0x2f};
-	/* Match fixed LOS init_device: enable_wdt(false). Do not change timing. */
+	/* TI TIDA-01582 disables the watchdog by setting 0x0b[2]. This
+	 * policy instead uses the sibling BQ25968-documented 30 s interval;
+	 * successful control-loop I2C transactions provide the refresh.
+	 */
 	c->protection[c->nprotection++] = (struct bq25970_reg){BQ_WATCHDOG,
-		BQ_WD_DISABLED, BQ_WD_DISABLED};
+		BQ_WD_CONFIG_MASK, BQ_WD_ENABLED_30S};
 	return 0;
 }
 
@@ -167,6 +170,11 @@ int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 	int ret;
 
 	ret = umi_pps_verify(c);
+	/* The watchdog flag is read-to-clear; preserve the value observed by
+	 * verification for the normal fault log and safe-stop path.
+	 */
+	if (ret == -ETIME)
+		status.watchdog |= BQ_WD_TIMEOUT_FLAG;
 	if (!ret)
 		ret = bq25970_fault_snapshot(c->map, &status);
 	/* Preserve partial diagnostics if a later read fails after consuming a
@@ -181,7 +189,8 @@ int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 	if (ret)
 		return ret;
 	s->fault = s->fault_raw || s->latched_raw || (s->status_raw & 0xcb) ||
-		!(s->watchdog_raw & BQ_WD_DISABLED) || !(s->alarm_raw & BIT(1)) ||
+		(s->watchdog_raw & BQ_WD_CONFIG_MASK) != BQ_WD_ENABLED_30S ||
+		(s->watchdog_raw & BQ_WD_TIMEOUT_FLAG) || !(s->alarm_raw & BIT(1)) ||
 		(c->state == PPS_RUN && !(s->control_raw & BQ_ENABLE)) ||
 		(c->state == PPS_SETTLE && (s->control_raw & BQ_ENABLE));
 	s->alarm = !!(s->alarm_raw & 0xf0);

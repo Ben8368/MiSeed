@@ -41,6 +41,12 @@ cleanup_fallback_trees() {
 trap cleanup_fallback_trees EXIT
 
 require python3
+if [[ "$native_dsi" == 1 ]]; then
+    [[ -n "${MISEED_OUTPUT_ROOT:-}" ]] || fail "native DSI requires a distinct explicit MISEED_OUTPUT_ROOT"
+    distinct_output="$(python3 -c 'from pathlib import Path; import sys; print(int(Path(sys.argv[1]).resolve() != Path(sys.argv[2]).resolve()))' \
+        "$output_root" "$repo_root/.work/boot-l2")"
+    [[ "$distinct_output" == 1 ]] || fail "native DSI requires a distinct explicit MISEED_OUTPUT_ROOT"
+fi
 # Capture recursive make diagnostics too: make 4.3 may return 0 on clock skew.
 make() { python3 "$repo_root/tools/run_build_command.py" -- make "$@"; }
 python3 "$repo_root/tools/check_build_lock.py" --root "$repo_root" \
@@ -58,9 +64,6 @@ readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
 grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must enable ARCH_QCOM"
 
-if [[ "$native_dsi" == 1 && -z "${MISEED_OUTPUT_ROOT:-}" ]]; then
-    fail "native DSI requires a distinct explicit MISEED_OUTPUT_ROOT"
-fi
 mkdir -p "$work_root" "$output_root"
 if [[ ! -f "$template" ]]; then
     python3 "$repo_root/tools/download_locked.py" --url "$boot_url" \
