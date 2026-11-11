@@ -24,15 +24,19 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-源码偿还：FG/SMB5/BQ 已采用 power_supply，修正电流换算，诊断独立可选；BQ 寄存器层已独立，见[接口](archive/reviews/2026-11-10-linux-standard-interfaces.md)。umi_smb5_* 保留失败锁定互锁，不以用户空间分步写入替代；已拆为BQ I2C/IRQ 提供者与 auxiliary PPS 策略，见[本轮](archive/research/2026-11-11-native-dsi-chip-boundaries.md)；其他板型复用、新生命周期 L3 与所有权专项复核仍开放。新生命周期/保护 L3、Debian 待验；既有稳定结论保留。
+取舍：有线 PPS 保留 umi_smb5_* 失败锁定互锁；BQ provider/policy 已拆分，见[记录](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。清理在资源存活时同步重试，全部停机步骤确认后才拆除；持久故障阻塞卸载/关机清理。
+
+偿还：WP9 建立安全的有界硬件回退，补生命周期/保护 L3、所有权独立复核、Debian 及其他板型验证；既有 PD/PPS 稳定结论保留。
 
 ## TD-005：有线温控模型与验收（P1，2026-11-10；WP9/WP6）
 
 源码偿还：有线 PPS 六路 thermal zone/cooling device 保留；有线固定 PD 新增独立电池温度 zone 与二态停充 cooling，沿用 45°C 暖端，冷端/读错独立保护保留，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。未把 PPS 多传感器/FCC 表移用于固定 PD，wireless_therm 名称不代表无线 RX/TX。固定 PD 的 cooling state 强制停充/释放已在真机验证；剩余：板级温标/阈值验证、实际温度越限与读错 L3、PPS 路径传感器异常 L3、完整板级热模型与独立复核；未因标准节点存在关闭本债务。
 
-## TD-006：诊断启动与用户空间临时路径（P2，2026-11-10；WP2–WP5）
+## TD-006：诊断启动、根属性交接与临时用户空间（P2，2026-11-10；WP2–WP5）
 
-偿还：已用 simpledrm/KMS + fbdev；固定 CSOT DRM panel/DSC 与可选原生 DSI 见[本轮](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。临时保留 ignore_unused、诊断命令行、静态 rescue/CHARGE_LOG、TCPM debugfs；ABL 覆写根使 UBWC 失配，仅 CSOT 诊断 profile 核对 Umi/SM8250 身份后复用标准配置，已 L3；原生 DSC/点屏及亮度命令 L3 通过，启动 SMMU 故障待闭合。WP2/WP4 在第二阶段 UEFI 恢复主线 DT 身份并 L2/L3 后撤除 quirk；仍需变体、面板独立供电/PM 和 Debian 消费。Android boot header/Fastboot 限 ABL 诊断，不替代 WP3/WP4 产品路径；DTBO/GPIO 归 RISK-010/TD-002。
+取舍：ABL 直启仍覆盖根节点 `/` 的 `compatible/model`；保留仅 CSOT profile 核对完整 Umi/SM8250 身份的 UBWC quirk，严格 FDT 审计继续 FAIL。第二阶段 UEFI 尚未实现；不改原厂 DTBO/ABL，不在 Linux 内伪造根。保留 ignore_unused、诊断命令行、静态 rescue/CHARGE_LOG、TCPM debugfs；见[证据](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。
+
+责任/退出：WP3/WP4 用 EFI 配置表交接主线 DT，正确保留 memory/reserved-memory/chosen/initrd，L2/L3 整体审计通过后撤除 quirk。WP2 验证新 MDSS reset 的 SMMU 接管；变体、面板独立供电/PM 与 Debian 标准消费者待验。Android boot header/Fastboot 只用于诊断；DTBO 未知项/GPIO 归 RISK-010/TD-002。
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 

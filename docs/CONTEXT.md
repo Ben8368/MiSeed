@@ -8,7 +8,7 @@ WP10 使用 SN100T Linux NFC/NCI 与标准 Netlink；新驱动 RF/读卡/恢复 
 
 有线 SMB5 bit5 状态误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM 启动/Android 回退 L3 通过，见[真机读数](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 
-simpledrm/Android 往返、RAM/USB、隔离/UBWC、BQ 拆分 probe 已 L3。原生 DSI/DSC 1080×2340@60、亮度 1500 命令/目视点屏 L3 通过，已回 Android，见[本轮](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md)。启动 SMMU、UEFI 标准根交接/触控待验。
+RAM/USB、隔离/UBWC、BQ probe 已 L3。原生 DSI/DSC 1080×2340@60、1500 亮度命令/目视点屏及 Android 回退已 L3；MDSS reset 原生 L2/schema 通过、SMMU 待 L3，见[续修](archive/research/2026-11-11-native-dsi-chip-boundaries.md)；UEFI 根/触控开放。
 
 有线旁路供电已实现并完成真机验证；镜像 `9f7534c1…1872f3` 的 PD/PPS、故障清理/恢复与禁止保持 L3 见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。既有 PD/PPS 约 10 分钟稳定结论保留；硬件保护专项归 RISK-004，无线 RX/TX 未移植。
 

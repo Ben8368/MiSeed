@@ -18,3 +18,12 @@ and handoff require L3. Reference file hashes are in sources.lock.json.
 The locked Linux 6.18.60 DSI host receives native-profile-only failure logging:
 DMA timeout IOVA/state/clocks and FIFO status before its existing clear.
 The patch does not alter transfers, IRQ acknowledgement, resets or IOMMU policy.
+
+Native-profile MDSS_CORE reset wiring follows Linux commit
+`8b4faf419d601cead68d7821618369e2c0338b86` by Luca Weiss (BSD-3-Clause),
+`arch/arm64/boot/dts/qcom/sm8250.dtsi`. The locked baseline already provides
+the reset controller and MDSS reset sequence, but omits this DT reference.
+MiSeed also makes that existing sequence return assert/deassert errors and
+release its reset handle on failure (GPL-2.0, original Linux Foundation notice
+retained in the staged source). This stops probe before a failed takeover;
+it does not disable the SMMU or add identity mappings. Umi behavior requires L3.

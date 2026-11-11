@@ -27,16 +27,28 @@ static void umi_pps_event(void *data)
 static void umi_pps_cleanup(void *data)
 {
 	struct umi_pps *c = data;
+	int ret;
 
 	mutex_lock(&c->lock);
 	c->removing = true;
 	c->ready = false;
 	mutex_unlock(&c->lock);
 	cancel_delayed_work_sync(&c->work);
-	mutex_lock(&c->lock);
-	umi_pps_stop(c, PPS_OFF, 0);
-	mutex_unlock(&c->lock);
-	/* Keep IRQ owned until policy work has drained and the pump is stopped. */
+	/* remove/shutdown cannot return an error to veto teardown. Keep policy,
+	 * suppliers, IRQ and regmap alive until the full stop transaction succeeds.
+	 * Persistent I/O failure deliberately blocks teardown; never free the last
+	 * owner of a running pump or a pending PD/SMB5 recovery.
+	 */
+	do {
+		mutex_lock(&c->lock);
+		ret = umi_pps_stop(c, PPS_OFF, 0);
+		mutex_unlock(&c->lock);
+		if (ret) {
+			dev_err_ratelimited(c->dev, "wired PPS teardown waiting for safe stop: %d\n", ret);
+			msleep(UMI_PPS_PERIOD_MS);
+		}
+	} while (ret);
+	/* No policy lock while waiting for an in-flight IRQ callback. */
 	bq25970_unsubscribe(c->chip);
 }
 

@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 static int fake_klogctl(int action, char *buffer, int size);

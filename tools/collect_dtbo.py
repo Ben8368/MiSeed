@@ -77,8 +77,9 @@ def read_command(use_su, *tokens):
 
 
 def collect(adb, output, temporary_adb_root=False):
+    repo_root = ROOT.resolve()
     output = output.resolve()
-    if output.exists() or not any(output.is_relative_to(ROOT / n) for n in (".work", "local")):
+    if output.exists() or not any(output.is_relative_to(repo_root / n) for n in (".work", "local")):
         raise ValueError("output must be a new directory under repository .work/ or local/")
     devices = subprocess.run([str(adb), "devices"], capture_output=True, text=True,
                              timeout=10, check=True).stdout.splitlines()

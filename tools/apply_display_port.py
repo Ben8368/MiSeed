@@ -44,6 +44,36 @@ DSI_INSERTIONS = {
     '\t\tDBG("ret=%d", ret);\n': DSI_TIMEOUT,
     '\tstatus = dsi_read(msm_host, REG_DSI_FIFO_STATUS);\n': DSI_FIFO,
 }
+MDSS_PATH = "drivers/gpu/drm/msm/msm_mdss.c"
+MDSS_SHA256 = "645e876bdb2aec5553245692936887a0d3ab8273145245fee31a0f4feb81fb01"
+MDSS_RESET_EDITS = {
+    '\tstruct reset_control *reset;\n': '\tstruct reset_control *reset;\n\tint ret;\n',
+    '\treset_control_assert(reset);\n': '''	ret = reset_control_assert(reset);
+	if (ret) {
+		dev_err_probe(dev, ret, "failed to assert mdss reset\\n");
+		goto out;
+	}
+''',
+    '\treset_control_deassert(reset);\n': '''	ret = reset_control_deassert(reset);
+	if (ret)
+		dev_err_probe(dev, ret, "failed to deassert mdss reset\\n");
+
+out:
+''',
+    '\treset_control_put(reset);\n\n\treturn 0;\n':
+        '\treset_control_put(reset);\n\n\treturn ret;\n',
+}
+
+
+def transform_mdss(original):
+    if hashlib.sha256(original).hexdigest() != MDSS_SHA256:
+        raise ValueError("MDSS source differs from the pinned Linux baseline")
+    text = original.decode("utf-8")
+    for anchor, replacement in MDSS_RESET_EDITS.items():
+        if text.count(anchor) != 1:
+            raise ValueError("unexpected MDSS reset anchors")
+        text = text.replace(anchor, replacement)
+    return text.encode("utf-8")
 
 
 def transform_ubwc(original):
@@ -68,7 +98,21 @@ def transform_dsi(original):
     return text.encode("utf-8")
 
 
-HOST_TRANSFORMS = {UBWC_PATH: transform_ubwc, DSI_PATH: transform_dsi}
+HOST_TRANSFORMS = {UBWC_PATH: transform_ubwc, DSI_PATH: transform_dsi,
+                   MDSS_PATH: transform_mdss}
+
+
+def stage_mdss(source):
+    path = destination_dir(source, "drivers/gpu/drm/msm") / "msm_mdss.c"
+    if path.is_symlink():
+        raise ValueError("symlink MDSS target")
+    current = original = path.read_bytes()
+    for anchor, replacement in reversed(MDSS_RESET_EDITS.items()):
+        original = original.replace(replacement.encode(), anchor.encode())
+    patched = transform_mdss(original)
+    if current not in (original, patched):
+        raise ValueError("unexpected MDSS local modifications")
+    path.write_bytes(patched)
 
 
 def stage_dsi(source):
@@ -109,6 +153,7 @@ def stage(source, project, native=False):
     inputs = project / "kernel/display"
     stage_ubwc(source, inputs)
     stage_dsi(source)
+    stage_mdss(source)
     for name in ("panel-xiaomi-umi-csot.c", "umi_csot_commands.h", "Kconfig", "Makefile", "umi-csot.Kconfig"):
         if (target / name).is_symlink():
             raise ValueError("symlink panel target: " + name)

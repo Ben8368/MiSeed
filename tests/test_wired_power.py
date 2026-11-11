@@ -14,12 +14,12 @@ class WiredPowerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("qcom-battery", "pm8150b_charger", "pump0", "wireless"):
+        for name in ("qcom-battery", "pm8150b-charger", "pump0", "wireless"):
             (self.root / name).mkdir()
         (self.root / "pump0/model_name").write_text("BQ25970\n")
         (self.root / "wireless/model_name").write_text("IDTP9221\n")
         (self.root / "qcom-battery/capacity").write_text("73\n")
-        for name in ("pm8150b_charger", "pump0"):
+        for name in ("pm8150b-charger", "pump0"):
             (self.root / name / "charge_behaviour").write_text("[auto] inhibit-charge\n")
 
     def test_read_only_discovery_and_optional_properties(self):
@@ -29,6 +29,20 @@ class WiredPowerTests(unittest.TestCase):
         self.assertEqual(values["battery"]["capacity"], "73")
         self.assertNotIn("charge_counter", values["battery"])
         self.assertEqual(values["pump"]["charge_behaviour"], "[auto] inhibit-charge")
+
+    def test_registered_switch_name_drives_status_and_successful_actions(self):
+        supplies = wired_power.discover(self.root)
+        self.assertEqual(supplies["switch_charger"].name, "pm8150b-charger")
+        (supplies["switch_charger"] / "online").write_text("1\n")
+        self.assertEqual(wired_power.ups_status(wired_power.snapshot(supplies))[
+            "external_wired_power"], "online")
+        for action in ("inhibit-charge", "auto"):
+            self.assertEqual(wired_power.set_behaviour(supplies, action), {})
+            for role in ("switch_charger", "pump"):
+                self.assertEqual((supplies[role] / "charge_behaviour").read_text(), action + "\n")
+        (self.root / "pm8150b_charger").mkdir()
+        self.assertEqual(wired_power.discover(self.root)["switch_charger"],
+                         supplies["switch_charger"])
 
     def test_missing_and_ambiguous_never_write(self):
         supplies = wired_power.discover(self.root)
@@ -49,7 +63,7 @@ class WiredPowerTests(unittest.TestCase):
         with patch.object(Path, "write_text", write):
             errors = wired_power.set_behaviour(supplies, "inhibit-charge")
         self.assertEqual(calls, [("pump0", "inhibit-charge\n"),
-                                 ("pm8150b_charger", "inhibit-charge\n")])
+                                 ("pm8150b-charger", "inhibit-charge\n")])
         self.assertEqual(errors, {"pump": errno.EIO})
 
     def test_auto_failure_does_not_start_pump(self):
@@ -60,7 +74,7 @@ class WiredPowerTests(unittest.TestCase):
             raise OSError(errno.EBUSY, "ownership retained")
         with patch.object(Path, "write_text", write):
             errors = wired_power.set_behaviour(supplies, "auto")
-        self.assertEqual(calls, ["pm8150b_charger"])
+        self.assertEqual(calls, ["pm8150b-charger"])
         self.assertEqual(errors, {"switch_charger": errno.EBUSY})
 
     def test_read_failure_is_reported_not_zero(self):

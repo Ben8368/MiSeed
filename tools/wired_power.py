@@ -10,7 +10,7 @@ ATTRIBUTES = ("type", "model_name", "status", "health", "online", "present",
               "charge_full_design", "voltage_min_design", "voltage_max_design",
               "input_current_limit", "charge_behaviour", "usb_type")
 BATTERY_NAME = "qcom-battery"
-SWITCH_CHARGER_NAME = "pm8150b_charger"
+SWITCH_CHARGER_NAME = "pm8150b-charger"
 
 
 def discover(root):

@@ -21,6 +21,21 @@ def put(dtb, node, prop, value):
     subprocess.run(["fdtput", "-t", "s", str(dtb), node, prop, value], check=True)
 
 
+def verify_native_reset(dtb):
+    mdss = get(dtb, "/__symbols__", "mdss")
+    dispcc = get(dtb, "/__symbols__", "dispcc")
+    if (get(dtb, mdss, "compatible") != "qcom,sm8250-mdss" or
+            get(dtb, dispcc, "compatible") != "qcom,sm8250-dispcc"):
+        raise ValueError("unexpected native MDSS/reset provider")
+    def cells(node, prop):
+        return subprocess.check_output(
+            ["fdtget", "-t", "x", str(dtb), node, prop], text=True).split()
+    # Locked qcom,dispcc-sm8250.h: MDSS_CORE_BCR=0, RSCC_BCR=1.
+    if (cells(dispcc, "#reset-cells") != ["1"] or
+            cells(mdss, "resets") != cells(dispcc, "phandle") + ["0"]):
+        raise ValueError("native MDSS must use DISP_CC_MDSS_CORE_BCR")
+
+
 def isolate(dtb, native=False):
     dtb = Path(dtb)
     with tempfile.TemporaryDirectory(dir=dtb.parent) as directory:
@@ -48,6 +63,8 @@ def _isolate(dtb, native=False):
 
 
 def verify(dtb, native=False):
+    if native:
+        verify_native_reset(dtb)
     if get(dtb, "/abl_ovf", "status") != "disabled":
         raise ValueError("overlay container must be disabled")
     for name in TARGETS:

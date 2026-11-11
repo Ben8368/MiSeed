@@ -309,3 +309,78 @@ SMMU 的 SID 0x820/0xc20 匹配 MDSS 的 stream-mask；故障 IOVA 位于 /chose
 暂存区 diff 检查发现 rescue_thermal.c 的 EOF 多余空行，提交尚未执行即清理；仅删空行并更新来源锁。原生/default 两套 L2 再次退出 0，输出分别 .work/pr6-submit-native-20261111 与 .work/pr6-submit-simpledrm-20261111；两套 boot.img、rescue-init、initramfs、DTB 和 config 均与前轮已验证版本逐字节相同。原生 boot.img 仍为已点亮的 9438724f…b9d4b380；新 build-source-lock.json SHA-256 1eabaa4fe652bf6b373c5c23ded38bf8e21f5aee5595f382c5a753ac9a44d198。未再次操作手机。
 
 构建全部结束后，同前述 PATH/schema 环境、DTB 改为新原生输出，全量 unittest 再次退出 0：230 项、0 跳过、50.968s；日志 .work/pr6-submit-tests-20261111.log。ShellCheck error 级、仓库/来源锁与暂存区 diff 检查通过；产物与长日志仍不入库。提交使用维护者既有 Git 身份、Conventional Commit 中文说明与 Codex trailer；推送前检查 PR base..HEAD 的新增提交署名，精确提交及远端 CI 结果以 PR #6 当前 HEAD/Checks 为准。开发者外专项复核、标准根/SMMU、保护等既有验收开放项继续保留，不以本次授权提交当作合并授权。
+
+## 启动接管续修：MDSS CORE reset（2026-11-11）
+
+本轮基于 `9d1c881` 工作树，保留已有 QUALITY、DTBO 采集器、诊断 harness 及来源锁修改。宿主 Windows 10.0.26200 / x64 / PowerShell Core 7.6.9，构建在 WSL Ubuntu-24.04 / Linux x86_64 / bash，交叉 GCC 13.3.0。没有连接、重启或写入手机，没有提交、推送或合并。
+
+### 原因、接口与修复边界
+
+- 固定 Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18` 的 `qcom_smmu_client_of_match` 已包含 `qcom,sm8250-mdss`，不能把故障归因于缺少该项，也不需要全局 bypass。DPU 随后在 `_dpu_kms_mmu_init()` 经标准 MSM IOMMU 接口附着独立 paging domain。
+- 同版 `msm_mdss_reset()` 已实现 optional reset，持有 20ms 后释放；但 SM8250 DTS 缺少 `resets` 引用，原生板级 DTS 也未补充，因此实际跳过 reset。旧 L3 的 0x9c000000 framebuffer 区间访问与旧扫描在 domain 切换后继续发 DMA 的机制吻合；这是具体源码缺口与待验因果，尚非新镜像真机结论。
+- 在可选 `umi-native-dsi.dtsi` 的 `&mdss` 补 `resets = <&dispcc DISP_CC_MDSS_CORE_BCR>`，沿用主线 reset controller、已有等待时间和 DRM probe 次序。原生接管会终止 ABL 扫描，再由原生 KMS 重新点屏；默认 simpledrm DTS 不增加该引用。无新增 binding、UAPI、Android 依赖或电气数值，Debian 仍消费 DRM/KMS。
+- 对照 Luca Weiss 的上游 [8b4faf419d601cead68d7821618369e2c0338b86](https://github.com/torvalds/linux/commit/8b4faf419d601cead68d7821618369e2c0338b86)，同一路径 `arch/arm64/boot/dts/qcom/sm8250.dtsi`（BSD-3-Clause）。上游 patch SHA-256 `0993ece58f5b468a6876a520b460b89151ccd8fabbed6b22651c3fb60c740d1e`，下载原件只保存在 `.work/display-handoff-mdss-upstream.patch`。上游 Tested-by 针对 RB5，不继承为 Umi L3；归属见 display/NOTICE 和 sources.lock。
+- 另外修正既有 MDSS helper 忽略 assert/deassert 返回值的问题：失败打印错误、释放已取得的 handle 并阻止 probe 继续；获取失败仍保留原来的 defer/错误。补丁固定原文件 SHA-256 `645e876bdb2aec5553245692936887a0d3ab8273145245fee31a0f4feb81fb01`，保持 GPL-2.0 与原版权头。缓存验证器只接受 pristine 或该唯一精确补丁；不扩展 SMMU 映射。错误传播只覆盖 reset API 已上报的错误，不声称能检出 provider 隐藏的底层 MMIO 失败。
+- `isolate_abl_targets.verify(..., native=True)` 增加最终 DTB 核对：MDSS/dispcc compatible、provider 的 `#reset-cells=1`、resets phandle 和 ID=0 均须匹配。拒绝 RSCC_BCR=1、错误 provider、多项 reset 和缺失 reset，避免仅凭 DTS 文本判断接管已接通。
+
+### 根身份复核
+
+真实 `selected-11.dtbo` 与新原生 DTB，经既有固定 ABL LibUfdt host 重放，完整 live soc 子树逐字节不变，MDSS reset 引用保留；根仍只有 compatible/model 两项改变。重放结果 `.work/native-dsi-handoff-20261111/abl-replay.dtb` SHA-256 `2d0c5b2d54df158ad2ac7b550ec9bbc47bbccf89d3bcc62bd75d70d58a9cfabd`。
+
+`ufdt_overlay_root_node()` 在 fragment 之前直接合并根的同名属性，不经 symbols 或 target phandle，因而当前隔离无从截获。严格审计仍报根两项 FAIL；纯 host overlay 未执行 ABL 填 RAM，还另报 RAM 零区间，未将此模拟写成一次运行时 FDT 通过。不删除根属性、不加入白名单、不在 Linux 早期伪造根，不修改设备 DTBO/ABL 分区。
+
+完整根修复仍要求 WP3/WP4 在受控第二阶段固件向 EFI Stub 提供主线 DT：核对 Umi/SM8250 身份，保持经过验证的 memory/reserved-memory/chosen/initrd 交接，向 EFI 配置表交付 canonical 根和受保护 live soc；再按最终 FDT 整体审计及 L2/L3 撤除 UBWC quirk。当前仓库没有该阶段实现；本轮不把字符串恢复包装为完整 UEFI 功能，TD-006/RISK-010 保持开放。
+
+### 本轮离线验证
+
+先输出 Audit，再执行验证。原生构建命令为 `MISEED_NATIVE_DSI=1 MISEED_OUTPUT_ROOT=/mnt/c/MiSeed/.work/native-dsi-handoff-20261111 MISEED_EXTRACTED_SOURCE=/tmp/miseed-boot-l2/native-dsi-source-20261111 MISEED_BUILD_ROOT=/tmp/miseed-boot-l2/native-dsi-build-20261111 MISEED_JOBS=6 bash tools/build_kernel_l2.sh`，退出 0；日志 `.work/display-handoff-native-build-20261111.log`。
+
+| 原生产物 | SHA-256 |
+| --- | --- |
+| Image | 1c8c81dd48686cd389155eb95a71b9eb6dab269c5038c2b2324b35b3175d890f |
+| DTB | ad85268b167c187832e269aa3877836aa609fb552023c5574feac6e7ba3daead |
+| boot.img | f87f2f424a43aebfb7ab664b544d7f8c8bdba27099cefcabf0d4ff70be18f440 |
+
+`/tmp/miseed-dtschema/bin/python tools/validate_kernel_dt.py --source /tmp/miseed-boot-l2/native-dsi-source-20261111 --build /tmp/miseed-boot-l2/native-dsi-build-20261111 --dtb .work/native-dsi-handoff-20261111/umi-csot.dtb`，在既有完整 PATH 下退出 0：定向 dt_binding_check、CHECK_DTBS、最终 DTB 与四项 DT 回归均通过，日志 `.work/display-handoff-native-schema-20261111.log`。
+
+全量 unittest 使用同一 schema 环境、`MISEED_WIRED_DTB` 指向新原生 DTB、`MISEED_DT_SCHEMA` 指向对应 processed-schema，退出 0：234 项、0 跳过、73.006s。新增四项涵盖 C reset 顺序/失败释放、精确补丁的幂等/拒绝未知修改及符号链接、锚点异常、DT provider/ID 正反例。日志 `.work/display-handoff-all-tests-20261111.log`；ShellCheck error 级退出 0。
+
+默认构建将同一命令的 `MISEED_NATIVE_DSI=0`、输出改为 `.work/simpledrm-handoff-20261111`，初始 source/build 指向 `/tmp/miseed-boot-l2/linux-standard-{source,build}-20261110`，退出 0；旧缓存的 power Makefile 不匹配当前精确补丁而被拒绝，按既有逻辑保留旧目录、另解锁定源码并全量构建，临时 source/build 正常清理。日志 `.work/display-handoff-default-build-20261111.log`。默认 boot.img SHA-256 `68e3cc7b9041f530d3cc637955f85c24941145b6e20b3f27b3989dd8d5d82b3c`；boot.img、DTB、resolved.config、rescue-init、initramfs 均与 `.work/pr6-submit-simpledrm-20261111` 逐字节相同。复用本轮 processed-schema 对默认最终 DTB 运行同范围 dt-validate，退出 0、无诊断；同时确认默认 MDSS 没有 resets、CONFIG_DRM_MSM 未启用。产物散列/重放审计统一保存 `.work/display-handoff-artifacts-20261111.json`。
+
+复核确认 C 测试 fixture 与固定原版 `msm_mdss_reset()` 只差注释/空白；新 MDSS 源码已通过原生 L2。`verify_kernel_source.py` 对完整原生缓存再次核对固定 Git tree 与允许补丁，退出 0，日志 `.work/display-handoff-source-verify-20261111.log`。最终仓库/来源锁/预算检查与 `git diff --check` 通过，既有 8 项源码黄灯归 TD-008，本轮新增/修改自维护源码均未新增黄灯。相对既定 main 基线的本地预估为 99 文件（含新测试）、约 5240 新增行，规模维度红灯收尾、文件硬上限未越；这不是远端 PR 统计，也未扩展其他功能或触发外部评论。
+
+本轮无 L3；不得声称 SMMU fault 或前次 DMA/FIFO 超时已消除。后续 RAM 复验需核对本次完整 boot/DTB 哈希，采集最早至完整 KMS/亮度命令后的未过滤 kmsg 与最终 FDT，并验证 Android 返回。新引入故障、持续 fault 或失联即停止，沿用已点屏的旧 `9438724f…b9d4b380` RAM 镜像/重启返回 Android；不写 boot/DTBO/ABL 分区。原生 reset 的点屏和错误恢复 L3、根标准交接与开发者以外专项复核继续阻断相应验收。
+
+## PR6 CodeRabbit 核实与修复（2026-11-11）
+
+用户授权将当前工作区修复提交并推送到 PR6；无需等待 GitHub CI，不授权合并。远端 PR head=`codex/linux-standard-interfaces`、SHA=`9d1c8819c5db8e102a159852b0a6c811e4608f4c`，base/main=`d9a65dca4a1a9530a44047273f61cabbb5f8b572`，与本地工作分支 HEAD 一致；保留并一并核对既有工作区修改。
+
+已读取[完成的审核](https://github.com/Ben8368/MiSeed/pull/6#pullrequestreview-5855731914)，run ID `2f73176c-d9a8-4c76-9440-615fd45d2336`，提交于 2026-11-11 08:14:36 UTC，列出的范围是 base→上述 HEAD、98 个文件。另一次[full review 命令](https://github.com/Ben8368/MiSeed/pull/6#issuecomment-6790381869)得到[限流回复](https://github.com/Ben8368/MiSeed/pull/6#issuecomment-6790795755)，不能将其记为新完整审核已触发或完成。机器人自身文档覆盖分析仅处理 50 文件/128 函数，48 文件跳过（34 不支持、14 超过分析文件限制）；选择 98 文件不证明每一文件都被完整审查。自动审核只提供线索，下表以当前源码及回归为准。
+
+| 意见 | 实际核实 | 处理与证据 |
+| --- | --- | --- |
+| [panel unprepare 状态](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4535485529) | 固定 Linux `drm_panel_unprepare()` 在回调负返回时保留 panel->prepared；本地回调却已 assert reset、清 c->prepared，下一次 core prepare 因而跳过 | DCS 关闭失败仍记录错误，但完成复位后返回 0；C harness 分别注入 display-off、sleep、两者同时失败，检查 core/private flags、背光延后及再次发送完整 59 条初始化 |
+| [panel 分配器](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4535485537) | 固定 `drm_panel_init()` 不初始化 refcount/container，`__devm_drm_panel_alloc()` 才建立 kref、容器和 devres put；原本 devm_kzalloc 不满足该生命周期 | 改用 devm_drm_panel_alloc，处理 ERR_PTR 并移除重复 init；实际固定内核原生 ARM64 L2 验证 probe/接口可编译 |
+| [有线 PPS 清理](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4535485542) | 旧 cleanup 取消 worker 后忽略 umi_pps_stop 返回值，仍退订和释放状态；单次故障确会使 stop_pending 丢失 | 采用同步保留资源，不采用异步移交：标 removing/非 ready、排空 worker，按既有 200ms 周期重试完整停机事务，成功后才在无 policy lock 下退订；实际 stop/cleanup 与 IRQ/退订代码一起进入 pthread harness，停泵/PD/SMB5 三种持续故障各验证三次阻塞重试后解除，及正常/重复清理 |
+| [SMB5 名称](https://github.com/Ben8368/MiSeed/pull/6#discussion_r4535485555) | 匹配表 data=pm8150b，probe 用 `%s-charger` 注册为 pm8150b-charger；用户工具及夹具误用下划线 | 工具/夹具同步改为连字符；真实名称目录上的发现、在线判断、两种写入动作及旧名忽略均有合成回归 |
+
+有线 PPS 的同步清理在 remove/shutdown 回调返回前保持供应者、regmap、策略状态及模块代码存活，避免返回后调用悬空回调；不在 policy lock 下等待 IRQ，不扩大芯片 provider 的板级职责。取舍是持续 I/O/回退故障会阻塞卸载/关机清理；有界且安全的硬件回退仍归 TD-004/WP9。不得为限制等待时间而无条件释放资源。当前回归证明失败保持与恢复执行，不证明物理总线永久挂死可由软件恢复。
+
+机器人建议的 80% docstring 指标不是仓库约定门禁，且其统计不完整；不为达到该统计批量填充注释。已按实际复杂生命周期补清理说明。根属性覆盖明确写入 TD-006：准确属性、ABL 原因、受限 quirk、WP3/WP4 责任、EFI 主线 DT 与动态内存/chosen 交接及 L2/L3 退出条件；未知硬件部分继续归 RISK-010。未改原厂分区或执行真机供电操作，无线 RX/TX 未修改。
+
+### 最终本地验证与推送范围
+
+环境沿用本轮 Windows/WSL、固定 Linux/GCC/schema 版本。先输出 Audit，再执行定向及完整验证：
+
+- 定向 C/宿主回归：`test_bq_lifecycle.py` 1 项、`test_native_display.py` 6 项、`test_wired_power.py` 6 项通过，均无跳过；实际内核源码/标准消费者与测试夹具一并核对，不用机器人结论代替测试。
+- 两套完整 L2：`.work/pr6-review-build-20261111.sh` 顺序调用 `tools/build_kernel_l2.sh`，原生使用 native-dsi-source/build，默认使用 root-default-source/build，`MISEED_NATIVE_DSI=1/0`、`MISEED_JOBS=6`，产物分别 `.work/pr6-review-native-20261111` 与 `.work/pr6-review-simpledrm-20261111`，均退出 0；日志 `.work/pr6-review-{native,simpledrm}-build-20261111.log`。
+- 对各自 source/build/最终 DTB 运行 `tools/validate_kernel_dt.py`，两套定向 binding、CHECK_DTBS、最终 DTB/schema 与四项 DT 反例均退出 0、无跳过；日志 `.work/pr6-review-{native,simpledrm}-schema-20261111.log`。
+- 首次全量回归误与生成 schema/构建并发，退出 1：4 项读到被截断的 processed-schema，1 项复制到刚消失的 sed 临时文件；保留 `.work/pr6-review-all-tests-20261111.log`，未将其写成产品代码失败或通过。待全部构建/schema 完成后复制固定 schema 到 `.work/pr6-review-processed-schema-20261111.json`，以新原生 DTB 和该快照设置 `MISEED_WIRED_DTB/MISEED_DT_SCHEMA`，顺序重跑 `python -X utf8 -m unittest discover -s tests -v`，退出 0：**235 项、0 跳过、49.767s**；日志 `.work/pr6-review-final-tests-20261111.log`。
+- `verify_kernel_source.py` 核验完整 native cache 与固定 Git tree/精确补丁，退出 0；ShellCheck error 级、仓库/输入哈希/文档预算及 diff 检查通过。日志 `.work/pr6-review-source-verify-20261111.log`。既有 8 项源码黄灯归 TD-008，修改后的 cleanup/harness 未新增黄灯。
+
+| 本轮载荷 | boot.img SHA-256 | DTB SHA-256 |
+| --- | --- | --- |
+| 原生 | f7789fffe124197d991ecb7aa5e686c01b0bcb214d43ef7473d0326eed477000 | ad85268b167c187832e269aa3877836aa609fb552023c5574feac6e7ba3daead |
+| simpledrm | 7bd5ada203ec7166ee1ffcb0e12eec00fbe6e7cacbbeb4db6b889059e67e58d6 | 5cbd07260ec34a7d10bc98bc687f4ee01b05a5754ae31776ae0131eb10ccb184 |
+
+本轮没有新 L3：新 reset/SMMU、panel 生命周期与有线 PPS 拆除恢复的真机结论仍待验；此前点屏和有线 PD/PPS/旁路 L3 继续保留。既有工作区的 QUALITY 收尾例外规则、DTBO 输出路径 resolve、诊断 harness 的 stdlib include 与对应来源锁一并验证、提交。构建物、原始 DTBO/运行树及长日志不入库。推送仅更新原有 PR6 工作分支，精确 HEAD、GitHub 规模和查询当时的异步 CI/机器人状态以 PR 描述和本轮汇报为准，不等待完成，不合并。

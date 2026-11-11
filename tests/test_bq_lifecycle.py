@@ -16,6 +16,11 @@ class BqLifecycleTests(unittest.TestCase):
         for prefix in ("int bq25970_subscribe", "void bq25970_unsubscribe", "static irqreturn_t bq25970_irq"):
             begin = source.index(prefix + "(")
             parts.append(source[begin:source.index("\n}\n", begin) + 3])
+        for name, prefix in (("umi_pps.c", "int umi_pps_stop"),
+                             ("umi_pps_driver.c", "static void umi_pps_cleanup")):
+            source = (ROOT / "kernel/power" / name).read_text()
+            begin = source.index(prefix + "(")
+            parts.append(source[begin:source.index("\n}\n", begin) + 3])
         harness = (ROOT / "tests/bq_lifecycle_harness.c").read_text().replace("/* CHIP_UNDER_TEST */", "\n".join(parts))
         with tempfile.TemporaryDirectory() as tmp:
             src, binary = Path(tmp) / "chip.c", Path(tmp) / "chip"

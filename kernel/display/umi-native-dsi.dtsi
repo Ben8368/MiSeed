@@ -25,7 +25,11 @@
 	gpio-reserved-ranges = <0 4>, <6 1>, <8 4>, <13 21>, <36 8>,
 		<46 22>, <69 14>, <84 26>, <112 69>;
 };
-&mdss { status = "okay"; };
+&mdss {
+	/* Stop ABL scanout before DPU attaches its translated IOMMU domain. */
+	resets = <&dispcc DISP_CC_MDSS_CORE_BCR>;
+	status = "okay";
+};
 &mdss_dsi0_phy { vdds-supply = <&vreg_l5a_0p88>; status = "okay"; };
 &mdss_dsi0 {
 	vdda-supply = <&vreg_l9a_1p2>;

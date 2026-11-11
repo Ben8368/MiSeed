@@ -94,9 +94,12 @@ static int umi_csot_unprepare(struct drm_panel *panel)
 		msleep(120);
 		gpiod_set_value_cansleep(c->reset, 1);
 		c->prepared = false;
+		if (ret)
+			dev_err(&c->dsi->dev, "CSOT shutdown command failed: %d\n", ret);
 	}
 	mutex_unlock(&c->lock);
-	return ret;
+	/* Reset completed: let DRM clear its prepared flag and permit reprepare. */
+	return 0;
 }
 static int umi_csot_modes(struct drm_panel *panel, struct drm_connector *connector)
 {
@@ -140,9 +143,10 @@ static int umi_csot_probe(struct mipi_dsi_device *dsi)
 	struct umi_csot *c;
 	int ret;
 
-	c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
-	if (!c)
-		return -ENOMEM;
+	c = devm_drm_panel_alloc(dev, struct umi_csot, panel,
+				&umi_csot_funcs, DRM_MODE_CONNECTOR_DSI);
+	if (IS_ERR(c))
+		return PTR_ERR(c);
 	c->dsi = dsi;
 	mutex_init(&c->lock);
 	c->reset = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
@@ -162,7 +166,6 @@ static int umi_csot_probe(struct mipi_dsi_device *dsi)
 	c->dsc.bits_per_component = 8;
 	c->dsc.bits_per_pixel = 8 << 4;
 	c->dsc.block_pred_enable = true;
-	drm_panel_init(&c->panel, dev, &umi_csot_funcs, DRM_MODE_CONNECTOR_DSI);
 	/* Power the upstream DSI bridge before sending panel commands. */
 	c->panel.prepare_prev_first = true;
 	c->panel.backlight = devm_backlight_device_register(dev, dev_name(dev),
