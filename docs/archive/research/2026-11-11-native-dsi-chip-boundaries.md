@@ -414,3 +414,7 @@ SMMU 的 SID 0x820/0xc20 匹配 MDSS 的 stream-mask；故障 IOVA 位于 /chose
 本轮交付为未提交工作区修复与核实记录；未发 GitHub 评论、触发机器人、标记线程解决、推送、合并或发布。当前远端 99 文件/5440 新增行是读取 PR 时的规模，本地修复尚未进入远端。
 
 后续维护者明确授权「本地提交」：将上述已验证的工具/记录修复与工作区原有有线 watchdog 源码、回归和来源锁一并提交到 `codex/native-dsi-dt-power`，不推送、不合并。沿用全量 237 项零跳过结果；本次仅补授权记录并复核仓库与 diff 检查，watchdog 的 BQ25970 到期停泵/恢复 L3 仍待验。
+
+## 2026-11-11 HEAD MDSS reset / SMMU L3 attempt
+
+The local HEAD `2bdb2666e2557aa1d1309845bca57938967621b0` was RAM-booted from simpledrm image SHA-256 `955649a4926229cc1e492a6a9b59523935d19ce126eae1dee0ad5a018f742d77`. Fastboot identity was unique Umi, unlocked, non-userspace. Read-only display/kmsg/FDT capture completed; strict runtime FDT audit failed only on ABL-overwritten root `compatible`/`model`. DRM reported DSI-1 enabled at 1080×2340@60 but brightness was 1 and there was no visual confirmation. Earliest kmsg contained DSI PLL lock failure and a `mdss_probe` warning stack; arm-smmu deferred probe timed out with `-110`. No old SID 0x820/0xc20 fault, DSI DMA timeout, or FIFO underflow was found. Do not infer reset/SMMU handoff success or panel illumination. The device returned via Fastboot to Android; `sys.boot_completed=1`. Full capture and input hashes remain in ignored `.work/native-dsi-l3-device-20261111/` and `.work/native-dsi-l3-prep-20261111/`.

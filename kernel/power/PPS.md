@@ -11,11 +11,11 @@
 | 项目 | 固定 LOS Umi | MiSeed 主线适配 |
 | --- | --- | --- |
 | 入口 | SE15 I2C、0x66 BQ25970、GPIO68；`usbpd_pm` 自动管理 PPS | 主线 TCPM + 本控制器；测试镜像 enabled，RPMh/I2C15/BQ 绑定已 L3 |
-| BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 30 秒档启用（源码尝试，待 L2/L3） | 限值继续按 LOS；watchdog 刷新方式参考同系列 BQ25968，依靠成功 I²C 事务，不设独立喂狗任务。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
+| BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 30 秒档启用；本地 HEAD 正常运行刷新 L3 已验收 | 限值继续按 LOS；watchdog 刷新方式参考同系列 BQ25968，依靠成功 I²C 事务，不设独立喂狗任务。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
 | 热控与电量 | `mi_thermald` 通过 SMB5 thermal FCC 投票；常规 Umi PPS 上限表为 16 档；PD 策略在 95% SOC 退出 charge pump | 已移植同一六路虚拟温度及 FCC 表；PPS 在 LOS 的 95% SOC 门槛退出，普通充电不再额外卡 70% |
 | 运行方式 | USB/PD 事件驱动，符合条件即进入持续策略，拔线/故障/高电量时退出 | 驱动 probe 后轮询 PD attach 并自动尝试 PPS；拔线回到等待态，故障回固定 PDO 并恢复 SMB5 策略 |
 
-来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；节点绑定已 L3；PD 与 PPS 分别约 10 分钟真机通过并宣告稳定。保护故障注入、温控标度与发布验收另项开放。
+来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；节点绑定已 L3；镜像 `44854093…e98a89f94c` 的 PD/PPS 分别约 10 分钟真机通过并宣告稳定。本地 HEAD `2bdb266` 另完成 watchdog 正常刷新及 PPS thermal cooling state 8 停泵/固定 PDO/SMB5 恢复 L3，见[2026-11-11 记录](../../docs/archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。其余保护故障注入、完整板级温标和发布验收仍开放。
 
 仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。固定 PDO 为 5 V / 3 A，PPS APDO 为 3.3–11 V / 3 A；策略限制到 9.5 V、3 A 总线和 6 A 电池，SMB5 与 LOS 相同设为 3 A USB ICL、6 A FCC、4.45 V FV。这些是 LOS 配置，不是实测充电功率。
 
@@ -27,11 +27,11 @@
 
 任何活动期间遥测错误、合约不匹配、保护读回不符、温控/过压/过流或硬件锁存故障都会停泵。退出读回 CHG_EN 与 switching 状态，返回固定合约并确认 5 V / ≤3 A，最后释放 SMB5 并恢复 LOS 普通主充策略。无法停止时保留独占、记录错误并重试，不发送独立 watchdog 保活。卸载/关机清理同样在原资源存活时同步重试，全部停机步骤确认前不释放策略或退订 IRQ；持久故障会阻塞清理完成。硬件失效无法被软件保证消除，必须断开充电器。
 
-BQ watchdog 现尝试启用为 30 秒档（0x0b[2]=0、bits[1:0]=3）。依据是 TI BQ25970 TIDA-01582 参考设计确认 0x0b[2] 为禁用位，TI BQ25968 数据手册规定任意成功 I²C 读写刷新计时器及 30 秒档；同系列对照，不是 BQ25970 自身数据手册直接规格。PPS 控制周期为 200 ms，成功的常规寄存器读取自然刷新；超时标志在第一次 watchdog 寄存器读回时识别并进入现有停泵/固定 PD/SMB5 释放路径。启动时先停泵，单独检查 timeout flag，再显式写入并读回 watchdog 配置，避免 `REGCACHE_NONE` 下读改写清掉超时证据；系统挂起前同步停泵，恢复后重新准备。L2 和全量离线测试已通过；仍需独立代码复核及 L3 核实超时确实停泵、恢复不自动误启、挂起恢复和 I²C 故障路径。相关评估见[芯片边界记录](../../docs/archive/research/2026-11-11-native-dsi-chip-boundaries.md)。
+本地 HEAD 启用 BQ watchdog 30 秒档（0x0b[2]=0、bits[1:0]=3）。依据是 TI BQ25970 TIDA-01582 参考设计确认 0x0b[2] 为禁用位，TI BQ25968 数据手册规定任意成功 I²C 读写刷新计时器及 30 秒档；同系列对照，不是 BQ25970 自身数据手册直接规格。PPS 控制周期为 200 ms，成功的常规寄存器读取自然刷新；超时标志在第一次 watchdog 寄存器读回时识别并进入现有停泵/固定 PD/SMB5 释放路径。启动时先停泵，单独检查 timeout flag，再显式写入并读回 watchdog 配置，避免 `REGCACHE_NONE` 下读改写清掉超时证据；系统挂起前同步停泵，恢复后重新准备。L2 和全量离线测试已通过。2026-11-11 本地 HEAD 真机 PPS RUN 约 205 秒，30 秒档 watchdog 周期验读成功、stop 快照为 `0x43` 且 timeout flag 清零，正常启用/刷新 L3 通过；本轮没有故意停喂到期，因此不声称已实测到期停泵/恢复。挂起恢复和 I²C 故障路径仍待验。相关评估见[芯片边界记录](../../docs/archive/research/2026-11-11-native-dsi-chip-boundaries.md)。
 
 阻塞 I/O 返回后重新检查操作窗口：PPS 激活、电压/电流请求、保护复核与启泵分别检查，SETTLE 还受 5 秒窗口约束。超出操作窗口时不继续提交主动请求，进入停泵/固定合约回退；清理操作不被窗口拦截。这不能中止已经发出的挂死事务，也不是硬实时保证。
 
-常规温控取自本机 LOS 有效配置及已核实的动作映射：电池温度加五路 PMIC IIO 温度，计算虚拟温度、九档滞回，再查原 16 档 PPS FCC 表。未知屏幕状态取两种动作的严格值；读取错误、ADC 端点、整组采样超过 200 ms 均停止。降额先降低 PD 电流，单次会话不再提高；超出实测电流上限或降至现有泵工作范围之外则停止。原系统 3 秒延迟降额不移植。细节和 L1/L2 见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)，主线温度标度仍待 L3。
+常规温控取自本机 LOS 有效配置及已核实的动作映射：电池温度加五路 PMIC IIO 温度，计算虚拟温度、九档滞回，再查原 16 档 PPS FCC 表。未知屏幕状态取两种动作的严格值；读取错误、ADC 端点、整组采样超过 200 ms 均停止。降额先降低 PD 电流，单次会话不再提高；超出实测电流上限或降至现有泵工作范围之外则停止。原系统 3 秒延迟降额不移植。2026-11-11 本地 HEAD 实际触发 cooling state 8 并安全回固定 PDO 的 L3 见[记录](../../docs/archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；全板温度标度仍待独立 L3。细节和 L1/L2 见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)，主线温度标度仍待 L3。
 
 ## 板级属性与固定 LOS 差异
 
