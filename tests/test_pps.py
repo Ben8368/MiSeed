@@ -88,6 +88,63 @@ class PpsTests(unittest.TestCase):
         self.assertNotIn("source-pdos", board)
         self.assertIn('PDO_FIXED(5000, 3000,', board)
 
+    @unittest.skipUnless(shutil.which("cc"), "C compiler required")
+    def test_fixed_pd_soc_power_caps_preserve_external_limits_and_failures(self):
+        source = power_source("qcom_pm8150b_charger")
+        start = source.index("static int smb5_power_limit(")
+        function = source[start:source.index("\n}\n", start) + 3]
+        harness = r'''
+#include <assert.h>
+#include <errno.h>
+#include "umi_pps_policy.h"
+struct smb5_chip {
+ int enabled, power_stage;
+ unsigned int policy_icl_ua, saved_icl_ua;
+};
+static unsigned int current = 3000000;
+static int read_error, write_error, writes;
+static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
+{ (void)c; *v = current; return read_error; }
+static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
+{ (void)c; writes++; if (write_error) return write_error; current = v; return 0; }
+''' + function + r'''
+int main(void) {
+ struct smb5_chip c = {0};
+ assert(!smb5_power_limit(&c, 14) && current == 2000000 && c.power_stage == 0);
+ c.enabled = 1;
+ for (int i = 0; i < 12; i++) assert(!smb5_power_limit(&c, 15));
+ assert(current == 3000000 && c.power_stage == 1);
+ assert(!smb5_power_limit(&c, 14) && current == 3000000);
+ assert(!smb5_power_limit(&c, 30) && c.power_stage == 2);
+ assert(!smb5_power_limit(&c, 80) && current == 3000000);
+ for (int i = 0; i < 12; i++) assert(!smb5_power_limit(&c, 81));
+ assert(current == 1800000 && c.power_stage == 3);
+ assert(!smb5_power_limit(&c, 79) && current == 1800000);
+ current = 500000; /* A user limit is never silently raised. */
+ assert(!smb5_power_limit(&c, 81) && current == 500000);
+ c.power_stage = 0; /* USB unplug resets the stage, not the user's ceiling. */
+ assert(!smb5_power_limit(&c, 20) && current == 500000);
+ int before = writes;
+ read_error = -EIO;
+ assert(smb5_power_limit(&c, 81) == -EIO && writes == before);
+ read_error = 0; c = (struct smb5_chip){0}; current = 3000000;
+ write_error = -EIO;
+ assert(smb5_power_limit(&c, 14) == -EIO && !c.policy_icl_ua && current == 3000000);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            entry = Path(directory) / "soc_power.c"
+            binary = Path(directory) / ("soc_power.exe" if os.name == "nt" else "soc_power")
+            entry.write_text(harness)
+            result = subprocess.run(
+                ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(ROOT / "kernel/power"), str(entry), "-o", str(binary)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_reference_files_are_hash_locked(self):
         import json
         lock = json.loads((ROOT / "manifests/sources.lock.json").read_text())

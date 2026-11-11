@@ -94,4 +94,31 @@ At the end of PPS, the worker returned `-ERANGE` with no BQ fault, bus-low/high,
 
 **Watchdog normal-operation L3: pass.** The 205.5 s active PPS window exceeds six 30 s intervals with normal periodic I²C verification and no expiry. No deliberate no-refresh timeout injection was performed, so timeout-bite and post-expiry recovery are not claimed. **PPS thermal protection/fixed-PDO fallback L3: pass** for the observed state-8 stop and SMB5 recovery; exact trip edge is inferred. Other chip protection injection, full board thermal calibration, fixed-PD thermal trigger, and wireless RX/TX remain open.
 
-Raw evidence remains ignored under `.work/wired-protection-l3-20261111/`: `pps-stable-final-charge.log` SHA-256 `f4b1dae42d8095ceafe2470634f00eedb39608d68312713a9b361ee7be443c35`, `pps-stable-final-tcpm.log` SHA-256 `ecf0681b1ba8fdcf1c96b6d9f875cb9bc235006aa76438668f7be69b6bc40d36`, `pps-stable-final-dmesg.txt` SHA-256 `72dabb8dd28835ad9a89ccdb650471d40a8693ee5fa6deefe79210fbfda0ca50`. The device was returned through Fastboot and Android reported `sys.boot_completed=1`.
+## PPS 分段功率与满电自动旁路 L1/L2（2026-11-11）
+
+维护者最终指定有线 0–14% 为 SMB5 固定 5 V/10 W、15–29% 平滑升至 27 W 目标、30–80% 为 18 W、81% 起为 9 W；优先 PPS、稳定功率及较高电压/较低电流，充满采用已经验证的旁路。授权完成 L2 后推送 PR #6；未操作设备。
+
+环境：Windows 10.0.26200 x64、PowerShell 7.6.9；WSL Ubuntu 24.04 x86_64、GCC 13.3.0、GNU make 4.3、dtschema 2025.8 / yamllint 1.38.0。源码基线 `0cfb6d10d9e82c15aa0d3db4aee728c074cdcc32` 加本节对应提交的输入锁；Linux 仍固定 `f45ed76d6791cf72ff1265ee93511175bbbc2f18`。没有引入外部代码或固件、没有提高电气保护参数。
+
+策略权威说明见 [PPS 接口](../../../kernel/power/PPS.md#状态与安全退出)。0–14% 不激活 PPS，由固定 5 V/SMB5 将输入限至 ≤2 A，10 W 是标称输入目标，实测随压降/负载变化；不是以 SOC 重定义硬件预充阈值。15–29% 进入 PPS，从 10 W 目标以每至少 1 秒最多 1 W 爬向 27 W；30–80% 目标 18 W，81% 起目标 9 W。同次插入 SOC 阶段只向后推进，避免边界回落反复切档。虚拟温度 ≥38°C（沿用已有首档解除点）或 FCC 收紧，锁定快速补能上限 18 W；9 W 阶段不因此升功率。
+
+PPS 泵输入功率取同组 VBUS×IBUS，以 1/4 指数平均与 ±0.5 W 死区调节。现有 9.5 V/3 A、6 A 电池及 APDO/温控保护更优先，不宣称实际达到 27 W。降额时先调压，使 IBUS 低于新的电流请求至少 100 mA，再降低源端限流；实测电池/总线超限仍立即停机，未给予保护宽限。18/9 W 服从恒压末段和更严格温控。固定 5 V/SMB5 在高 SOC 继承 ≤1.8 A 输入限额，其余阶段最高仍为既有 3 A；运行中每次 worker 最多改变 ICL 0.1 A，并保留观测到的外部 ICL 上限，防止预充/收尾/无 APDO 路径丢失功率约束。
+
+接口审查：USB PD/PPS → 固定 Linux Type-C/TCPM power_supply；温度/冷却 → IIO/thermal；满电 → SMB5 标准 STATUS=Full 与现有停电池充电、保留 USB 系统输入机制。没有新增私有 sysfs/ioctl、DT binding 或 Android HAL/Binder 依赖；无线 RX/TX 未修改。现有 umi_smb5 所有权例外仍归 TD-004，温标/真实保护及新策略 L3 归 RISK-004/TD-005。
+
+自动满电旁路仅在有效健康/遥测和硬件 Full 后锁定，SOC=100% 单独不触发。PPS 仍按既有 95%/收尾条件停泵，交回固定 5 V/SMB5 完成末段后旁路；自动锁定仅物理拔线解除（含 IRQ 捕获的短拔插），用户 inhibit 独立保留。停止失败仍采用停充/输入暂停回退、不喂 watchdog，不能根据请求状态声称实际旁路成功。已有手动旁路 L3 保留，新自动终止交接未做 L3。
+
+验证：
+
+- 定向 `python3 -X utf8 -m unittest discover -s tests -p test_pps.py -v`（5 项）及 `-p test_charge_policy.py -v`（2 项）通过。实际 worker 覆盖低 SOC 不激活 PPS、15/30/80% 边界、10→27→18→9 W 目标缓变、SOC/温度回落不返档、18/9 W 平台、降额先调压、原硬限值、协议离线不冒充物理拔线、硬件 Full/状态读错/停机失败/短拔插；SMB5 补充 2/1.8 A 输入限额、外部更严格 ICL、读写错误反例。全量回归沿用这些实际源码，不只测试公式。
+- Windows 经 `wsl -d Ubuntu-24.04 --cd /mnt/c/MiSeed -- bash .work/pps-power-l2-20261111.sh simpledrm` / `native`，分别使用 `MISEED_NATIVE_DSI=0/1`、`MISEED_JOBS=6`、下表 output_root；对应缓存为 `/tmp/miseed-boot-l2/root-default-{source,build}-20261111` / `native-dsi-{source,build}-20261111`，调用 `bash tools/build_kernel_l2.sh`。两套 ARM64 编译、链接、配置/输入锁核验和镜像打包均退出 0。首次新增 SMB5 helper 的 `current` 局部变量与内核宏重名，已改为 `icl_ua`；最终两套重建均成功。
+- 两套分别运行 `python3 tools/validate_kernel_dt.py --source <对应 source> --build <对应 build> --dtb <对应 output_root>/umi-csot.dtb`：定向 dt_binding_check、CHECK_DTBS、最终 DTB/schema 与四项 DT 反例均退出 0、无跳过。本轮没有 DTS/binding 改动。
+- `PATH=/tmp/miseed-dtschema/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`；`MISEED_WIRED_DTB=/mnt/c/MiSeed/.work/pps-power-test-dtb-20261111.dtb`、`MISEED_DT_SCHEMA=/mnt/c/MiSeed/.work/pps-power-test-schema-20261111.json` 为对应默认 DTB/schema 的独立快照。全量 `python3 -X utf8 -m unittest discover -s tests -v`：**238 项、0 跳过，54.584 秒，OK**。快照 DTB 与最终默认打包 DTB 逐字节一致。
+- 两套最终构建的全部 POWER_FILES 与当前工作树逐字节一致，build-source-lock.json 与当前输入锁一致；仓库/来源锁/预算检查及 `git diff --check` 通过。日志未见 future-time/Clock skew。当前新增输入限额仅覆盖有线，不将其作为无线验证。
+
+| 配置 / output_root（仓库相对） | boot.img 字节数 | SHA-256 |
+| --- | --- | --- |
+| 默认 `.work/pps-power-simpledrm-20261111` | 9654272 | `71619df18f35ff4c0b58c0c96b0dddeab5c48986cb6739d59b2ef1baa5aebbc6` |
+| 原生 `.work/pps-power-native-20261111` | 14135296 | `a103bd4a89f8f11ee4f1c2be0881fb03b2ec4d38c4b6053baefcc18bd8efc015` |
+
+完整日志/包装器仅留忽略目录 `.work/pps-power-*-20261111*`，镜像与构建物不提交。Audit：既有 8 项篇幅黄灯归 TD-008（umi_pps.c 515 行、pps_harness.c 600 行），无新源码超限；PR #6 达 100 文件、规模红灯，按维护者指定更新本项后停止扩展，不合并。新功率/温升、SMB5 限额、自动满电旁路 L3、开发者以外专项复核及最终精确 HEAD 远端 CI 仍须分别取证。

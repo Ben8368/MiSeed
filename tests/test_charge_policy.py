@@ -2,16 +2,10 @@
 
 # SPDX-License-Identifier: AGPL-3.0-only
 
-import os
 import shutil
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
-from tools import apply_power_port
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -65,6 +59,7 @@ int main(void) {
         source = power_source("qcom_pm8150b_charger")
         functions = []
         for name in ("int smb5_inhibit_with_fallback(",
+                     "int smb5_power_limit(",
                      "int smb5_get_charge_control_threshold(",
                      "void smb5_status_change_work(",
                      "irqreturn_t smb5_handle_usb_plugin(",
@@ -83,6 +78,7 @@ int main(void) {
 #include <string.h>
 #include <sys/types.h>
 #include "umi_charge_policy.h"
+#include "umi_pps_policy.h"
 typedef int irqreturn_t;
 struct iio_channel { int unused; };
 #define HZ 1000UL
@@ -93,6 +89,7 @@ struct iio_channel { int unused; };
 #define BIT(n) (1U << (n))
 #define POWER_SUPPLY_HEALTH_UNKNOWN 0
 #define POWER_SUPPLY_HEALTH_GOOD 1
+#define POWER_SUPPLY_STATUS_FULL 4
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO 0
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE 1
 #define IRQ_HANDLED 1
@@ -109,6 +106,9 @@ struct smb5_chip {
  struct delayed_work status_change_work;
  int lock, max_fv_uv;
  bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
+ bool full_bypass;
+ int power_stage;
+ unsigned int policy_icl_ua, saved_icl_ua;
  unsigned long test_deadline;
  unsigned long cooling_state;
 };
@@ -118,6 +118,8 @@ static unsigned long jiffies;
 static int online = 1, usb_error, battery_error, limit_error, stop_error;
 static int values[] = { 1, 300, 4100000, 78, 0 };
 static int health = POWER_SUPPLY_HEALTH_GOOD, enabled, feeds, suspends;
+static int charge_status, status_error;
+static unsigned int input_limit = 3000000;
 static int adc_reads, adc_error;
 #define container_of(ptr, type, member) ((type *)((char *)(ptr) - offsetof(type, member)))
 #define time_after_eq(a,b) ((long)((a) - (b)) >= 0)
@@ -139,8 +141,14 @@ static int smb5_battery_value(struct smb5_chip *c, int prop, int *v)
 { (void)c; *v = values[prop]; return battery_error; }
 static int smb5_get_prop_health(struct smb5_chip *c, int *v)
 { (void)c; *v = health; return 0; }
+static int smb5_get_prop_status(struct smb5_chip *c, int *v)
+{ (void)c; *v = charge_status; return status_error; }
 static int smb5_limits_verified(struct smb5_chip *c)
 { (void)c; return limit_error; }
+static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
+{ (void)c; *v = input_limit; return 0; }
+static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
+{ (void)c; input_limit = v; return 0; }
 static int regmap_update_bits(void *map, unsigned int reg, unsigned int mask, unsigned int v)
 { (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; return 0; }
 static int regmap_write(void *map, unsigned int reg, unsigned int v)
@@ -238,6 +246,31 @@ int main(void) {
  tick(&c, 4500, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 300;
  tick(&c, 4600, 1); assert(enabled);
+ /* Full SOC alone never terminates. Only hardware FULL latches bypass;
+  * status failures stop, and unplug clears only the automatic session latch. */
+ values[POWER_SUPPLY_PROP_CAPACITY] = 100;
+ tick(&c, 4700, 1); assert(enabled && !c.full_bypass);
+ status_error = -EIO;
+ tick(&c, 4710, 1); assert(!enabled && !c.full_bypass);
+ status_error = 0; charge_status = POWER_SUPPLY_STATUS_FULL;
+ tick(&c, 4720, 1); assert(!enabled && c.full_bypass && !c.inhibit);
+ charge_status = 0;
+ int bypass_suspends = suspends, bypass_feeds = feeds;
+ for (int i = 0; i < 20; i++) tick(&c, 4730 + i, 1);
+ assert(!enabled && c.full_bypass && suspends == bypass_suspends && feeds == bypass_feeds);
+ tick(&c, 4800, 0); assert(!c.full_bypass);
+ tick(&c, 4900, 1); assert(enabled);
+ /* An IRQ also preserves a brief unplug/replug between worker polls. */
+ c.full_bypass = true; online = 0; smb5_handle_usb_plugin(0, &c);
+ assert(!c.full_bypass); tick(&c, 4901, 1); assert(enabled);
+ charge_status = POWER_SUPPLY_STATUS_FULL; stop_error = -EIO;
+ bypass_feeds = feeds; bypass_suspends = suspends;
+ tick(&c, 4902, 1);
+ assert(c.full_bypass && !c.enabled && feeds == bypass_feeds && suspends > bypass_suspends);
+ stop_error = 0; charge_status = 0;
+ tick(&c, 4903, 1); assert(c.full_bypass && !enabled);
+ c.inhibit = true; c.full_bypass = true;
+ tick(&c, 4910, 0); assert(!c.full_bypass && c.inhibit);
  /* A failed stop uses input suspend and never feeds the watchdog. */
  int old_feeds = feeds;
  stop_error = -EIO;

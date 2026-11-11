@@ -58,6 +58,7 @@ struct umi_pps {
 	struct umi_pps_caps caps;
 	struct iio_channel *thermal_channels[UMI_PPS_THERMAL_SENSORS - 1];
 	struct umi_pps_thermal thermal;
+	struct umi_pps_power power;
 	int thermal_comp_mc;
 	struct bq25970_reg protection[20];
 	unsigned int nprotection;

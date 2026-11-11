@@ -238,6 +238,7 @@ static void run(void) {
 int main(void) {
  test_notifications();
  test_partial_fault_snapshot();
+ test_power_policy();
  union power_supply_propval value;
  struct thermal_zone_device tz = {.devdata=&c};
  struct thermal_cooling_device cooling = {.devdata=&c};
@@ -335,7 +336,7 @@ int main(void) {
  /* Keep the control loop fast, but avoid repeated identical APDO requests.
   * Refresh at eight seconds while any voltage/current change remains immediate.
   */
- reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=5850000;adc(0,2850);
+ reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3500000;adc(0,2143);
  int stable_requests=voltage_requests;clock_ms+=200;tick();
  assert(c.state==PPS_RUN && voltage_requests==stable_requests);
  clock_ms=c.last_pps_request_ms+UMI_PPS_REFRESH_MS;tick();

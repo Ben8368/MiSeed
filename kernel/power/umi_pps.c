@@ -233,6 +233,7 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	if (ret)
 		return ret;
 	mv = umi_pps_target(&c->caps, s->vbat_mv);
+	umi_pps_power_update(&c->power, s, c->thermal.virtual_mc, umi_pps_now());
 	c->request_ma = umi_pps_current(&c->caps,
 		min(UMI_PPS_MAX_MA, s->thermal_bat_ma / 2));
 	if (mv < 0 || c->request_ma < 0)
@@ -284,7 +285,7 @@ void umi_pps_work(struct work_struct *work)
 	struct umi_pps *c = container_of(to_delayed_work(work), struct umi_pps, work);
 	struct umi_pps_sample s = {};
 	u64 now;
-	int ret = 0, online, next;
+	int ret = 0, online, next, control_ma;
 	bool changed;
 
 	mutex_lock(&c->lock);
@@ -303,6 +304,8 @@ void umi_pps_work(struct work_struct *work)
 		else {
 			c->state = PPS_WAIT_PLUG;
 		}
+		if (!umi_pps_get(c->sw, POWER_SUPPLY_PROP_ONLINE, &online) && !online)
+			c->power = (struct umi_pps_power){0};
 		goto out;
 	}
 	if (c->manual_stop || c->state == PPS_DONE || c->state == PPS_FAULT ||
@@ -326,7 +329,7 @@ void umi_pps_work(struct work_struct *work)
 		goto fail;
 	if (c->state == PPS_WAIT_PLUG) {
 		/* Wait without claiming SMB5 until the LOS PPS entry conditions hold. */
-		if (!umi_pps_battery_ok(&s, UMI_CHARGE_MAX_UV / 1000))
+		if (!umi_pps_battery_ok(&s, UMI_CHARGE_MAX_UV / 1000) || s.soc < 15)
 			goto out;
 		c->deadline = umi_pps_now() + UMI_PPS_OPERATION_MS;
 		ret = umi_pps_begin(c, &s);
@@ -376,7 +379,9 @@ void umi_pps_work(struct work_struct *work)
 		ret = -ERANGE;
 		goto fail;
 	}
-	/* Tighten the adapter's current before any further voltage request.
+	umi_pps_power_update(&c->power, &s, c->thermal.virtual_mc, umi_pps_now());
+	/* First lower measured current with voltage control, then tighten the
+	 * adapter limit. Never ask for a limit already exceeded by the sample.
 	 * A session never raises this current again after a thermal reduction.
 	 */
 	next = umi_pps_current(&c->caps, min(UMI_PPS_MAX_MA, s.thermal_bat_ma / 2));
@@ -384,7 +389,8 @@ void umi_pps_work(struct work_struct *work)
 		ret = -ERANGE;
 		goto fail;
 	}
-	if (next < c->request_ma) {
+	control_ma = min(c->request_ma, next);
+	if (next < c->request_ma && s.ibus_ma <= next - 100) {
 		ret = umi_pps_check_deadline(c);
 		if (!ret)
 			ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_CURRENT_NOW, next * 1000);
@@ -436,7 +442,8 @@ void umi_pps_work(struct work_struct *work)
 			c->taper_start = 0;
 		}
 	}
-	next = umi_pps_next_mv(&s, &c->caps, c->max_bat_mv, c->request_ma, c->request_mv);
+	next = umi_pps_power_next_mv(&s, &c->caps, c->max_bat_mv,
+				     control_ma, c->request_mv, &c->power);
 	if (next < 0) {
 		ret = -ERANGE;
 		goto fail;
@@ -455,10 +462,11 @@ void umi_pps_work(struct work_struct *work)
 		ret = umi_pps_validate_cycle(c);
 	if (ret)
 		goto fail;
-	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d thermal_mc=%d thermal_level=%d thermal_bat_ma=%d\n",
+	dev_info(c->dev, "miseed-pps state=%u vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d thermal_mc=%d thermal_level=%d thermal_bat_ma=%d target_mw=%d filtered_mw=%d steady=%d\n",
 		 c->state, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv, s.ibat_ma,
 		 c->request_mv, c->request_ma,
-		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma);
+		 c->thermal.virtual_mc, c->thermal.level, s.thermal_bat_ma,
+		 c->power.target_mw, c->power.filtered_mw, c->power.steady);
 	goto out;
 fail:
 	if (c->state == PPS_WAIT_PLUG && !c->claimed && !c->pps) {

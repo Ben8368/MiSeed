@@ -14,6 +14,7 @@
  */
 
 #include "qcom_pm8150b_internal.h"
+#include "umi_pps_policy.h"
 
 
 
@@ -131,12 +132,39 @@ static int smb5_limits_verified(struct smb5_chip *chip)
 
 #include "umi_smb5_diagnostics.h"
 
+/* Fixed 5 V supplies the low-SOC 10 W stage and high-SOC 9 W fallback.
+ * Preserve any observed external ICL change as the new, stricter baseline.
+ */
+static int smb5_power_limit(struct smb5_chip *chip, int soc)
+{
+	unsigned int icl_ua, target;
+	int rc = smb5_get_current_limit(chip, &icl_ua);
+
+	if (rc)
+		return rc;
+	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
+		chip->saved_icl_ua = icl_ua;
+	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
+	target = chip->power_stage == 0 ? UMI_WIRED_PRECHARGE_MW * 1000 / 5 :
+		chip->power_stage == 3 ? UMI_PPS_LOW_MW * 1000 / 5 : UMI_CHARGE_USB_ICL_UA;
+	target = umi_pps_min(target, chip->saved_icl_ua);
+	if (icl_ua < target)
+		target = umi_pps_min(target, icl_ua + 100000);
+	else if (icl_ua > target && chip->enabled)
+		target = umi_pps_max(target, icl_ua - 100000);
+	if (icl_ua != target)
+		rc = smb5_set_current_limit(chip, target);
+	if (!rc)
+		chip->policy_icl_ua = target;
+	return rc;
+}
+
 void smb5_status_change_work(struct work_struct *work)
 {
  struct smb5_chip *chip = container_of(work, struct smb5_chip, status_change_work.work);
  int online = 0, present = 0, health = POWER_SUPPLY_HEALTH_UNKNOWN;
  int temp = -10000, voltage = -1, soc = -1, bms_current = 0;
- int rc, usb_rc, allow = 0, stop_rc;
+ int rc, usb_rc, allow = 0, stop_rc, status;
  mutex_lock(&chip->lock);
  if (chip->stopping) {
   mutex_unlock(&chip->lock);
@@ -153,6 +181,25 @@ void smb5_status_change_work(struct work_struct *work)
  if (!rc) rc = smb5_get_prop_health(chip, &health);
  if (!rc) rc = smb5_limits_verified(chip);
 	if (!rc && bms_current > UMI_CHARGE_FCC_UA) rc = -EOVERFLOW;
+ if (!rc && online && soc >= 0 && soc <= 100)
+  chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
+ /* Hardware termination confirms full; SOC=100 alone is insufficient.
+  * Preserve system input while stopping battery charge. This session latch
+  * is independent of the user's persistent inhibit and clears on unplug.
+  */
+ if (!usb_rc && !online)
+  chip->full_bypass = false;
+ if (!usb_rc && !online)
+  chip->power_stage = 0;
+ if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
+     !chip->pps_owned && !chip->inhibit && !chip->full_bypass) {
+  rc = smb5_get_prop_status(chip, &status);
+  if (!rc && status == POWER_SUPPLY_STATUS_FULL)
+   chip->full_bypass = true;
+ }
+ if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
+     !chip->pps_owned && !chip->inhibit && !chip->full_bypass)
+  rc = smb5_power_limit(chip, soc);
  if (!usb_rc && !online) {
   if (chip->test_active) {
    chip->test_active = false;
@@ -172,7 +219,7 @@ void smb5_status_change_work(struct work_struct *work)
   chip->test_armed = false;
   chip->inhibit = true;
  }
- if (!rc && !chip->inhibit && !chip->cooling_state &&
+ if (!rc && !chip->inhibit && !chip->cooling_state && !chip->full_bypass &&
      (!chip->test_armed || chip->test_active))
   allow = umi_charge_policy(online, present, health == POWER_SUPPLY_HEALTH_GOOD,
                            temp, voltage, soc, chip->max_fv_uv,
@@ -193,10 +240,10 @@ void smb5_status_change_work(struct work_struct *work)
   chip->inhibit = true;
  }
  chip->enabled = allow && !rc;
- dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_ua=%d soc=%d test_armed=%u test_active=%u rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d\n",
+ dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_ua=%d soc=%d test_armed=%u test_active=%u rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d full_bypass=%u\n",
           chip->enabled, online, present, health, temp, voltage, bms_current, soc,
           chip->test_armed, chip->test_active, rc,
-			UMI_CHARGE_FCC_UA, UMI_CHARGE_USB_ICL_UA, chip->max_fv_uv);
+			UMI_CHARGE_FCC_UA, UMI_CHARGE_USB_ICL_UA, chip->max_fv_uv, chip->full_bypass);
  mutex_unlock(&chip->lock);
  power_supply_changed(chip->chg_psy);
  schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(1000));

@@ -1,10 +1,10 @@
 # 当前状态
 
-日期：2026-11-11。分支 `codex/native-dsi-dt-power`，基线 main `d9a65dc`；PR #4/#5 已合入。本阶段聚焦主线内核接口，Debian 集成后续推进。
+日期：2026-11-11。分支 `codex/linux-standard-interfaces`，基线 main `d9a65dc`；PR #4/#5 已合入。本阶段聚焦主线内核接口，Debian 集成后续推进。
 
 WP10 使用 SN100T Linux NFC/NCI 与标准 Netlink；新驱动 RF/读卡/恢复 L3、eSE 和 Debian 服务待验，见[NFC 适配](archive/research/2026-11-10-sn100t-linux-nci.md)。
 
-`b53705e` 修正 BQ IRQ/拆分后端；PPS 限流、SDP 下 SMB5 cooling 停充/释放 L3 已过，见[有线验证](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。固定 PD 温控、温标/传感器仍待验；8 项源码黄灯归 TD-008。
+有线 10/27/18/9W 分段与满电自动旁路已过全量 L1/双 L2，L3 待验，见[有线记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。既有 PPS 限流与 SMB5 cooling L3 保留；温控/温标仍开放，8 项篇幅黄灯归 TD-008。
 
 有线 SMB5 bit5 状态误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM 启动/Android 回退 L3 通过，见[真机读数](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 

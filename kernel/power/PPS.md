@@ -21,6 +21,10 @@
 
 ## 状态与安全退出
 
+有线功率策略：整数 SOC 0–14% 由固定 5 V/SMB5 以 10 W 目标（输入 ≤2 A）承接，PPS 不提前独占；这是低电量策略，硬件预充阶段仍由电池电压决定。15–29% 优先 PPS，从 10 W 目标平滑升向 27 W；30–80% 为 18 W，81% 起为 9 W。PPS 功率取泵端同组 VBUS×IBUS，每至少 1 秒最多改变目标 1 W；直接在 30–80%/81% 以上接入分别以 18/9 W 目标起步。本次插入阶段只向后推进，SOC 回落不反复切档，仅 TCPM 离线并确认 SMB5 物理输入离线后重置。六路虚拟温度 ≥38°C（复用首档解除点）或既有 FCC 收紧，将快速补能上限锁为 18 W；9 W 阶段不因此升功率。9.5 V/3 A、6 A 电池及 APDO/温控限值不变，27 W 是受限目标。维护者同机 LOS 常见 18–23 W、通常约 18 W 只作参考。
+
+200 ms 控制周期保留，功率采用 1/4 新样本的指数平均与 ±0.5 W 死区；目标缓变和抑制重复 APDO 减少往返调节，电压仍服从 2:1 泵、电池电压及电流环。绝对保护使用未滤波采样，功率目标服从温控及恒压末段减流。固定 5 V/SMB5 继承同一 SOC 阶段：0–14% 输入 ICL ≤2 A，81% 起 ≤1.8 A，其余保留 ≤3 A 能力；运行中每次 worker 最多变更 0.1 A，保留观测到的外部 ICL 上限。实际输入功率随压降/负载变化；低电量、95%/收尾及无 APDO 兼容路径均受约束。日志增加 target_mw/filtered_mw/steady，不新增用户态私有 ABI。新策略 L3 另验，既有稳定/保护 L3 保留。
+
 `WAIT_PLUG → SETTLE → RUN → DONE/FAULT`。驱动自动检测 USB-PD attach；合格后独占 SMB5、请求 APDO 并运行持续调节循环。SOC 上限为 LOS Umi `CAPACITY_TOO_HIGH_THR=95`。每个 PD/泵操作有 10 秒完成检查，SETTLE 仍有 5 秒窗口；这些是 I/O/启动超时，不是会话时长。
 
 先独占 SMB5、停主充并暂停其 USB 输入，再配置并逐项读回保护；激活 TCPM 的 `ONLINE=2` 后读取 APDO 能力。电压/电流请求使用微伏/微安接口，读取实际协商结果，再检查电池和泵 ADC。初始目标为 `2 × VBAT + 400 mV`，之后按 20 mV 调节；电压、电池电流、总线电流三个限制取最严格方向。ADC 通道对齐固定 LOS：IBUS/VBUS/VAC/VBAT 启用，泵 IBAT 禁用（0x15=0x2f）；电池电流取 BMS 净值，不把净放电直接视为泵反向，总线负电流仍停止。电压请求保留作 PPS 刷新；当前电流与目标一致时跳过重复写入。激活、电压和降额电流请求仅对 `-EAGAIN` 追加最多三次重试，间隔 20–25 ms，仍检查原期限。控制器保留额外 ADC 一致性门控；SETTLE 在泵关闭、绝对采样限值与故障检查通过、VBUS 不超过目标 +200 mV 时于原 5 秒窗口内等待两路转换收敛；启泵仍须满足 VBAT 差 ±50 mV 和 VBUS 目标 ±200 mV，RUN 不再以跨芯片 VBAT 差单独停泵，各路绝对限值仍须满足；运行 VBUS 保留目标 +200 mV 上界，低于目标的固定差值仅作启泵前检查，带载时依原绝对范围、switching 和 bus_low/high 保护，不把源端合约值当作泵端 ADC；调压及收尾采用 BMS/泵 VBAT 较高值。
@@ -31,7 +35,7 @@
 
 阻塞 I/O 返回后重新检查操作窗口：PPS 激活、电压/电流请求、保护复核与启泵分别检查，SETTLE 还受 5 秒窗口约束。超出操作窗口时不继续提交主动请求，进入停泵/固定合约回退；清理操作不被窗口拦截。这不能中止已经发出的挂死事务，也不是硬实时保证。
 
-常规温控取自本机 LOS 有效配置及已核实的动作映射：电池温度加五路 PMIC IIO 温度，计算虚拟温度、九档滞回，再查原 16 档 PPS FCC 表。未知屏幕状态取两种动作的严格值；读取错误、ADC 端点、整组采样超过 200 ms 均停止。降额先降低 PD 电流，单次会话不再提高；超出实测电流上限或降至现有泵工作范围之外则停止。原系统 3 秒延迟降额不移植。2026-11-11 本地 HEAD 实际触发 cooling state 8 并安全回固定 PDO 的 L3 见[记录](../../docs/archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；全板温度标度仍待独立 L3。细节和 L1/L2 见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)，主线温度标度仍待 L3。
+常规温控取自本机 LOS 有效配置及已核实的动作映射：电池温度加五路 PMIC IIO 温度，计算虚拟温度、九档滞回，再查原 16 档 PPS FCC 表。未知屏幕状态取两种动作的严格值；读取错误、ADC 端点、整组采样超过 200 ms 均停止。降额先调压使实测 IBUS 低于新请求至少 100 mA，再收紧源端电流，单次会话不再提高；原有电池/总线实测硬限值继续逐周期检查，不能用功率缓变宽限保护超限。低于现有 2 A 请求范围仍安全退出，不将请求下限等同实测电流下限。旧 thermal state 8 停泵/固定 PDO L3 保留，新降额顺序与温标另验；见[有线记录](../../docs/archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)及[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)。
 
 ## 板级属性与固定 LOS 差异
 
@@ -64,6 +68,8 @@ thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cool
 `python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。有界 `charge_test` 仅在显式启用 `CONFIG_MISEED_CHARGE_DIAGNOSTICS` 时存在，默认镜像关闭，不作为产品依赖。
 
 ### 有线旁路供电的上层调用
+
+自动满电旁路：PPS 依既有 95%/收尾条件停泵并交回固定 5 V/SMB5 完成末段；SMB5 worker 仅在有效健康/遥测与硬件 STATUS=Full 后锁定本次插入的旁路，停止电池充电、保留系统输入，SOC=100% 单独不触发。锁定期间不反复补充充电；确认拔线后清除自动锁定，用户 inhibit 独立保留。已有旁路 L3 证明供电机制，新自动终止交接仍需 L3；旁路输入功率随负载变化，不维持 18 W。
 
 旁路供电复用已经开放的 Linux 标准 `power_supply` ABI：外部有线电源供系统运行，电池充电禁止并保持净电流近零；能力与 L3 证据归 [platforms](../../docs/platforms.md#硬件能力)。上层无需新增私有 sysfs、ioctl、Android HAL 或诊断命令；标准属性含义遵循 [内核 ABI 文档](https://raw.githubusercontent.com/torvalds/linux/master/Documentation/ABI/testing/sysfs-class-power)。
 

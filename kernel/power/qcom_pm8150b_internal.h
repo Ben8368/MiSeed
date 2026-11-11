@@ -88,6 +88,9 @@ struct smb5_chip {
 	struct mutex lock;
 	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
 	bool pps_owned;
+	bool full_bypass;
+	int power_stage;
+	unsigned int policy_icl_ua, saved_icl_ua;
 	unsigned long cooling_state;
 	unsigned long test_deadline;
 	unsigned int test_seconds;
