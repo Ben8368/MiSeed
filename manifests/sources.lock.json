@@ -194,7 +194,7 @@
         "tools/check_runtime_dt.py": "17334ff8ef43c733e3740d8d9728625a1663c6c5004ebbdaf2c4b1664af3725e",
         "tests/bq_lifecycle_harness.c": "29680a437293dcbe332fd4995ee5b33aa37f5e29bbe08d36c29544a584237294",
         "tests/test_bq_lifecycle.py": "077ed295ccfae76f2a80e248b24a74053bc11d8c1d1d193c9d3ecb27dc370715",
-        "kernel/rescue_display.c": "13e4003d3bc35ce529a5b90ea1d2268c502b53f52c5c1da53559201d93fac7ac",
+        "kernel/rescue_display.c": "5093edaf0f535eaead7e07a4e2924699094d3100830b47549788344a4557f13d",
         "kernel/rescue_thermal.c": "1fb2fcd4ca669411171359c809962cfc6dfc63334b6cac8bd555856155ee3f37",
         "tests/display_diagnostics_harness.c": "9b50cf73a8c7f4b55971bbf64e68060417ccd6e64c9ffc9d1a2f82dab3eabe92",
         "tests/test_display_diagnostics.py": "7547e1e36bad6a64918ff53bfb8aa8f1f21cad909dfd72532cf6a8bec77916b7",

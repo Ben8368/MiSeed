@@ -2,7 +2,9 @@
 /* Standard DRM/backlight bring-up diagnostics; no storage or register writes. */
 #define _GNU_SOURCE
 #include "rescue_internal.h"
+#ifdef __linux__
 #include <sys/klog.h>
+#endif
 #include <limits.h>
 
 static int display_path(char *path, size_t size, const char *root,
