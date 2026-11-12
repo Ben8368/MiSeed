@@ -14,6 +14,34 @@
  */
 
 #include "qcom_pm8150b_internal.h"
+#include "umi_pps_policy.h"
+
+/* Fixed 5 V supplies the low-SOC 10 W and 71-80% 5 W stages.
+ * Preserve any observed external ICL change as the new, stricter baseline.
+ */
+int smb5_power_limit(struct smb5_chip *chip, int soc)
+{
+	unsigned int icl_ua, target;
+	int rc = smb5_get_current_limit(chip, &icl_ua);
+
+	if (rc)
+		return rc;
+	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
+		chip->saved_icl_ua = icl_ua;
+	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
+	target = chip->power_stage == 0 ? UMI_WIRED_PRECHARGE_MW * 1000 / 5 :
+		chip->power_stage == 4 ? UMI_WIRED_FINISH_MW * 1000 / 5 : UMI_CHARGE_USB_ICL_UA;
+	target = umi_pps_min(target, chip->saved_icl_ua);
+	if (icl_ua < target)
+		target = umi_pps_min(target, icl_ua + 100000);
+	else if (icl_ua > target && chip->enabled)
+		target = umi_pps_max(target, icl_ua - 100000);
+	if (icl_ua != target)
+		rc = smb5_set_current_limit(chip, target);
+	if (!rc)
+		chip->policy_icl_ua = target;
+	return rc;
+}
 
 static enum power_supply_property smb5_properties[] = {
 	POWER_SUPPLY_PROP_MANUFACTURER,

@@ -30,7 +30,7 @@ struct delayed_work { struct work_struct work; };
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
 static int info_count, scheduled, check_operating_power;
-#define dev_info(...) (info_count++)
+#define dev_info(dev, fmt, ...) (info_count++, (void)(0 ? fprintf(stderr, fmt, __VA_ARGS__) : 0))
 #define dev_err_probe(d,e,...) (e)
 #define system_wq NULL
 #define msecs_to_jiffies(v) (v)
@@ -168,7 +168,7 @@ int umi_smb5_claim(struct power_supply *p) {
  if (fail_claim) return -EBUSY;
  claim_owned=1; suspended=1; return 0;
 }
-int umi_smb5_check(struct power_supply *p) { return claim_owned && suspended ? 4450000 : -EPERM; }
+int umi_smb5_check(struct power_supply *p, int stage) { return claim_owned && suspended ? 4450000 : -EPERM; }
 int umi_smb5_release(struct power_supply *p) {
  assert(!(regs[0x0c] & BIT(7))); assert(pd.prop[POWER_SUPPLY_PROP_ONLINE] != 2);
  release_count++; suspended=0; claim_owned=0; return 0;
@@ -336,7 +336,7 @@ int main(void) {
  /* Keep the control loop fast, but avoid repeated identical APDO requests.
   * Refresh at eight seconds while any voltage/current change remains immediate.
   */
- reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3500000;adc(0,2143);
+	reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3500000;adc(0,2143);
  int stable_requests=voltage_requests;clock_ms+=200;tick();
  assert(c.state==PPS_RUN && voltage_requests==stable_requests);
  clock_ms=c.last_pps_request_ms+UMI_PPS_REFRESH_MS;tick();

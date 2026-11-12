@@ -33,7 +33,8 @@ int umi_smb5_claim(struct power_supply *psy)
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
-	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit) {
+	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit ||
+	    chip->full_bypass || chip->power_stage >= 4) {
 		rc = -EBUSY;
 		goto out;
 	}
@@ -51,7 +52,7 @@ out:
 }
 EXPORT_SYMBOL_GPL(umi_smb5_claim);
 
-int umi_smb5_check(struct power_supply *psy)
+int umi_smb5_check(struct power_supply *psy, int stage)
 {
 	struct smb5_chip *chip;
 	unsigned int charge, input;
@@ -59,6 +60,8 @@ int umi_smb5_check(struct power_supply *psy)
 
 	if (!smb5_is_ours(psy))
 		return -ENODEV;
+	if (stage < 0 || stage > UMI_WIRED_BYPASS_STAGE)
+		return -EINVAL;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
 	rc = !chip->pps_owned || chip->stopping ? -EPERM : 0;
@@ -68,8 +71,12 @@ int umi_smb5_check(struct power_supply *psy)
 		rc = regmap_read(chip->regmap, chip->base + USBIN_CMD_IL, &input);
 	if (!rc && ((charge & CHARGING_ENABLE_CMD_BIT) || !(input & USBIN_SUSPEND_BIT)))
 		rc = -EPERM;
-	if (!rc)
+	if (!rc) {
+		chip->power_stage = umi_pps_max(chip->power_stage, stage);
+		if (stage == UMI_WIRED_BYPASS_STAGE)
+			chip->full_bypass = true;
 		rc = chip->max_fv_uv;
+	}
 	mutex_unlock(&chip->lock);
 	return rc;
 }
@@ -132,33 +139,6 @@ static int smb5_limits_verified(struct smb5_chip *chip)
 
 #include "umi_smb5_diagnostics.h"
 
-/* Fixed 5 V supplies the low-SOC 10 W stage and high-SOC 9 W fallback.
- * Preserve any observed external ICL change as the new, stricter baseline.
- */
-static int smb5_power_limit(struct smb5_chip *chip, int soc)
-{
-	unsigned int icl_ua, target;
-	int rc = smb5_get_current_limit(chip, &icl_ua);
-
-	if (rc)
-		return rc;
-	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
-		chip->saved_icl_ua = icl_ua;
-	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
-	target = chip->power_stage == 0 ? UMI_WIRED_PRECHARGE_MW * 1000 / 5 :
-		chip->power_stage == 3 ? UMI_PPS_LOW_MW * 1000 / 5 : UMI_CHARGE_USB_ICL_UA;
-	target = umi_pps_min(target, chip->saved_icl_ua);
-	if (icl_ua < target)
-		target = umi_pps_min(target, icl_ua + 100000);
-	else if (icl_ua > target && chip->enabled)
-		target = umi_pps_max(target, icl_ua - 100000);
-	if (icl_ua != target)
-		rc = smb5_set_current_limit(chip, target);
-	if (!rc)
-		chip->policy_icl_ua = target;
-	return rc;
-}
-
 void smb5_status_change_work(struct work_struct *work)
 {
  struct smb5_chip *chip = container_of(work, struct smb5_chip, status_change_work.work);
@@ -181,21 +161,42 @@ void smb5_status_change_work(struct work_struct *work)
  if (!rc) rc = smb5_get_prop_health(chip, &health);
  if (!rc) rc = smb5_limits_verified(chip);
 	if (!rc && bms_current > UMI_CHARGE_FCC_UA) rc = -EOVERFLOW;
+ /* Automatic stop hysteresis: 81% inhibits until <=71%; user inhibit is
+  * independent. A new charge cycle may then advance through SOC stages. */
+ if (!rc && online && health == POWER_SUPPLY_HEALTH_GOOD &&
+     chip->full_bypass && soc >= 0 && soc <= UMI_CHARGE_RESUME_SOC) {
+  chip->full_bypass = false;
+  chip->power_stage = 4; /* Recharge remains on the 5 W SMB5 path. */
+ }
  if (!rc && online && soc >= 0 && soc <= 100)
   chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
- /* Hardware termination confirms full; SOC=100 alone is insufficient.
+ /* SOC limit or hardware termination stops battery charge, not system input.
   * Preserve system input while stopping battery charge. This session latch
-  * is independent of the user's persistent inhibit and clears on unplug.
+  * is independent of user inhibit; it clears at <=71% or on unplug.
   */
  if (!usb_rc && !online)
   chip->full_bypass = false;
  if (!usb_rc && !online)
   chip->power_stage = 0;
  if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
-     !chip->pps_owned && !chip->inhibit && !chip->full_bypass) {
+     !chip->inhibit && !chip->full_bypass) {
+  if (soc >= UMI_CHARGE_END_SOC)
+   chip->full_bypass = true;
+  else if (!chip->pps_owned) {
   rc = smb5_get_prop_status(chip, &status);
   if (!rc && status == POWER_SUPPLY_STATUS_FULL)
    chip->full_bypass = true;
+  }
+ }
+ /* Restore system headroom only after battery inhibition succeeds. */
+ if (!rc && online && chip->full_bypass && !chip->pps_owned) {
+  chip->power_stage = UMI_WIRED_BYPASS_STAGE;
+  rc = smb5_inhibit_with_fallback(chip, "bypass");
+  chip->enabled = false;
+  if (!rc)
+   rc = smb5_power_limit(chip, soc);
+  if (!rc)
+   rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, 0);
  }
  if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
      !chip->pps_owned && !chip->inhibit && !chip->full_bypass)

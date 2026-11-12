@@ -135,21 +135,32 @@ int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 	if (ret)
 		return ret;
 	/* Validate before the deci-C -> milli-C multiplication. */
-	if (s->temp <= -400 || s->temp >= 1250)
+	if (s->temp <= -400 || s->temp >= 1250) {
+		dev_err(c->dev, "miseed-pps battery temperature out of range temp_decic=%d\n",
+			s->temp);
 		return -ERANGE;
+	}
 	temp_mc[0] = s->temp * 100;
 	for (i = 1; i < UMI_PPS_THERMAL_SENSORS; i++) {
 		ret = iio_read_channel_processed(c->thermal_channels[i - 1], &temp_mc[i]);
-		if (ret < 0)
+		if (ret < 0) {
+			dev_err(c->dev, "miseed-pps thermal sensor read failed index=%d error=%d battery_mc=%d\n",
+				i, ret, temp_mc[0]);
 			return ret;
+		}
 	}
 	if (umi_pps_now() - start > UMI_PPS_PERIOD_MS)
 		return -ETIME;
 	/* Until the diagnostic image has a reviewed display-state provider, use
 	 * the more restrictive of both LOS screen-dependent battery limits.
 	 */
-	if (umi_pps_thermal_update(&c->thermal, temp_mc, -1, c->thermal_comp_mc))
+	if (umi_pps_thermal_update(&c->thermal, temp_mc, -1, c->thermal_comp_mc)) {
+		dev_err(c->dev, "miseed-pps thermal sample rejected mc=%d,%d,%d,%d,%d,%d step=%d board_comp_mc=%d\n",
+			temp_mc[0], temp_mc[1], temp_mc[2], temp_mc[3],
+			temp_mc[4], temp_mc[5], c->thermal.step,
+			c->thermal_comp_mc);
 		return -ERANGE;
+	}
 	s->thermal_bat_ma = min(c->thermal.max_bat_ma,
 			       umi_pps_cooling_current(c->cooling_state));
 	return 0;

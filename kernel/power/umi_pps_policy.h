@@ -23,10 +23,8 @@
 #define UMI_PPS_START_MS 5000
 #define UMI_PPS_OPERATION_MS 10000
 #define UMI_PPS_MAX_SOC 95 /* LineageOS CAPACITY_TOO_HIGH_THR for Umi. */
-#define UMI_PPS_BOOST_MW 27000
+#define UMI_PPS_TARGET_MW 18000
 #define UMI_PPS_STEADY_MW 18000
-#define UMI_PPS_LOW_MW 9000
-#define UMI_WIRED_PRECHARGE_MW 10000
 /* Reuse the first LOS thermal step's clear point for proactive boost exit.
  * This power-policy target does not replace any protection trip.
  */
@@ -39,11 +37,6 @@ struct umi_pps_power {
 	int target_mw, filtered_mw, steady, stage;
 	unsigned long long last_step_ms;
 };
-
-static inline int umi_pps_soc_stage(int soc)
-{
-	return soc < 15 ? 0 : soc < 30 ? 1 : soc <= 80 ? 2 : 3;
-}
 
 /* Normal-profile facts observed on this Umi. The opaque Android daemon is
  * not redistributed. Its generic_set_level selects target / 100 while the
@@ -222,8 +215,8 @@ static inline int umi_pps_control_vbat(const struct umi_pps_sample *s)
 	return umi_pps_max(s->vbat_mv, s->pump_vbat_mv);
 }
 
-/* SOC stages advance once per insertion; thermal boost exit is also latched.
- * 27 W is a budget: existing 9.5 V / 3 A / 6 A gates always win.
+/* SOC stages advance once per insertion; the wired PPS target is 18 W.
+ * Existing 9.5 V / 3 A / 6 A and thermal gates always win.
  * Called once per validated sample; never filter protection measurements.
  */
 static inline void umi_pps_power_update(struct umi_pps_power *p,
@@ -232,13 +225,15 @@ static inline void umi_pps_power_update(struct umi_pps_power *p,
 	int goal, measured;
 
 	p->stage = umi_pps_max(p->stage, umi_pps_soc_stage(s->soc));
-	if (p->stage >= 2 || virtual_mc >= UMI_PPS_BOOST_EXIT_MC ||
+	if (p->stage >= 3 || virtual_mc >= UMI_PPS_BOOST_EXIT_MC ||
 	    s->thermal_bat_ma < UMI_PPS_BAT_MAX_MA)
 		p->steady = 1;
-	goal = p->stage == 0 ? UMI_WIRED_PRECHARGE_MW : p->stage == 3 ? UMI_PPS_LOW_MW :
-		p->steady ? UMI_PPS_STEADY_MW : UMI_PPS_BOOST_MW;
+	goal = p->stage == 0 ? UMI_WIRED_PRECHARGE_MW :
+		p->stage >= 4 ? UMI_WIRED_FINISH_MW : UMI_PPS_TARGET_MW;
+	if (p->steady)
+		goal = umi_pps_min(goal, UMI_PPS_STEADY_MW);
 	if (!p->target_mw) {
-		p->target_mw = p->stage == 1 ? UMI_WIRED_PRECHARGE_MW : goal;
+		p->target_mw = goal;
 		p->last_step_ms = now;
 	}
 	if (now - p->last_step_ms >= UMI_PPS_POWER_RAMP_MS) {

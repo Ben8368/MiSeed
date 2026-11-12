@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <stddef.h>
+#include "umi_pps_policy.h"
 #define CHARGING_ENABLE_CMD 0x42
 #define CHARGING_ENABLE_CMD_BIT 1
 #define USBIN_CMD_IL 0x340
@@ -15,7 +16,8 @@
 #define mod_delayed_work(q,w,t) ((void)0)
 struct delayed_work { int unused; };
 struct smb5_chip {
- bool stopping, pps_owned, test_armed, inhibit, enabled;
+ bool stopping, pps_owned, test_armed, inhibit, enabled, full_bypass;
+ int power_stage;
  int max_fv_uv, lock; unsigned int base; void *regmap;
  struct delayed_work status_change_work;
 };
@@ -55,18 +57,28 @@ int main(void) {
  c.test_armed=false;c.stopping=true;assert(umi_smb5_claim(&p)==-EBUSY);
  c.stopping=false;charge=1;assert(!umi_smb5_claim(&p));
  assert(c.pps_owned && c.inhibit && !c.enabled && charge==0 && input==1);
- assert(umi_smb5_check(&p)==4380000);
+ assert(umi_smb5_check(&p, 1)==4380000 && c.power_stage==1);
  assert(umi_smb5_claim(&p)==-EBUSY);
- charge=1;assert(umi_smb5_check(&p)==-EPERM);charge=0;
- input=0;assert(umi_smb5_check(&p)==-EPERM);input=1;
- read_error=1;assert(umi_smb5_check(&p)==-EIO);read_error=0;
+ charge=1;assert(umi_smb5_check(&p, 1)==-EPERM);charge=0;
+ input=0;assert(umi_smb5_check(&p, 1)==-EPERM);input=1;
+ read_error=1;assert(umi_smb5_check(&p, 1)==-EIO);read_error=0;
+ assert(umi_smb5_check(&p, -1)==-EINVAL);
  stop_error=1;assert(umi_smb5_release(&p)==-EIO && c.pps_owned);
  stop_error=0;write_error=1;assert(umi_smb5_release(&p)==-EIO && c.pps_owned);
  write_error=0;assert(!umi_smb5_release(&p) && !c.pps_owned && !c.inhibit && input==0);
- assert(umi_smb5_check(&p)==-EPERM);
+ assert(umi_smb5_check(&p, 1)==-EPERM);
  stop_error=1;assert(umi_smb5_claim(&p)==-EIO && c.pps_owned && c.inhibit);
  stop_error=0;assert(!umi_smb5_release(&p));
  write_error=1;assert(umi_smb5_claim(&p)==-EIO && c.pps_owned);
  write_error=0;assert(!umi_smb5_release(&p));
+ assert(!umi_smb5_claim(&p));
+ assert(umi_smb5_check(&p, 4)==4380000 && c.power_stage==4);
+ assert(!umi_smb5_release(&p));
+ assert(umi_smb5_claim(&p)==-EBUSY); /* No 70/71% repeated pump restart. */
+ c.power_stage=3;
+ assert(!umi_smb5_claim(&p));
+ assert(umi_smb5_check(&p, 5)==4380000 && c.full_bypass);
+ assert(!umi_smb5_release(&p) && !charge && input==0);
+ assert(umi_smb5_claim(&p)==-EBUSY); /* Bypass cannot be overridden by PPS. */
  return 0;
 }

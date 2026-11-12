@@ -205,7 +205,7 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 	c->claimed = true;
 	if (ret)
 		return ret;
-	ret = umi_smb5_check(c->sw);
+	ret = umi_smb5_check(c->sw, c->power.stage);
 	if (ret < 0)
 		return ret;
 	c->max_bat_mv = ret / 1000;
@@ -286,6 +286,7 @@ void umi_pps_work(struct work_struct *work)
 	struct umi_pps_sample s = {};
 	u64 now;
 	int ret = 0, online, next, control_ma;
+	const char *fail_stage = "online";
 	bool changed;
 
 	mutex_lock(&c->lock);
@@ -324,14 +325,17 @@ void umi_pps_work(struct work_struct *work)
 		    usb_type != POWER_SUPPLY_USB_TYPE_PD_PPS)
 			goto out;
 	}
+	fail_stage = "battery_before_control";
 	ret = umi_pps_battery(c, &s);
 	if (ret)
 		goto fail;
 	if (c->state == PPS_WAIT_PLUG) {
 		/* Wait without claiming SMB5 until the LOS PPS entry conditions hold. */
-		if (!umi_pps_battery_ok(&s, UMI_CHARGE_MAX_UV / 1000) || s.soc < 15)
+		if (!umi_pps_battery_ok(&s, UMI_CHARGE_MAX_UV / 1000) ||
+		    s.soc < UMI_PPS_ENTRY_SOC || s.soc >= UMI_PPS_FINISH_SOC)
 			goto out;
 		c->deadline = umi_pps_now() + UMI_PPS_OPERATION_MS;
+		fail_stage = "begin_pps";
 		ret = umi_pps_begin(c, &s);
 		if (ret)
 			goto fail;
@@ -339,24 +343,30 @@ void umi_pps_work(struct work_struct *work)
 	}
 	now = umi_pps_now();
 	c->deadline = now + UMI_PPS_OPERATION_MS;
-	ret = umi_smb5_check(c->sw);
+	c->power.stage = umi_pps_max(c->power.stage, umi_pps_soc_stage(s.soc));
+	fail_stage = "smb5_limit_check";
+	ret = umi_smb5_check(c->sw, c->power.stage);
 	if (ret < 0)
 		goto fail;
 	if (ret / 1000 != c->max_bat_mv) {
 		ret = -EPERM;
 		goto fail;
 	}
+	fail_stage = "contract_caps";
 	ret = umi_pps_contract(c);
 	if (!ret)
 		ret = umi_pps_caps(c);
 	if (!ret && (c->request_mv < c->caps.min_mv || c->request_mv > c->caps.max_mv ||
 		     c->request_ma > c->caps.max_ma))
 		ret = -ERANGE;
-	if (!ret)
+	if (!ret) {
+		fail_stage = "sample_before_control";
 		ret = umi_pps_sample(c, &s);
+	}
 	if (ret)
 		goto fail;
-	if (s.soc >= UMI_PPS_MAX_SOC || s.vbat_mv >= c->max_bat_mv) {
+	if (c->power.stage == UMI_WIRED_BYPASS_STAGE ||
+	    s.soc >= UMI_CHARGE_END_SOC || s.vbat_mv >= c->max_bat_mv) {
 		umi_pps_stop(c, PPS_DONE, 0);
 		goto out;
 	}
@@ -376,14 +386,27 @@ void umi_pps_work(struct work_struct *work)
 				 s.vbus_mv, c->request_mv, s.vbat_mv, s.pump_vbat_mv);
 			goto out;
 		}
+		dev_err(c->dev, "miseed-pps sample rejected stage=before_control online=%d present=%d good=%d temp_decic=%d soc=%d thermal_bat_ma=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d request_mv=%d request_ma=%d\n",
+			s.online, s.present, s.good, s.temp, s.soc,
+			s.thermal_bat_ma, s.vbus_mv, s.ibus_ma, s.vbat_mv,
+			s.pump_vbat_mv, s.ibat_ma, c->request_mv, c->request_ma);
 		ret = -ERANGE;
 		goto fail;
 	}
 	umi_pps_power_update(&c->power, &s, c->thermal.virtual_mc, umi_pps_now());
+	/* The 71% handoff first reduces pump input to the 5 W finishing budget.
+	 * Existing raw protection gates above remain immediate throughout. */
+	if (c->power.stage == 4 && c->power.target_mw == UMI_WIRED_FINISH_MW &&
+	    c->power.filtered_mw <= UMI_WIRED_FINISH_MW + UMI_PPS_POWER_BAND_MW &&
+	    s.vbus_mv * s.ibus_ma / 1000 <= UMI_WIRED_FINISH_MW + UMI_PPS_POWER_BAND_MW) {
+		umi_pps_stop(c, PPS_DONE, 0);
+		goto out;
+	}
 	/* First lower measured current with voltage control, then tighten the
 	 * adapter limit. Never ask for a limit already exceeded by the sample.
 	 * A session never raises this current again after a thermal reduction.
 	 */
+	fail_stage = "thermal_current_limit";
 	next = umi_pps_current(&c->caps, min(UMI_PPS_MAX_MA, s.thermal_bat_ma / 2));
 	if (next < 0) {
 		ret = -ERANGE;
@@ -442,22 +465,44 @@ void umi_pps_work(struct work_struct *work)
 			c->taper_start = 0;
 		}
 	}
+	fail_stage = "voltage_policy";
 	next = umi_pps_power_next_mv(&s, &c->caps, c->max_bat_mv,
 				     control_ma, c->request_mv, &c->power);
 	if (next < 0) {
 		ret = -ERANGE;
 		goto fail;
 	}
+	fail_stage = "request_or_contract";
 	ret = umi_pps_request(c, next);
 	/* A PD request can sleep. Validate fresh telemetry after it returns. */
-	if (!ret)
+	if (!ret) {
+		fail_stage = "battery_after_request";
 		ret = umi_pps_battery(c, &s);
-	if (!ret)
+	}
+	if (!ret) {
+		fail_stage = "sample_after_request";
 		ret = umi_pps_sample(c, &s);
+	}
+	if (!ret && s.soc >= UMI_CHARGE_END_SOC) {
+		c->power.stage = UMI_WIRED_BYPASS_STAGE;
+		ret = umi_smb5_check(c->sw, c->power.stage);
+		if (ret >= 0) {
+			umi_pps_stop(c, PPS_DONE, 0);
+			goto out;
+		}
+	}
 	if (!ret && (!umi_pps_sample_ok(&s, c->max_bat_mv, c->request_ma,
 			       c->request_mv, c->state == PPS_SETTLE) ||
-		     (c->state == PPS_RUN && (!s.switching || s.bus_low || s.bus_high))))
+	     (c->state == PPS_RUN && (!s.switching || s.bus_low || s.bus_high)))) {
+		dev_err(c->dev, "miseed-pps sample rejected stage=after_request online=%d present=%d good=%d temp_decic=%d soc=%d thermal_bat_ma=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d request_mv=%d request_ma=%d\n",
+			s.online, s.present, s.good, s.temp, s.soc,
+			s.thermal_bat_ma, s.vbus_mv, s.ibus_ma, s.vbat_mv,
+			s.pump_vbat_mv, s.ibat_ma, s.fault, s.alarm,
+			s.bus_low, s.bus_high, s.switching,
+			c->request_mv, c->request_ma);
 		ret = -ERANGE;
+	}
+	fail_stage = "watchdog_verify";
 	if (!ret)
 		ret = umi_pps_validate_cycle(c);
 	if (ret)
@@ -497,8 +542,12 @@ fail:
 			goto out;
 		}
 	}
-	dev_info(c->dev, "miseed-pps failure state=%u error=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
-		 c->state, ret, c->request_mv, c->request_ma, c->max_bat_mv,
+	dev_info(c->dev, "miseed-pps failure stage=%s state=%u error=%d online=%d present=%d good=%d temp_decic=%d soc=%d thermal_bat_ma=%d thermal_virtual_mc=%d thermal_step=%d thermal_level=%d cooling_state=%lu target_mw=%d filtered_mw=%d apdo_min_mv=%d apdo_max_mv=%d apdo_max_ma=%d request_mv=%d request_ma=%d max_bat_mv=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
+		 fail_stage, c->state, ret, s.online, s.present, s.good, s.temp,
+		 s.soc, s.thermal_bat_ma, c->thermal.virtual_mc, c->thermal.step,
+		 c->thermal.level, c->cooling_state, c->power.target_mw,
+		 c->power.filtered_mw, c->caps.min_mv, c->caps.max_mv,
+		 c->caps.max_ma, c->request_mv, c->request_ma, c->max_bat_mv,
 		 s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
 		 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high, s.switching,
 		 s.fault_raw, s.latched_raw, s.alarm_raw, s.status_raw,

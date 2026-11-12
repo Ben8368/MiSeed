@@ -24,7 +24,7 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-取舍：有线 PPS 保留 umi_smb5_* 互锁；BQ provider/policy 已拆分，见[记录](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。协议故障停泵/所有权重试/恢复 L3 保留；清理保留资源同步重试至停机确认，持续 BQ I²C 失败仍阻塞卸载/关机。
+取舍：有线 PPS 保留 umi_smb5_* 互锁，check 在独占期间传递SOC阶段以衔接81%旁路；BQ已拆分，见[记录](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。故障停泵/重试/恢复L3保留；持续BQ I²C失败仍阻塞卸载/关机。
 
 偿还：WP9 闭合持续 I²C 失败的有界回退；watchdog 草稿尚无 BQ25970 到期停泵/恢复 L3，不能据此限时释放。拆分后生命周期/保护 L3、所有权独立复核及 Debian/其他板型待验。
 
@@ -44,6 +44,6 @@
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任与保留原因：WP9 的 `kernel/power/` 下 `qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（330）、`umi_pps.c`（515）分别保留 FG 核心、SRAM 事务、代际读数、有线硬件访问、PPS 状态机完整性；同包 `tests/pps_harness.c`（600）保留故障注入桩。WP10 的 `kernel/nfc/sn100x.c`（325）保留传输/PM；WP0 的 `tests/test_boot_l2.py`（355）保留缓存/平台回归。括号为行数。
+责任与保留原因：WP9 的 `kernel/power/` 下 `qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（330）、`umi_pps.c`（564）分别保留 FG 核心、SRAM 事务、代际读数、有线硬件访问、PPS 状态机完整性及故障定位；同包 `tests/pps_harness.c`（600）保留故障注入桩。WP10 的 `kernel/nfc/sn100x.c`（325）保留传输/PM；WP0 的 `tests/test_boot_l2.py`（355）保留缓存/平台回归。括号为行数。
 
 偿还：各工作包下次修改时复核内聚性，提取独立接口、代际后端或测试职责；所有相关文件≤300 行且适用回归通过后关闭。拆分与验证见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，本项不豁免红灯或供电安全要求。

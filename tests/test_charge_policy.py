@@ -15,7 +15,7 @@ from power_test_support import PowerPortFixture, power_source
 
 class ChargePolicyTests(PowerPortFixture):
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
-    def test_los_policy_has_no_artificial_soc_cap_and_preserves_safety_boundaries(self):
+    def test_soc_cap_preserves_los_electrical_and_thermal_boundaries(self):
         harness = r'''
 #include <assert.h>
 #include "umi_charge_policy.h"
@@ -26,7 +26,9 @@ int main(void) {
  assert(D(1,1,1,300,4100000,68,0,0) == 1);
  assert(D(1,1,1,300,4100000,68,1,0) == 1);
  assert(D(1,1,1,300,4100000,78,0,1) == 1);
- assert(D(1,1,1,300,4100000,100,0,1) == 1);
+ assert(D(1,1,1,300,4100000,80,0,1) == 1);
+ assert(D(1,1,1,300,4100000,81,0,1) == 0);
+ assert(D(1,1,1,300,4100000,100,0,1) == 0);
  assert(D(0,1,1,300,4100000,60,1,1) == 0);
  assert(D(1,0,1,300,4100000,60,1,1) == 0);
  assert(D(1,1,0,300,4100000,60,1,1) == 0);
@@ -167,6 +169,7 @@ static void arm(struct smb5_chip *c, const char *command)
  assert(charge_test_store(&d, NULL, command, strlen(command)) == (ssize_t)strlen(command));
  assert(!enabled && !c->enabled);
 }
+#include "smb5_power_cases.h"
 int main(void) {
  struct smb5_chip c = { .inhibit = true, .max_fv_uv = 4400000,
                        .test_seconds = UMI_CHARGE_TEST_SECONDS };
@@ -179,8 +182,8 @@ int main(void) {
  tick(&c, 1000, 1); assert(!enabled && !c.test_active);
  tick(&c, 2000, 0); assert(!enabled && c.test_saw_disconnect);
  tick(&c, 3000, 1); assert(enabled && c.test_active && c.test_deadline == 603000);
- assert(smb5_get_charge_control_threshold(&c, true) == 100);
- assert(smb5_get_charge_control_threshold(&c, false) == 0);
+ assert(smb5_get_charge_control_threshold(&c, true) == 81);
+ assert(smb5_get_charge_control_threshold(&c, false) == 71);
  tick(&c, 62000, 1); assert(enabled); /* not the default 60-second timeout */
  tick(&c, 602999, 1); assert(enabled && c.test_active);
  tick(&c, 603000, 1); assert(!enabled && !c.test_active && !c.test_armed);
@@ -246,31 +249,7 @@ int main(void) {
  tick(&c, 4500, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 300;
  tick(&c, 4600, 1); assert(enabled);
- /* Full SOC alone never terminates. Only hardware FULL latches bypass;
-  * status failures stop, and unplug clears only the automatic session latch. */
- values[POWER_SUPPLY_PROP_CAPACITY] = 100;
- tick(&c, 4700, 1); assert(enabled && !c.full_bypass);
- status_error = -EIO;
- tick(&c, 4710, 1); assert(!enabled && !c.full_bypass);
- status_error = 0; charge_status = POWER_SUPPLY_STATUS_FULL;
- tick(&c, 4720, 1); assert(!enabled && c.full_bypass && !c.inhibit);
- charge_status = 0;
- int bypass_suspends = suspends, bypass_feeds = feeds;
- for (int i = 0; i < 20; i++) tick(&c, 4730 + i, 1);
- assert(!enabled && c.full_bypass && suspends == bypass_suspends && feeds == bypass_feeds);
- tick(&c, 4800, 0); assert(!c.full_bypass);
- tick(&c, 4900, 1); assert(enabled);
- /* An IRQ also preserves a brief unplug/replug between worker polls. */
- c.full_bypass = true; online = 0; smb5_handle_usb_plugin(0, &c);
- assert(!c.full_bypass); tick(&c, 4901, 1); assert(enabled);
- charge_status = POWER_SUPPLY_STATUS_FULL; stop_error = -EIO;
- bypass_feeds = feeds; bypass_suspends = suspends;
- tick(&c, 4902, 1);
- assert(c.full_bypass && !c.enabled && feeds == bypass_feeds && suspends > bypass_suspends);
- stop_error = 0; charge_status = 0;
- tick(&c, 4903, 1); assert(c.full_bypass && !enabled);
- c.inhibit = true; c.full_bypass = true;
- tick(&c, 4910, 0); assert(!c.full_bypass && c.inhibit);
+ test_smb5_full_and_unplug(&c);
  /* A failed stop uses input suspend and never feeds the watchdog. */
  int old_feeds = feeds;
  stop_error = -EIO;
@@ -281,6 +260,8 @@ int main(void) {
  int old_suspends = suspends;
  assert(smb5_inhibit_with_fallback(&c, "initial") == -EIO);
  assert(suspends == old_suspends + 1);
+ stop_error = 0;
+ test_smb5_power_and_recharge();
  return 0;
 }
 '''
@@ -288,7 +269,8 @@ int main(void) {
         binary = self.source / "worker"
         entry.write_text(harness)
         result = subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter",
-                                 "-I", str(ROOT / "kernel/power"), str(entry), "-o", str(binary)],
+                                 "-I", str(ROOT / "kernel/power"), "-I", str(ROOT / "tests"),
+                                 str(entry), "-o", str(binary)],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         subprocess.run([str(binary)], check=True, timeout=10)

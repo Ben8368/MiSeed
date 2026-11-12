@@ -102,6 +102,7 @@ int smb5_get_prop_usb_online(struct smb5_chip *chip, int *val);
 int smb5_apsd_get_charger_type(struct smb5_chip *chip, int *val);
 int smb5_get_prop_charging_enabled(struct smb5_chip *chip, int *val);
 int smb5_get_prop_status(struct smb5_chip *chip, int *val);
+int smb5_power_limit(struct smb5_chip *chip, int soc);
 int smb5_get_current_limit(struct smb5_chip *chip,
 					 unsigned int *val);
 int smb5_set_current_limit(struct smb5_chip *chip, unsigned int val);
