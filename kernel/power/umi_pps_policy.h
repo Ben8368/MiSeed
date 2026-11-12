@@ -11,7 +11,9 @@
 #define UMI_PPS_STEP_MV 20
 #define UMI_PPS_STEP_MA 50
 #define UMI_PPS_MAX_MV 9500
-#define UMI_PPS_MAX_MA 3000
+#define UMI_PPS_MAX_MA 2500
+/* USB PPS programmable current-limit region starts at 1 A, not 2 A. */
+#define UMI_PPS_MIN_MA 1000
 #define UMI_PPS_BAT_MAX_MA 6000
 #define UMI_PPS_MIN_BAT_MV 3500
 #define UMI_PPS_HEADROOM_MV 400
@@ -23,7 +25,7 @@
 #define UMI_PPS_START_MS 5000
 #define UMI_PPS_OPERATION_MS 10000
 #define UMI_PPS_MAX_SOC 95 /* LineageOS CAPACITY_TOO_HIGH_THR for Umi. */
-#define UMI_PPS_TARGET_MW 18000
+#define UMI_PPS_TARGET_MW 20000
 #define UMI_PPS_STEADY_MW 18000
 /* Reuse the first LOS thermal step's clear point for proactive boost exit.
  * This power-policy target does not replace any protection trip.
@@ -46,7 +48,7 @@ struct umi_pps_power {
 #define UMI_PPS_THERMAL_SENSORS 6
 #define UMI_PPS_THERMAL_STEPS 9
 struct umi_pps_thermal {
-	int step, level, virtual_mc, max_bat_ma;
+	int step, level, virtual_mc, max_bat_ma, control_bat_ma;
 };
 
 static inline int umi_pps_thermal_level(int target, int screen_state)
@@ -109,6 +111,14 @@ static inline int umi_pps_thermal_update(struct umi_pps_thermal *t,
 	t->level = level;
 	t->virtual_mc = (int)virtual_mc;
 	t->max_bat_ma = umi_pps_cooling_current(level);
+	/* Pre-derate at the next trip's existing clear point. The actual trip,
+	 * hysteresis and raw safety ceiling are unchanged. */
+	t->control_bat_ma = t->max_bat_ma;
+	if (step < UMI_PPS_THERMAL_STEPS && virtual_mc >= clear[step]) {
+		level = umi_pps_thermal_level(target[step + 1], screen_state);
+		if (umi_pps_cooling_current(level) < t->control_bat_ma)
+			t->control_bat_ma = umi_pps_cooling_current(level);
+	}
 	return 0;
 }
 
@@ -120,7 +130,7 @@ struct umi_pps_sample {
 	int online, present, good, temp, soc;
 	int vbat_mv, ibat_ma, vbus_mv, ibus_ma;
 	int pump_vbat_mv;
-	int thermal_bat_ma;
+	int thermal_bat_ma, control_bat_ma;
 	int fault, alarm, bus_low, bus_high, switching;
 	unsigned int fault_raw, latched_raw, alarm_raw, status_raw;
 	unsigned int watchdog_raw, control_raw;
@@ -171,7 +181,7 @@ static inline int umi_pps_current(const struct umi_pps_caps *c, int board_ma)
 {
 	int ma;
 
-	if (!umi_pps_caps_ok(c) || board_ma < 2000 || board_ma > UMI_PPS_MAX_MA)
+	if (!umi_pps_caps_ok(c) || board_ma < UMI_PPS_MIN_MA || board_ma > UMI_PPS_MAX_MA)
 		return -1;
 	ma = umi_pps_min(c->max_ma, board_ma);
 	return ma / UMI_PPS_STEP_MA * UMI_PPS_STEP_MA;
@@ -207,6 +217,18 @@ static inline int umi_pps_sample_ok(const struct umi_pps_sample *s,
 		s->vbus_mv <= requested_mv + 200;
 }
 
+static inline int umi_pps_thermal_only(const struct umi_pps_sample *s,
+		int max_mv, int max_ma, int requested_mv)
+{
+	struct umi_pps_sample safe = *s;
+
+	safe.ibat_ma = s->thermal_bat_ma;
+	return umi_pps_battery_ok(s, max_mv) &&
+		s->ibat_ma > s->thermal_bat_ma && s->switching &&
+		!s->bus_low && !s->bus_high && !s->alarm &&
+		umi_pps_sample_ok(&safe, max_mv, max_ma, requested_mv, 0);
+}
+
 static inline int umi_pps_control_vbat(const struct umi_pps_sample *s)
 {
 	/* Use LOS's pump measurement, retaining a higher BMS value as an
@@ -215,20 +237,17 @@ static inline int umi_pps_control_vbat(const struct umi_pps_sample *s)
 	return umi_pps_max(s->vbat_mv, s->pump_vbat_mv);
 }
 
-/* The wired fast-charge band uses one 18 W target. SOC stage changes only
- * select the 5 W handoff or bypass; existing electrical and thermal gates win.
- * Called once per validated sample; never filter protection measurements.
- */
+/* 20 W fast / 10 W finishing; thermal derating is reversible. Raw safety
+ * measurements are never filtered. SOC stages advance until a new cycle. */
 static inline void umi_pps_power_update(struct umi_pps_power *p,
 		const struct umi_pps_sample *s, int virtual_mc, unsigned long long now)
 {
 	int goal, measured;
 
 	p->stage = umi_pps_max(p->stage, umi_pps_soc_stage(s->soc));
-	if (virtual_mc >= UMI_PPS_BOOST_EXIT_MC ||
-	    s->thermal_bat_ma < UMI_PPS_BAT_MAX_MA)
-		p->steady = 1;
-	goal = p->stage == 0 || p->stage == 2 ?
+	p->steady = virtual_mc >= UMI_PPS_BOOST_EXIT_MC ||
+		s->thermal_bat_ma < UMI_PPS_BAT_MAX_MA;
+	goal = p->stage == 0 ? UMI_WIRED_LOW_MW : p->stage == 2 ?
 		UMI_WIRED_FINISH_MW : UMI_PPS_TARGET_MW;
 	if (p->steady)
 		goal = umi_pps_min(goal, UMI_PPS_STEADY_MW);
@@ -250,6 +269,20 @@ static inline void umi_pps_power_update(struct umi_pps_power *p,
 	}
 }
 
+static inline int umi_pps_request_current(const struct umi_pps_sample *s,
+		const struct umi_pps_caps *caps, const struct umi_pps_power *p)
+{
+	int mv = umi_pps_target(caps, umi_pps_control_vbat(s));
+	int bat_ma = s->control_bat_ma > 0 ? s->control_bat_ma : s->thermal_bat_ma;
+	int ma;
+
+	if (mv < 0)
+		return -1;
+	ma = umi_pps_min(UMI_PPS_MAX_MA, bat_ma / 2);
+	ma = umi_pps_min(ma, p->target_mw * 1000 / mv);
+	return umi_pps_current(caps, ma);
+}
+
 /* Voltage / battery-current / bus-current loops: the most restrictive wins. */
 static inline int umi_pps_next_mv(const struct umi_pps_sample *s,
 		const struct umi_pps_caps *c, int max_bat_mv, int max_ma, int mv)
@@ -259,7 +292,8 @@ static inline int umi_pps_next_mv(const struct umi_pps_sample *s,
 	if (!umi_pps_caps_ok(c))
 		return -1;
 	if (s->bus_high || s->alarm || vbat_mv >= max_bat_mv - 20 ||
-	    s->ibat_ma >= s->thermal_bat_ma - 100 || s->ibus_ma >= max_ma - 100)
+	    s->ibat_ma >= (s->control_bat_ma > 0 ? s->control_bat_ma : s->thermal_bat_ma) - 100 ||
+	    s->ibus_ma >= max_ma - 100)
 		step = -UMI_PPS_STEP_MV;
 	else if (s->bus_low || (vbat_mv < max_bat_mv - 30 &&
 		 s->ibat_ma < s->thermal_bat_ma - 200 && s->ibus_ma < max_ma - 200))
@@ -283,7 +317,8 @@ static inline int umi_pps_power_next_mv(const struct umi_pps_sample *s,
 		return next;
 	if (p->filtered_mw > p->target_mw + UMI_PPS_POWER_BAND_MW)
 		next = mv - UMI_PPS_STEP_MV;
-	else if (next > mv && p->filtered_mw >= p->target_mw - UMI_PPS_POWER_BAND_MW)
+	else if (next > mv && (p->filtered_mw >= p->target_mw - UMI_PPS_POWER_BAND_MW ||
+		 mv >= umi_pps_target(c, umi_pps_control_vbat(s))))
 		next = mv;
 	return next < c->min_mv ? -1 : next;
 }

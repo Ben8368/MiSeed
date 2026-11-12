@@ -48,6 +48,7 @@ static irqreturn_t smb5_handle_usb_plugin(int irq, void *data)
 		mutex_lock(&chip->lock);
 		chip->full_bypass = false;
 		chip->power_stage = 0;
+		chip->pps_fault = false;
 		if (chip->test_armed && !chip->test_active)
 			chip->test_saw_disconnect = true;
 		mutex_unlock(&chip->lock);

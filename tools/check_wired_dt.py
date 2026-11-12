@@ -25,6 +25,15 @@ def check(dtb, schema):
 
     nodes = {name: prop("/__symbols__", name, "s") for name in
              ("umi_battery", "umi_fg", "umi_charger", "umi_pps", "pm8150b_typec")}
+    connector = nodes["pm8150b_typec"] + "/connector"
+    if prop(connector, "op-sink-microwatt", "i") != "7000000":
+        raise ValueError("PPS operating floor must permit the 1 A request region")
+    pdos = [int(value) for value in prop(connector, "sink-pdos", "u").split()]
+    if (len(pdos) != 2 or pdos[0] >> 30 != 0 or pdos[1] >> 30 != 3
+            or ((pdos[0] >> 10) & 0x3ff) * 50 != 5000
+            or (pdos[0] & 0x3ff) * 10 != 3000
+            or (pdos[1] & 0x7f) * 50 != 2500):
+        raise ValueError("wired sink must advertise fixed 5 V/3 A and PPS <=2.5 A")
     handles = {name: prop(node, "phandle") for name, node in nodes.items()}
     references = (("umi_fg", "monitored-battery", "umi_battery"),
                   ("umi_charger", "monitored-battery", "umi_battery"),

@@ -26,7 +26,7 @@ PM8150B 的 FV/FCC 编码、watchdog 和 Umi 正常充电温区/电压上限，�
 
 ## LineageOS PPS 移植
 
-`umi_pps.c`、`umi_pps_policy.h`、`bq25970.c/.h` 和 `umi-pps.dtsi` 从 LineageOS 固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq2597x_charger.c`、`bq25970_reg.h`、`pd_policy_manager.c/.h` 以及 Umi/Kona DTS 选择性适配，保持 GPL-2.0-only。BQ 原驱动 Copyright (C) 2017 Texas Instruments、MODULE_AUTHOR Texas Instruments；策略 MODULE_AUTHOR Fei Jiang <jiangfei1@xiaomi.com>，策略头文件保留 a0220433 / Mar 27, 2017 的归属。参考驱动的 TI GPL v2 授权、策略 GPL 模块声明与根 COPYING 一并检查；来源锁记录逐文件哈希。未复制其整个下游 USB PD 实现。
+`umi_pps.c`、`umi_pps_pd.c`、`umi_pps_policy.h`、`bq25970.c/.h` 和 `umi-pps.dtsi` 从 LineageOS 固定提交 `71b13e62f057a649b77fe4062feb73ee72ad609c` 的 `drivers/power/supply/ti/bq2597x_charger.c`、`bq25970_reg.h`、`pd_policy_manager.c/.h` 以及 Umi/Kona DTS 选择性适配，保持 GPL-2.0-only。BQ 原驱动 Copyright (C) 2017 Texas Instruments、MODULE_AUTHOR Texas Instruments；策略 MODULE_AUTHOR Fei Jiang <jiangfei1@xiaomi.com>，策略头文件保留 a0220433 / Mar 27, 2017 的归属。参考驱动的 TI GPL v2 授权、策略 GPL 模块声明与根 COPYING 一并检查；来源锁记录逐文件哈希。未复制其整个下游 USB PD 实现。
 
 本地修改包括主线 TCPM power_supply 接口、固定 LOS Umi 参数与保护读回、拒绝未知芯片 ID、自动 attach/PPS 调节、SMB5 独占和输入暂停、故障回固定 PDO 后恢复 SMB5；本轮另对齐固定 LOS `bq2597x_init_adc()` 的通道选择和 BMS 电池电流用法，保留 IBUS/温控/电压/故障门控，不引入猜测 sense 参数。没有沿用额外电池 OCP/TS 保护位，当前硬件证据以 [PPS](PPS.md) 及其真机记录为准。Linux 原生 TCPM/PMIC Type-C/PD PHY 维持内核自身许可证及作者；本地诊断与接收修正见下节。移植范围、来源报告和运行阻断见[本轮评估](../../docs/archive/research/2026-11-08-lineage-pps-port.md)与[接口说明](PPS.md)。
 
@@ -45,3 +45,5 @@ PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 mi
 `pmic_pdphy_receive.inc` 改编自固定 Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18` 的 `drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.c`（GPL-2.0；Copyright (c) 2023 Linaro Ltd.），保留文件头。构建器保留原驱动其他代码和署名，只替换接收函数并增加复位诊断；同一固定内核的 `tcpm.c` 只调整诊断环形缓冲容量。输入文件完整 SHA-256 由 `tools/apply_pd_diagnostics.py` 固定，构建产物另保存修改后文件哈希。无效长度不转交报文、确认失败不当成功；真实零头报文仍交给原 TCPM 校验。接收错误路径回归和本机协议故障的因果关系分开，见[调查记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
 
 2026-11-11 有线芯片边界：`bq25970_core` 独立拥有 I2C/regmap、身份与 IRQ；`umi-bq25970` 经 auxiliary bus 消费充电功能，保留板级 TCPM/SMB5 策略。TI 后端归属不变，未引入新外部驱动或改动 watchdog/电气阈值。范围与验证见[实施记录](../../docs/archive/research/2026-11-11-native-dsi-chip-boundaries.md)。无线 RX/TX 未移植。
+
+2026-11-12：TCPM属性访问、协商重试和合约核验从状态机提取为`umi_pps_pd.c`，复合模块名、原作者与许可证不变；未引入外部代码。

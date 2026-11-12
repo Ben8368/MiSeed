@@ -16,9 +16,7 @@
 #include "qcom_pm8150b_internal.h"
 #include "umi_pps_policy.h"
 
-/* Fixed PD uses the same 18 W fast-charge target as PPS where the PDO allows
- * it; low/finishing bands target 5 W. Preserve any stricter external ICL.
- */
+/* Fixed 5 V PD: 5/15/10 W bands with 1/3/2 A ceilings. Preserve external ICL. */
 int smb5_power_limit(struct smb5_chip *chip, int soc)
 {
 	unsigned int icl_ua, target;
@@ -35,7 +33,7 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 		target = UMI_CHARGE_USB_ICL_UA;
 	} else {
 		target_mw = chip->power_stage == 0 ? UMI_WIRED_LOW_MW :
-			chip->power_stage == 2 ? UMI_WIRED_FINISH_MW : UMI_PPS_TARGET_MW;
+			chip->power_stage == 2 ? UMI_WIRED_FINISH_MW : UMI_WIRED_PD_FAST_MW;
 		rc = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input_uv);
 		if (rc)
 			return rc;
@@ -43,10 +41,12 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 			return -ERANGE;
 		target = (unsigned int)((long long)target_mw * 1000000000LL /
 				input_uv);
-		if (target > UMI_CHARGE_USB_ICL_UA)
-			target = UMI_CHARGE_USB_ICL_UA;
+		target = umi_pps_min(target, chip->power_stage == 0 ? 1000000 :
+			chip->power_stage == 2 ? 2000000 : UMI_CHARGE_USB_ICL_UA);
 	}
 	target = umi_pps_min(target, chip->saved_icl_ua);
+	/* Match the hardware's 50 mA encoding before comparing our next readback. */
+	target = target / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
 	if (icl_ua < target)
 		target = umi_pps_min(target, icl_ua + 100000);
 	else if (icl_ua > target && chip->enabled)
@@ -153,6 +153,8 @@ int smb5_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		mutex_lock(&chip->lock);
 		rc = chip->pps_owned || chip->stopping ? -EBUSY : smb5_set_current_limit(chip, val->intval);
+		if (!rc)
+			chip->saved_icl_ua = val->intval / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
 		mutex_unlock(&chip->lock);
 		power_supply_changed(psy);
 		return rc;

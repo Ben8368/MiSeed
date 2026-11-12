@@ -59,7 +59,7 @@ static int umi_pps_suspend(struct device *dev)
 
 	mutex_lock(&c->lock);
 	c->resume_pps = !c->manual_stop && (c->state == PPS_WAIT_PLUG ||
-			c->state == PPS_SETTLE || c->state == PPS_RUN);
+			c->state == PPS_SETTLE || c->state == PPS_RUN || c->state == PPS_THERMAL);
 	ret = umi_pps_stop(c, c->resume_pps ? PPS_OFF : c->state, c->last_error);
 	c->suspended = !ret;
 	mutex_unlock(&c->lock);

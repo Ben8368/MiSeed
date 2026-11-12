@@ -81,6 +81,7 @@ int main(void) {
 #include <sys/types.h>
 #include "umi_charge_policy.h"
 #include "umi_pps_policy.h"
+#define CURRENT_SCALE_FACTOR 50000
 typedef int irqreturn_t;
 struct iio_channel { int unused; };
 #define HZ 1000UL
@@ -108,7 +109,7 @@ struct smb5_chip {
  struct delayed_work status_change_work;
  int lock, max_fv_uv;
  bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
- bool full_bypass;
+ bool full_bypass, pps_fault;
  int power_stage;
  void *usb_in_v_chan;
  unsigned int policy_icl_ua, saved_icl_ua;
@@ -152,7 +153,7 @@ static int smb5_limits_verified(struct smb5_chip *c)
 static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 { (void)c; *v = input_limit; return 0; }
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
-{ (void)c; input_limit = v; return 0; }
+{ (void)c; input_limit = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 static int regmap_update_bits(void *map, unsigned int reg, unsigned int mask, unsigned int v)
 { (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; return 0; }
 static int regmap_write(void *map, unsigned int reg, unsigned int v)

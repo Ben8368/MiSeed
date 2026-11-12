@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* Exercise SMB5's 5/18/5 W bands and 81/71 bypass hysteresis. */
+/* Exercise SMB5's 5/15/10 W bands and 81/71 bypass hysteresis. */
 static void test_smb5_power_and_recharge(void)
 {
  struct smb5_chip c = { .max_fv_uv = 4400000,
@@ -26,11 +26,11 @@ static void test_smb5_power_and_recharge(void)
  values[POWER_SUPPLY_PROP_CAPACITY] = 71;
  for (int i = 0; i < 20; i++) {
   previous = input_limit; tick(&c, t++, 1);
-  assert(enabled && input_limit == (unsigned int)previous - 100000);
+  assert(enabled && input_limit == (previous > 2000000 ? (unsigned int)previous - 100000 : 2000000));
  }
- assert(input_limit == 1000000 && c.power_stage == 2);
+ assert(input_limit == 2000000 && c.power_stage == 2);
  values[POWER_SUPPLY_PROP_CAPACITY] = 70;
- tick(&c, t++, 1); assert(input_limit == 1000000 && c.power_stage == 2);
+ tick(&c, t++, 1); assert(input_limit == 2000000 && c.power_stage == 2);
  values[POWER_SUPPLY_PROP_CAPACITY] = 80;
  tick(&c, t++, 1); assert(enabled && !c.full_bypass);
  values[POWER_SUPPLY_PROP_CAPACITY] = 81;
@@ -53,21 +53,27 @@ static void test_smb5_power_and_recharge(void)
  c.cooling_state = 0; c.inhibit = true;
  tick(&c, t++, 1); assert(!enabled);
  c.inhibit = false;
- tick(&c, t++, 1); assert(enabled && input_limit == 1000000); /* 71% resumes 5 W. */
+ tick(&c, t++, 1); assert(enabled && input_limit == 2000000); /* 71% resumes 10 W. */
  values[POWER_SUPPLY_PROP_CAPACITY] = 71;
  for (int i = 0; i < 20; i++) tick(&c, t++, 1);
- assert(enabled && input_limit == 1000000 && c.power_stage == 2);
+ assert(enabled && input_limit == 2000000 && c.power_stage == 2);
  /* Failed inhibition must not raise the input budget or feed watchdog. */
  values[POWER_SUPPLY_PROP_CAPACITY] = 81;
  stop_error = -EIO; old_feeds = feeds;
  tick(&c, t++, 1);
- assert(!c.enabled && c.full_bypass && input_limit == 1000000 && feeds == old_feeds);
+ assert(!c.enabled && c.full_bypass && input_limit == 2000000 && feeds == old_feeds);
  stop_error = 0;
  tick(&c, t++, 1); assert(!enabled && c.full_bypass);
+ /* Fault release cannot restart SMB5, even after a thermal cooling clear. */
+ c.full_bypass=false;c.pps_fault=true;
+ values[POWER_SUPPLY_PROP_CAPACITY]=60;tick(&c,t++,1);assert(!enabled);
+ c.cooling_state=0;tick(&c,t++,1);assert(!enabled && c.pps_fault);
+ tick(&c,t++,0);assert(!c.pps_fault);
+ values[POWER_SUPPLY_PROP_CAPACITY]=81;tick(&c,t++,1);assert(c.full_bypass);
  /* An external stricter ICL remains authoritative, including bypass. */
  input_limit = 800000;
  tick(&c, t++, 1); assert(input_limit == 800000 && c.full_bypass);
- values[POWER_SUPPLY_PROP_CAPACITY] = 70; /* Resume stays in the 5 W band. */
+ values[POWER_SUPPLY_PROP_CAPACITY] = 70; /* Resume stays in the 10 W band. */
  tick(&c, t++, 1); assert(enabled && input_limit == 800000 && !c.full_bypass);
 }
 

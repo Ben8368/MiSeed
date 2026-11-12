@@ -52,7 +52,7 @@ static int umi_pps_set(void *psy, int prop, int value) {
     pd_online = value;
     return 0;
 }
-static int umi_smb5_release(void *psy) {
+static int umi_smb5_release(void *psy, int fault) {
     assert(!pump_on && pd_online == PPS_FIXED);
     return fail_release ? -EIO : 0;
 }

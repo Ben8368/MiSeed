@@ -90,6 +90,7 @@ struct smb5_chip {
 	bool pps_owned;
 	bool full_bypass;
 	int power_stage;
+	bool pps_fault;
 	unsigned int policy_icl_ua, saved_icl_ua;
 	unsigned long cooling_state;
 	unsigned long test_deadline;

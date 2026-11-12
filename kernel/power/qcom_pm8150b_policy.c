@@ -24,20 +24,35 @@ static bool smb5_is_ours(struct power_supply *psy)
 	return psy && psy->desc && psy->desc->set_property == smb5_set_property;
 }
 
-int umi_smb5_claim(struct power_supply *psy)
+int smb5_get_prop_status(struct smb5_chip *chip, int *val);
+
+int umi_smb5_claim(struct power_supply *psy, int *stage)
 {
 	struct smb5_chip *chip;
-	int rc;
+	int rc, status;
 
 	if (!smb5_is_ours(psy))
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
 	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit ||
-	    chip->full_bypass || chip->power_stage >= 2) {
+	    chip->full_bypass || chip->cooling_state || chip->pps_fault) {
 		rc = -EBUSY;
 		goto out;
 	}
+	rc = smb5_get_prop_status(chip, &status);
+	if (rc)
+		goto out;
+	if (status == POWER_SUPPLY_STATUS_FULL) {
+		chip->full_bypass = true;
+		rc = -EBUSY;
+		goto out;
+	}
+	if (!stage) {
+		rc = -EINVAL;
+		goto out;
+	}
+	*stage = chip->power_stage;
 	/* Keep ownership even after an I/O error; cleanup must verify the stop. */
 	chip->pps_owned = true;
 	chip->inhibit = true;
@@ -82,7 +97,7 @@ int umi_smb5_check(struct power_supply *psy, int stage)
 }
 EXPORT_SYMBOL_GPL(umi_smb5_check);
 
-int umi_smb5_release(struct power_supply *psy)
+int umi_smb5_release(struct power_supply *psy, int fault)
 {
 	struct smb5_chip *chip;
 	int rc;
@@ -98,6 +113,7 @@ int umi_smb5_release(struct power_supply *psy)
 	if (!rc) {
 		chip->pps_owned = false;
 		chip->inhibit = false;
+		chip->pps_fault |= !!fault;
 	}
 	mutex_unlock(&chip->lock);
 	if (!rc)
@@ -166,7 +182,7 @@ void smb5_status_change_work(struct work_struct *work)
  if (!rc && online && health == POWER_SUPPLY_HEALTH_GOOD &&
      chip->full_bypass && soc >= 0 && soc <= UMI_CHARGE_RESUME_SOC) {
   chip->full_bypass = false;
-	  chip->power_stage = 2; /* Recharge remains on the 5 W SMB5 path. */
+	  chip->power_stage = 2; /* PPS or SMB5 recharge keeps the 10 W stage. */
  }
  if (!rc && online && soc >= 0 && soc <= 100)
   chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
@@ -178,6 +194,8 @@ void smb5_status_change_work(struct work_struct *work)
   chip->full_bypass = false;
  if (!usb_rc && !online)
   chip->power_stage = 0;
+ if (!usb_rc && !online)
+  chip->pps_fault = false;
  if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
      !chip->inhibit && !chip->full_bypass) {
   if (soc >= UMI_CHARGE_END_SOC)
@@ -199,7 +217,7 @@ void smb5_status_change_work(struct work_struct *work)
    rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, 0);
  }
  if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
-     !chip->pps_owned && !chip->inhibit && !chip->full_bypass)
+     !chip->pps_owned && !chip->inhibit && !chip->full_bypass && !chip->pps_fault)
   rc = smb5_power_limit(chip, soc);
  if (!usb_rc && !online) {
   if (chip->test_active) {
@@ -221,6 +239,7 @@ void smb5_status_change_work(struct work_struct *work)
   chip->inhibit = true;
  }
  if (!rc && !chip->inhibit && !chip->cooling_state && !chip->full_bypass &&
+     !chip->pps_fault &&
      (!chip->test_armed || chip->test_active))
   allow = umi_charge_policy(online, present, health == POWER_SUPPLY_HEALTH_GOOD,
                            temp, voltage, soc, chip->max_fv_uv,

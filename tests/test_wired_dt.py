@@ -53,7 +53,8 @@ class WiredDtTests(unittest.TestCase):
         zone = "/thermal-zones/wired-pd-thermal"
         cases = ((zone, "thermal-sensors", "0"),
                  (zone + "/trips/warm", "temperature", "46000"),
-                 (zone + "/cooling-maps/map-warm", "cooling-device", "0 1 1"))
+                 (zone + "/cooling-maps/map-warm", "cooling-device", "0 1 1"),
+                 (nodes["pm8150b_typec"] + "/connector", "op-sink-microwatt", "14000000"))
         with tempfile.TemporaryDirectory() as directory:
             for node, prop, value in cases:
                 with self.subTest(property=prop):

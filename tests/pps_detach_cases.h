@@ -65,13 +65,14 @@ static void test_detach_during_request(void)
 		if (running) run();
 		fail_request = 2;
 		disconnect_after_online_reads = running ? 4 : 3;
-		if (running) tick(); else begin();
+		if (running) { clock_ms=c.last_pps_request_ms+UMI_PPS_REFRESH_MS; tick(); } else begin();
 		assert(c.state == PPS_WAIT_PLUG && !c.last_error && !claim_owned &&
 		       !c.pps && !c.stop_pending && !(regs[0x0c] & BIT(7)));
 	}
 	reset();
 	run();
 	fail_request = 2;
+	clock_ms=c.last_pps_request_ms+UMI_PPS_REFRESH_MS;
 	tick();
 	assert(c.state == PPS_FAULT && c.last_error == -ENOTCONN && !claim_owned);
 	/* Reproduce 150.775s: battery ONLINE is stale while BQ has stopped.

@@ -163,6 +163,7 @@ int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 	}
 	s->thermal_bat_ma = min(c->thermal.max_bat_ma,
 			       umi_pps_cooling_current(c->cooling_state));
+	s->control_bat_ma = min(c->thermal.control_bat_ma, s->thermal_bat_ma);
 	return 0;
 }
 
@@ -203,7 +204,8 @@ int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 		(s->watchdog_raw & BQ_WD_CONFIG_MASK) != BQ_WD_ENABLED_30S ||
 		(s->watchdog_raw & BQ_WD_TIMEOUT_FLAG) || !(s->alarm_raw & BIT(1)) ||
 		(c->state == PPS_RUN && !(s->control_raw & BQ_ENABLE)) ||
-		(c->state == PPS_SETTLE && (s->control_raw & BQ_ENABLE));
+		((c->state == PPS_SETTLE || c->state == PPS_THERMAL) &&
+		 (s->control_raw & BQ_ENABLE));
 	s->alarm = !!(s->alarm_raw & 0xf0);
 	s->bus_low = !!(s->status_raw & BIT(5));
 	s->bus_high = !!(s->status_raw & BIT(4));

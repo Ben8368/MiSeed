@@ -34,7 +34,7 @@
 #define PPS_PROGRAMMABLE 2
 
 enum umi_pps_state { PPS_OFF, PPS_WAIT_PLUG,
-	PPS_SETTLE, PPS_RUN, PPS_DONE, PPS_FAULT };
+	PPS_SETTLE, PPS_RUN, PPS_DONE, PPS_FAULT, PPS_THERMAL };
 
 /* Discrete wired supply state last queued for a power_supply notification. */
 struct umi_pps_report {
@@ -65,7 +65,7 @@ struct umi_pps {
 	enum umi_pps_state state;
 	bool claimed, configured, pps, removing, stop_pending, manual_stop;
 	bool suspended, resume_pps;
-	u64 deadline, start_deadline, taper_start, last_pps_request_ms;
+	u64 deadline, start_deadline, taper_start, last_pps_request_ms, last_current_step_ms;
 	int request_mv, request_ma, max_bat_mv;
 	int last_error;
 	struct umi_pps_report reported;
@@ -74,6 +74,12 @@ struct umi_pps {
 
 
 u64 umi_pps_now(void);
+int umi_pps_set(struct power_supply *psy, enum power_supply_property p, int v);
+int umi_pps_check_deadline(struct umi_pps *c);
+int umi_pps_negotiate(struct umi_pps *c, enum power_supply_property p, int v);
+int umi_pps_caps(struct umi_pps *c);
+int umi_pps_contract(struct umi_pps *c);
+int umi_pps_request(struct umi_pps *c, int mv);
 int umi_pps_get(struct power_supply *psy, enum power_supply_property p, int *v);
 int umi_pps_update(struct umi_pps *c, unsigned int reg,
 		unsigned int mask, unsigned int value);

@@ -7,7 +7,7 @@ POWER_GROUPS = {
     "qcom_pm8150b_charger": ("qcom_pm8150b_core", "qcom_pm8150b_hw",
                               "qcom_pm8150b_policy", "qcom_pm8150b_supply",
                               "qcom_pm8150b_thermal"),
-    "umi-bq25970": ("umi_pps", "umi_pps_hw", "umi_pps_supply",
+    "umi-bq25970": ("umi_pps", "umi_pps_pd", "umi_pps_hw", "umi_pps_supply",
                     "umi_pps_thermal", "umi_pps_driver"),
     "bq25970_core": ("bq25970", "bq25970_i2c"),
 }

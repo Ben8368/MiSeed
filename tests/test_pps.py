@@ -19,7 +19,7 @@ class PpsTests(unittest.TestCase):
     def test_real_controller_success_faults_deadlines_and_cleanup(self):
         # Compile the real worker and hardware helpers with synthetic transports.
         source = (ROOT / "kernel/power/umi_pps_internal.h").read_text()
-        for name in ("bq25970.c", "umi_pps_hw.c", "umi_pps.c"):
+        for name in ("bq25970.c", "umi_pps_hw.c", "umi_pps_pd.c", "umi_pps.c"):
             source += "\n" + (ROOT / "kernel/power" / name).read_text()
         full = "\n".join((ROOT / "kernel/power" / name).read_text() for name in
                          ("umi_pps_driver.c", "umi_pps_supply.c", "umi_pps_thermal.c"))
@@ -99,6 +99,7 @@ class PpsTests(unittest.TestCase):
 #include <assert.h>
 #include <errno.h>
 #include "umi_pps_policy.h"
+#define CURRENT_SCALE_FACTOR 50000
 struct smb5_chip {
  int enabled, power_stage;
  void *usb_in_v_chan;
@@ -111,7 +112,7 @@ static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 static int smb5_get_iio_chan(struct smb5_chip *c, void *chan, int *v)
 { (void)c; (void)chan; *v = input_uv; return voltage_error; }
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
-{ (void)c; writes++; if (write_error) return write_error; current = v; return 0; }
+{ (void)c; writes++; if (write_error) return write_error; current = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 ''' + function + r'''
 int main(void) {
  struct smb5_chip c = {0};
@@ -123,13 +124,22 @@ int main(void) {
  assert(!smb5_power_limit(&c, 30) && c.power_stage == 1);
  assert(!smb5_power_limit(&c, 70) && current == 3000000);
  for (int i = 0; i < 20; i++) assert(!smb5_power_limit(&c, 71));
- assert(current == 1000000 && c.power_stage == 2);
- assert(!smb5_power_limit(&c, 70) && current == 1000000);
- assert(!smb5_power_limit(&c, 80) && current == 1000000);
+ assert(current == 2000000 && c.power_stage == 2);
+ assert(!smb5_power_limit(&c, 70) && current == 2000000);
+ assert(!smb5_power_limit(&c, 80) && current == 2000000);
  c = (struct smb5_chip){0}; current = 3000000; input_uv = 9000000;
- assert(!smb5_power_limit(&c, 10) && current == 2000000 && c.power_stage == 1);
+ assert(!smb5_power_limit(&c, 10) && current == 1650000 && c.power_stage == 1);
  c = (struct smb5_chip){0}; current = 3000000;
- assert(!smb5_power_limit(&c, 5) && current == 555555);
+ assert(!smb5_power_limit(&c, 5) && current == 550000);
+ c = (struct smb5_chip){0}; current = 3000000; input_uv = 4800000;
+ assert(!smb5_power_limit(&c, 5) && current == 1000000);
+ for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 6));
+ assert(current == 3000000 && c.saved_icl_ua == 3000000);
+ /* Fractional 5 W target must not become a permanent 950 mA ceiling. */
+ c = (struct smb5_chip){0}; current = 3000000; input_uv = 5100000;
+ assert(!smb5_power_limit(&c, 5) && current == 950000);
+ for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 6));
+ assert(current == 2900000 && c.saved_icl_ua == 3000000);
  voltage_error = -EIO; int before_voltage = writes;
  assert(smb5_power_limit(&c, 6) == -EIO && writes == before_voltage);
  voltage_error = 0; input_uv = 0;
