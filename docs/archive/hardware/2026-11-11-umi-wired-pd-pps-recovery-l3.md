@@ -122,3 +122,45 @@ PPS 泵输入功率取同组 VBUS×IBUS，以 1/4 指数平均与 ±0.5 W 死区
 | 原生 `.work/pps-power-native-20261111` | 14135296 | `a103bd4a89f8f11ee4f1c2be0881fb03b2ec4d38c4b6053baefcc18bd8efc015` |
 
 完整日志/包装器仅留忽略目录 `.work/pps-power-*-20261111*`，镜像与构建物不提交。Audit：既有 8 项篇幅黄灯归 TD-008（umi_pps.c 515 行、pps_harness.c 600 行），无新源码超限；PR #6 达 100 文件、规模红灯，按维护者指定更新本项后停止扩展，不合并。新功率/温升、SMB5 限额、自动满电旁路 L3、开发者以外专项复核及最终精确 HEAD 远端 CI 仍须分别取证。
+
+## 2026-11-12：分段策略 L3 启动与初始基线
+
+维护者本轮明确要求修复 CI 后暂不推送，并启用真机 L3；报告初始约 5% 电量、继续使用既有绿联 45 W PPS 有线头。CI 修复只涉及 workflow 与离线测试，充电代码未变，见[修复记录](../reviews/2026-11-10-kernel-validation-environment.md#2026-11-12pr6-boot-l2-apt-dns-失败与本地修复)。
+
+先完成上述 240 项零跳过、目标 L2/DT/schema、输入锁与 25 项有线源码/主机工具/脚本核验，再通知接入。载荷为默认 simpledrm，禁用原生 DSI；SHA-256 `71619df18f35ff4c0b58c0c96b0dddeab5c48986cb6739d59b2ef1baa5aebbc6`。主机 Windows x64 / PowerShell 7.6.9、Platform Tools 37.0.1、pyserial 3.5；材料 `.work/ci-dns-l3-20261112/preflight.json`、`L3-steps.md`、一次性 boot_once.py 与限命令采集器均在接入前备齐。
+
+唯一设备只读确认 product=umi、unlocked=yes、is-userspace=no 后仅一次 `fastboot boot`，Sending/Booting OKAY、退出 0；未刷分区。CDC COM6 的 VID/PID 1d6b:0104、MiSeed Umi/CSOT greeting 与 Linux 6.18.60 核实通过，不能只用 Bootloader 接收代替 Linux 启动。mounts 仅 rootfs/devtmpfs/proc/sysfs/debugfs/configfs，无真实存储挂载。
+
+初始 PC 连接下 BMS 实测 SOC 6%、电池 28°C、PPS 虚拟温度 32.636°C，两路 cooling state=0；BQ25970 绑定、Not charging，策略 auto；SMB5 Charging、输入限流标准属性读回 2000000 µA。PC 被识别为 Type-C/SDP、没有实际 PD/PPS 合约，不能据此声称绿联固定 PD 已通过。基线严格导出 `baseline-charge.log`：312 条、first=0、无覆盖、storage_errors=0。status 的旧诊断文本 icl_ua=3000000 是常量，实际配置以标准 input_current_limit=2000000 为准。
+
+下一步沿用绿联自然充电，先覆盖 <15% 固定 5 V/SMB5 ≤2 A、15% PPS 接管与 30% 后 18 W，再按实际 SOC 续测 81%/满电旁路；未人为放电、加热或改保护阈值。故障/保护停机时断开充电器、接回电脑停充采集，保存后用 PON bootloader → Fastboot → Android 回退；现场后续结果另追加，初始基线不外推完整四段 L3。
+
+## 2026-11-12：已有数据复核与有线分段 L3 结论
+
+沿用上节 `bcfd241729f1d285b7d39d598d5556c760efba6d` 有线代码及同一 `71619df1…aebbc6` RAM 镜像。维护者接回电脑后已导出首轮全部日志；随后提出的 0–20%/21–80% 新分段已取消，明确接受本轮实测速度、保留现有策略，并授权核实后提交推送 PR #6。本轮不改充电参数或无线 RX/TX，不再安排设备操作。
+
+完整性复核：`python -X utf8 .work/ci-dns-l3-20261112/verify-round1.py` 退出 0。使用仓库采集器重新严格解析原始 BEGIN/END 与每条序号：基线 312 条，首轮 first=0、next/count=11367，连续、无覆盖、storage_errors=0；977 组电池样本与 3525 条 PPS RUN。TCPM 单独读取至 EOF，4253 行、complete=1。原始摘要如下，日志、复核脚本和派生 JSON 仅留忽略目录 `.work/ci-dns-l3-20261112/`，不提交原始长日志或镜像。
+
+| 证据 | SHA-256 |
+| --- | --- |
+| baseline-charge.log | `607e4774e446c0d266bc0b1ce7a9f5303ef6cb451d8e75c68c50d40358703d53` |
+| round1-charge.log | `c66a6a3cff7162ca799b37f1c8d9be91908cd5b1ecca7064acab88c0f2c554aa` |
+| round1-console.log（含完整 TCPM） | `985937d1b53acce310693a5850e4be3ff20db5c5603fca81177c9f1996f60e97` |
+
+功率口径：固定 PD 用同条 SMB5 voltage_now×current_now；PPS 用同条泵 VBUS×IBUS。均为驱动输入测量估算，不是充电头交流输入或电池净功率。事件时刻用 kmsg 原始 µs 时间戳，BMS 用 boot_ms；SOC 只作异步样本关联，不以采集入库时间认定精确切换边界。
+
+| 已核实阶段 | 原始证据与结论 |
+| --- | --- |
+| 低 SOC 固定 PD/SMB5 | TCPM 157.401 s 请求 PDO 5 V/3 A，157.454 s 到 SNK_READY；源端合约 3 A 不等于手机抽取 3 A。稳定窗口 160–883 s 的 344 组 Charging 样本，标准 ICL 全部 2 A；输入功率中位 9.769 W、P90 9.775 W，最高 9.784 W（启动过渡最低 6.836 W）。首次 APDO 前固定 PD 约 726.6 s。 |
+| 15%附近 PPS 接管与升功率 | 884.009 s 开始 APDO 5 V/3 A，随后 8.38 V/3 A；协议接受/PS_RDY 后均进入 SNK_READY。885.154 s 首条 RUN 目标 11 W，904.248 s 达 27 W 目标；相邻目标最多变 1 W。实测峰值 25.613 W（8.943 V×2.864 A），不是实际 27 W。最后一条 14% 与首条 15% BMS 样本分别在 885.180/887.225 s，异步采样不足以证明精确 SOC 边界；软件边界证据沿用 L1。 |
+| 自然升温平滑降到 18 W | 920.962 s 虚拟温度 38.252°C、steady=1，931.075 s 目标到 18 W，约 10.1 s 完成降功率；之后不再升回 27 W。排除降档过渡（t>934 s），3 A 请求窗口 1534 条：实测中位 17.701 W，P90 17.856 W，范围 16.752–18.214 W。 |
+| state 8 限流仍保持 PPS | 1410.286 s 虚拟温度 41.119°C、state 8、FCC=4100 mA；1411.286 s 源请求已降至 2050 mA，此时 IBUS=1945 mA、IBAT=3373 mA，满足先降到新限值以下再改请求。后续 1838 条 18 W 目标样本：实测中位 16.161 W，P90 16.335 W，范围 14.291–16.706 W。热限流优先于功率目标，因此会低于 18 W。 |
+| 跨 30% 与拔线 | 电量覆盖 6→38%，30% 后持续 18 W 目标；此前已因温升降额，不能把这次观察记作单独由 30% 触发的 27→18 W。RUN 从 885.154 至 1981.818 s，共 1096.664 s（约 18.28 分钟）；无 miseed-pps failure，首次 APDO 至物理断开之间无固定 PDO Request。1982.050 s VBUS off 对应维护者拔线接回电脑，随后正常释放所有权、stop/pd_stop=0。 |
+
+全部 RUN 样本的实测 IBUS 未超过当时请求（≤3 A），IBAT 未超过当时 FCC（≤6 A），VBUS≤9.5 V；本轮没有靠调整限值维持 PPS。电池样本温度 27–40°C，PPS 虚拟温度 37.203–42.208°C；虚拟温度是既有板级模型输出，不能与电池温度或完整温标验收混用。25 项有线源码哈希与接入前材料一致，镜像哈希一致；本轮源代码未变。
+
+**本轮有线 L3 通过：** 低 SOC 固定 5 V/SMB5 ≤2 A、PPS 接管/目标爬升、自然升温平滑降低功率、state 8 先降流后收紧源请求且持续 PPS，以及跨 30% 保持 18 W 目标。较慢的主要已观测原因是温升锁定 18 W 与后续 2050 mA 热限流，并非 PPS 自发退回固定 PD。维护者明确保留此实测策略。
+
+**未覆盖：** 81% 起 9 W、硬件 Full 自动旁路交接及全充电周期尚无本轮 L3；既有手动旁路 L3 保留。完整板级温标、固定 PD 实际热触发、硬件故障注入和其他 RISK-004 专项仍开放。维护者已报告手机重启回 Android；本机只读 ADB 枚举为 0 台，故回退状态按维护者报告记录，不声称读取 sys.boot_completed。重启后的未导出 RAM 末段无法补取，已导出首轮完整性不受影响。
+
+本轮 CI 修复与 240 项零跳过/L2/DT/schema 结果见[环境记录](../reviews/2026-11-10-kernel-validation-environment.md#2026-11-12pr6-boot-l2-apt-dns-失败与本地修复)。高风险合并门禁仍须独立专项复核与最终精确 HEAD 远端 CI；此处提交推送授权不包含合并。

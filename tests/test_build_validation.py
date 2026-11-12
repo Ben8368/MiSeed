@@ -50,6 +50,66 @@ class NativeOutputTests(unittest.TestCase):
             self.assertFalse((repo / "native").exists())
 
 
+@unittest.skipUnless(os.name == "posix" and shutil.which("bash"), "POSIX bash required")
+class CiAptTests(unittest.TestCase):
+    def test_actual_install_uses_isolated_signed_sources_and_retains_pins(self):
+        self.run_install(False)
+
+    def test_failed_index_refresh_stops_before_package_install(self):
+        self.run_install(True)
+
+    def run_install(self, fail_update):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        step = workflow.split("      - name: Install pinned kernel build tools\n", 1)[1]
+        step = step.split("      - name:", 1)[0]
+        script = "\n".join(line[10:] for line in step.split("        run: |\n", 1)[1].splitlines())
+        with tempfile.TemporaryDirectory(prefix="apt fixture ") as directory:
+            tmp = Path(directory)
+            binary = tmp / "bin"
+            binary.mkdir()
+            sudo = binary / "sudo"
+            sudo.write_text('''#!/usr/bin/env bash
+printf '%s\\0' "$@" >> "$TEST_APT_CALLS"
+printf '\\n' >> "$TEST_APT_CALLS"
+for argument in "$@"; do
+  if [[ "$argument" == update && "$TEST_APT_FAIL_UPDATE" == 1 ]]; then
+    exit 100
+  fi
+done
+''', encoding="utf-8")
+            sudo.chmod(0o755)
+            calls_file = tmp / "calls"
+            env = dict(os.environ, RUNNER_TEMP=str(tmp / "runner temp"),
+                       PATH=str(binary) + os.pathsep + os.environ["PATH"],
+                       TEST_APT_CALLS=str(calls_file),
+                       TEST_APT_FAIL_UPDATE=str(int(fail_update)))
+            result = subprocess.run(["bash", "-eu", "-o", "pipefail", "-c", script],
+                                    cwd=tmp, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 100 if fail_update else 0, result.stderr)
+            calls = [line.decode().split("\0")[:-1]
+                     for line in calls_file.read_bytes().splitlines()]
+            self.assertEqual(len(calls), 1 if fail_update else 2)
+            for call in calls:
+                self.assertEqual(call[0], "apt-get")
+                for option in ("Acquire::Retries=3", "Acquire::http::Timeout=20",
+                               "Acquire::https::Timeout=20", "APT::Update::Error-Mode=any"):
+                    self.assertIn(option, call)
+                self.assertIn("Dir::Etc::sourceparts=" + str(tmp / "runner temp/miseed-apt/empty-parts"), call)
+            sources = tmp / "runner temp/miseed-apt/sources.list"
+            self.assertTrue((sources.parent / "empty-parts").is_dir())
+            text = sources.read_text()
+            self.assertEqual(text.count("signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg"), 3)
+            self.assertIn("https://archive.ubuntu.com/ubuntu noble-updates", text)
+            self.assertIn("https://security.ubuntu.com/ubuntu noble-security", text)
+            self.assertNotIn("mirror+file", text)
+            self.assertNotIn("trusted=yes", text)
+            if not fail_update:
+                self.assertIn("gcc-13-aarch64-linux-gnu=13.3.0-6ubuntu2~24.04.1cross1", calls[1])
+                self.assertIn("libssl-dev=3.0.13-0ubuntu3.16", calls[1])
+                self.assertNotIn("--allow-unauthenticated", calls[1])
+
+
 class BuildCommandTests(unittest.TestCase):
     def invoke(self, body):
         stream = io.BytesIO()

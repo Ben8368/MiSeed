@@ -23,9 +23,25 @@ jobs:
         with:
           persist-credentials: false
       - name: Install pinned kernel build tools
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends \
+          apt_root="$RUNNER_TEMP/miseed-apt"
+          mkdir -p "$apt_root/empty-parts"
+          printf '%s\n' \
+            'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble main universe' \
+            'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu noble-updates main universe' \
+            'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://security.ubuntu.com/ubuntu noble-security main universe' \
+            > "$apt_root/sources.list"
+          apt_options=(
+            -o "Dir::Etc::sourcelist=$apt_root/sources.list"
+            -o "Dir::Etc::sourceparts=$apt_root/empty-parts"
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=20
+            -o Acquire::https::Timeout=20
+            -o APT::Update::Error-Mode=any
+          )
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install --no-install-recommends \
             gcc-13-aarch64-linux-gnu=13.3.0-6ubuntu2~24.04.1cross1 \
             gcc-aarch64-linux-gnu=4:13.2.0-7ubuntu1 \
             binutils-aarch64-linux-gnu=2.42-4ubuntu2.10 \

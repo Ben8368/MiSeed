@@ -70,3 +70,19 @@ Windows 首次全量测试还有 6 项 overlay 错误：`FDT_ERR_BADSTRUCTURE`�
 | fdtoverlay.exe | `5f2c7af36d3fdc99298f6481fb954a7d8211db8587298e15971ca8833eb92b28` |
 
 🚦 最终自查：范围/接口/故障处理/存储供电凭据 🟢，限定本轮证据；没有改变手机写接口或保护。源码篇幅 🟡：8 项仍归 TD-008，本次 SMB5 hw 为 330 行，保留硬件访问职责与下次按内聚性偿还条件；新增工具/测试均≤300 行。文档预算由最终 L0 验证。PR 规模/硬上限仅有本地估算：相对 origin/main `d9a65dca4a1a9530a44047273f61cabbb5f8b572`，约 1200 新增行/50 文件，低于绿灯阈值；远端 additions/changed_files 未查询。高风险合并验收 🔴：仍须开发者以外专项复核及精确 PR HEAD CI，补齐前不合并；本轮局部 L0/L1/L2/L3 不替代这些门禁。
+
+## 2026-11-12：PR6 Boot L2 apt DNS 失败与本地修复
+
+PR HEAD `bcfd241729f1d285b7d39d598d5556c760efba6d` 的 [Boot L2 job](https://github.com/Ben8368/MiSeed/actions/runs/43051898270/job/130630979722) 在 Install pinned kernel build tools 失败，未执行编译或 DT/schema。日志连续出现 `Temporary failure resolving 'azure.archive.ubuntu.com'`，索引失败后沿用 runner 缓存继续安装，最终 apt 退出 100；不是本轮充电代码的编译失败。其余五项约定 CI 通过，CodeRabbit skipped。
+
+本地仅改 workflow 安装步骤及实际脚本回归：在 RUNNER_TEMP 写独立 sources.list/空 sourceparts，仅使用 archive.ubuntu.com 的 noble/noble-updates 与 security.ubuntu.com 的 noble-security，显式 signed-by Ubuntu archive keyring。update/install 共同使用该配置、3 次重试、HTTP/HTTPS 20 秒超时及 APT::Update::Error-Mode=any，安装步骤上限 10 分钟；不改宿主 DNS/全局源、权限或 14 个工具包版本，不绕过签名校验。配置语义见 [Ubuntu apt.conf](https://manpages.ubuntu.com/manpages/noble/man5/apt.conf.5.html)及[归档签名验证](https://documentation.ubuntu.com/security/software-integrity/archive-verification/)。
+
+Windows 10.0.26200 x64 / PowerShell 7.6.9、WSL Ubuntu 24.04 x86_64；本地核验：
+
+- `python3 -X utf8 -m unittest discover -s tests -p test_build_validation.py -v`：9 项通过，新增直接执行 workflow 安装脚本的来源/版本正例与索引失败不继续安装反例，含带空格路径。
+- `.work/actionlint-1.7.12/actionlint .github/workflows/ci.yml` 与 `shellcheck --severity=error .work/ci-dns-l3-20261112/apt-install.sh`：退出 0。
+- 用同一源配置在独立 `/tmp/miseed-ci-apt-20261112` 下载 35.6 MB 新签名索引，18 秒完成；`apt-get --simulate install` 成功，随后 apt-cache madison 核实所有 14 个精确版本确实存在于配置仓库，未以已安装版本冒充远端可用。没有实际安装/升级宿主包。
+- 全量 Linux 回归 240 项、0 跳过，52.237 秒通过；仓库/来源锁/预算与 diff 检查通过。
+- `.work/ci-dns-l3-20261112/build-l2.sh simpledrm` 调用锁定 `tools/build_kernel_l2.sh` 及 `validate_kernel_dt.py`：ARM64 L2、定向 binding/最终 DTB/schema/四项 DT 反例通过，均退出 0。boot.img SHA-256 `71619df18f35ff4c0b58c0c96b0dddeab5c48986cb6739d59b2ef1baa5aebbc6`，与前一轮一致；充电源代码没有改变。
+
+修复最初按维护者要求保留本地并进入真机 L3；之后维护者要求保持实测策略，核实已有数据后提交推送 PR #6。本地通过不替代新 HEAD 的远端 CI，旧失败是否关闭须查新 run；材料与现场证据见[有线记录](../hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
