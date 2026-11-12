@@ -34,7 +34,7 @@ int umi_smb5_claim(struct power_supply *psy)
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
 	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit ||
-	    chip->full_bypass || chip->power_stage >= 4) {
+	    chip->full_bypass || chip->power_stage >= 2) {
 		rc = -EBUSY;
 		goto out;
 	}
@@ -166,7 +166,7 @@ void smb5_status_change_work(struct work_struct *work)
  if (!rc && online && health == POWER_SUPPLY_HEALTH_GOOD &&
      chip->full_bypass && soc >= 0 && soc <= UMI_CHARGE_RESUME_SOC) {
   chip->full_bypass = false;
-  chip->power_stage = 4; /* Recharge remains on the 5 W SMB5 path. */
+	  chip->power_stage = 2; /* Recharge remains on the 5 W SMB5 path. */
  }
  if (!rc && online && soc >= 0 && soc <= 100)
   chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));

@@ -47,38 +47,35 @@ static void test_power_policy(void)
 		assert(p.target_mw == 18000 && !p.steady);
 	}
 	/* Delayed I/O permits one step, not a catch-up leap. */
-	s.soc = 16;
+	s.soc = 15;
 	umi_pps_power_update(&p, &s, 37999, 60000);
 	assert(!p.steady && p.target_mw == 18000);
-	s.soc = 15;
+	s.soc = 16;
 	for (int i = 1; i <= 3; i++) {
 		previous = p.target_mw;
 		umi_pps_power_update(&p, &s, 35000, 60000 + i * 1000);
-		assert(p.target_mw == previous && !p.steady && p.stage == 2);
+		assert(p.target_mw == previous && !p.steady && p.stage == 1);
 	}
 	umi_pps_power_update(&p, &s, 35000, 64000);
-	assert(p.target_mw == 18000 && p.stage == 2);
+	assert(p.target_mw == 18000 && p.stage == 1);
 	s.soc = 30;
 	umi_pps_power_update(&p, &s, 35000, 65000);
 	assert(p.target_mw == 18000 && !p.steady);
-	s.soc = 31;
+	s.soc = 70;
 	for (int i = 1; i <= 5; i++)
 		umi_pps_power_update(&p, &s, 35000, 65000 + i * 1000);
-	assert(p.target_mw == 18000 && p.stage == 3 && p.steady);
-	s.soc = 70;
-	umi_pps_power_update(&p, &s, 35000, 71000);
-	assert(p.target_mw == 18000);
+	assert(p.target_mw == 18000 && p.stage == 1 && !p.steady);
 	s.soc = 71;
 	for (int i = 1; i <= 13; i++)
-		umi_pps_power_update(&p, &s, 35000, 71000 + i * 1000);
-	assert(p.target_mw == 5000 && p.stage == 4);
+		umi_pps_power_update(&p, &s, 35000, 70000 + i * 1000);
+	assert(p.target_mw == 5000 && p.stage == 2);
 	s.soc = 70;
 	umi_pps_power_update(&p, &s, 35000, 85000);
-	assert(p.target_mw == 5000 && p.stage == 4);
+	assert(p.target_mw == 5000 && p.stage == 2);
 	p = (struct umi_pps_power){0};
 	s.soc = 5;
 	umi_pps_power_update(&p, &s, 35000, 100);
-	assert(p.target_mw == 10000 && p.stage == 0);
+	assert(p.target_mw == 5000 && p.stage == 0);
 	p = (struct umi_pps_power){0}; /* PPS is not active in the fixed-PD stage. */
 	s.soc = 6;
 	umi_pps_power_update(&p, &s, 35000, 1100);
@@ -131,7 +128,7 @@ static void test_power_policy(void)
 	assert(c.power.target_mw == 18000 && !c.power.steady && !fixed_count);
 	bms.prop[POWER_SUPPLY_PROP_CAPACITY] = 31;
 	for (int i = 0; i < 120; i++) power_tick();
-	assert(c.power.target_mw == 18000 && c.power.steady && !fixed_count);
+	assert(c.power.target_mw == 18000 && !c.power.steady && !fixed_count);
 	requests = voltage_requests;
 	bms.prop[POWER_SUPPLY_PROP_CAPACITY] = 29;
 	for (int i = 0; i < 50; i++) {
@@ -158,7 +155,8 @@ static void test_power_policy(void)
 	reset();
 	bms.prop[POWER_SUPPLY_PROP_CAPACITY] = 31;
 	run();
-	assert(c.power.steady && c.power.target_mw == 18000);
+	assert(!c.power.steady && c.power.target_mw == 18000);
+	c.power.steady = 1; /* Preserve a real thermal-exit latch across user stop. */
 	assert(!umi_pps_stop(&c, PPS_OFF, 0));
 	assert(c.power.steady);
 	pd.prop[POWER_SUPPLY_PROP_ONLINE] = 0;

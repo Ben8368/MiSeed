@@ -24,7 +24,7 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-取舍：有线 PPS 保留 umi_smb5_* 互锁，check 在独占期间传递SOC阶段以衔接81%旁路；BQ已拆分，见[记录](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。故障停泵/重试/恢复L3保留；持续BQ I²C失败仍阻塞卸载/关机。
+取舍：有线 PPS 保留 umi_smb5_* 互锁，check 在独占期间传递合并后的SOC阶段以衔接81%旁路；BQ已拆分，见[记录](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。故障停泵/重试/恢复L3保留；持续BQ I²C失败仍阻塞卸载/关机。
 
 偿还：WP9 闭合持续 I²C 失败的有界回退；watchdog 草稿尚无 BQ25970 到期停泵/恢复 L3，不能据此限时释放。拆分后生命周期/保护 L3、所有权独立复核及 Debian/其他板型待验。
 

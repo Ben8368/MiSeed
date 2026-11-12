@@ -61,11 +61,11 @@ int main(void) {
         source = power_source("qcom_pm8150b_charger")
         functions = []
         for name in ("int smb5_inhibit_with_fallback(",
+                     "int smb5_get_iio_chan(",
                      "int smb5_power_limit(",
                      "int smb5_get_charge_control_threshold(",
                      "void smb5_status_change_work(",
                      "irqreturn_t smb5_handle_usb_plugin(",
-                     "int smb5_get_iio_chan(",
                      "static ssize_t charge_test_store("):
             start = source.index(name)
             stop = source.index("\n}\n", start) + 3
@@ -110,6 +110,7 @@ struct smb5_chip {
  bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
  bool full_bypass;
  int power_stage;
+ void *usb_in_v_chan;
  unsigned int policy_icl_ua, saved_icl_ua;
  unsigned long test_deadline;
  unsigned long cooling_state;
@@ -122,7 +123,8 @@ static int values[] = { 1, 300, 4100000, 78, 0 };
 static int health = POWER_SUPPLY_HEALTH_GOOD, enabled, feeds, suspends;
 static int charge_status, status_error;
 static unsigned int input_limit = 3000000;
-static int adc_reads, adc_error;
+static struct iio_channel input_voltage_channel;
+static int adc_reads, voltage_reads, adc_error;
 #define container_of(ptr, type, member) ((type *)((char *)(ptr) - offsetof(type, member)))
 #define time_after_eq(a,b) ((long)((a) - (b)) >= 0)
 #define mutex_lock(p) ((void)(p))
@@ -158,7 +160,7 @@ static int regmap_write(void *map, unsigned int reg, unsigned int v)
 static int smb5_set_prop_charging_enabled(struct smb5_chip *c, unsigned int v)
 { (void)c; if (v == 1 && stop_error) return stop_error; enabled = !v; return 0; }
 static int iio_read_channel_processed(struct iio_channel *chan, int *value)
-{ (void)chan; ++adc_reads; if (adc_error) return adc_error; *value = 1234; return 0; }
+{ if (adc_error) return adc_error; if (chan == &input_voltage_channel) { ++voltage_reads; *value = 5000000; } else { ++adc_reads; *value = 1234; } return 0; }
 '''
         harness += "\n".join(functions) + r'''
 static void tick(struct smb5_chip *c, unsigned long t, int plugged)
@@ -172,7 +174,8 @@ static void arm(struct smb5_chip *c, const char *command)
 #include "smb5_power_cases.h"
 int main(void) {
  struct smb5_chip c = { .inhibit = true, .max_fv_uv = 4400000,
-                       .test_seconds = UMI_CHARGE_TEST_SECONDS };
+                       .test_seconds = UMI_CHARGE_TEST_SECONDS,
+                       .usb_in_v_chan = &input_voltage_channel };
  struct device d = { &c };
  assert(UMI_CHARGE_EXTENDED_TEST_SECONDS == 600);
  tick(&c, 0, 1); assert(!enabled && !feeds);

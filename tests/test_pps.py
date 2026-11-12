@@ -101,28 +101,42 @@ class PpsTests(unittest.TestCase):
 #include "umi_pps_policy.h"
 struct smb5_chip {
  int enabled, power_stage;
+ void *usb_in_v_chan;
  unsigned int policy_icl_ua, saved_icl_ua;
 };
 static unsigned int current = 3000000;
-static int read_error, write_error, writes;
+static int input_uv = 5000000, read_error, voltage_error, write_error, writes;
 static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 { (void)c; *v = current; return read_error; }
+static int smb5_get_iio_chan(struct smb5_chip *c, void *chan, int *v)
+{ (void)c; (void)chan; *v = input_uv; return voltage_error; }
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; writes++; if (write_error) return write_error; current = v; return 0; }
 ''' + function + r'''
 int main(void) {
  struct smb5_chip c = {0};
- assert(!smb5_power_limit(&c, 5) && current == 2000000 && c.power_stage == 0);
+ assert(!smb5_power_limit(&c, 5) && current == 1000000 && c.power_stage == 0);
  c.enabled = 1;
- for (int i = 0; i < 12; i++) assert(!smb5_power_limit(&c, 6));
+ for (int i = 0; i < 20; i++) assert(!smb5_power_limit(&c, 6));
  assert(current == 3000000 && c.power_stage == 1);
  assert(!smb5_power_limit(&c, 5) && current == 3000000);
- assert(!smb5_power_limit(&c, 30) && c.power_stage == 2);
+ assert(!smb5_power_limit(&c, 30) && c.power_stage == 1);
  assert(!smb5_power_limit(&c, 70) && current == 3000000);
  for (int i = 0; i < 20; i++) assert(!smb5_power_limit(&c, 71));
- assert(current == 1000000 && c.power_stage == 4);
+ assert(current == 1000000 && c.power_stage == 2);
  assert(!smb5_power_limit(&c, 70) && current == 1000000);
  assert(!smb5_power_limit(&c, 80) && current == 1000000);
+ c = (struct smb5_chip){0}; current = 3000000; input_uv = 9000000;
+ assert(!smb5_power_limit(&c, 10) && current == 2000000 && c.power_stage == 1);
+ c = (struct smb5_chip){0}; current = 3000000;
+ assert(!smb5_power_limit(&c, 5) && current == 555555);
+ voltage_error = -EIO; int before_voltage = writes;
+ assert(smb5_power_limit(&c, 6) == -EIO && writes == before_voltage);
+ voltage_error = 0; input_uv = 0;
+ assert(smb5_power_limit(&c, 6) == -ERANGE && writes == before_voltage);
+ input_uv = -1;
+ assert(smb5_power_limit(&c, 6) == -ERANGE && writes == before_voltage);
+ input_uv = 5000000;
  current = 500000; /* A user limit is never silently raised. */
  assert(!smb5_power_limit(&c, 80) && current == 500000);
  c.power_stage = 0; /* USB unplug resets the stage, not the user's ceiling. */

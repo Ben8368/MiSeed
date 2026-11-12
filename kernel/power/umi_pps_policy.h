@@ -215,8 +215,8 @@ static inline int umi_pps_control_vbat(const struct umi_pps_sample *s)
 	return umi_pps_max(s->vbat_mv, s->pump_vbat_mv);
 }
 
-/* SOC stages advance once per insertion; the wired PPS target is 18 W.
- * Existing 9.5 V / 3 A / 6 A and thermal gates always win.
+/* The wired fast-charge band uses one 18 W target. SOC stage changes only
+ * select the 5 W handoff or bypass; existing electrical and thermal gates win.
  * Called once per validated sample; never filter protection measurements.
  */
 static inline void umi_pps_power_update(struct umi_pps_power *p,
@@ -225,11 +225,11 @@ static inline void umi_pps_power_update(struct umi_pps_power *p,
 	int goal, measured;
 
 	p->stage = umi_pps_max(p->stage, umi_pps_soc_stage(s->soc));
-	if (p->stage >= 3 || virtual_mc >= UMI_PPS_BOOST_EXIT_MC ||
+	if (virtual_mc >= UMI_PPS_BOOST_EXIT_MC ||
 	    s->thermal_bat_ma < UMI_PPS_BAT_MAX_MA)
 		p->steady = 1;
-	goal = p->stage == 0 ? UMI_WIRED_PRECHARGE_MW :
-		p->stage >= 4 ? UMI_WIRED_FINISH_MW : UMI_PPS_TARGET_MW;
+	goal = p->stage == 0 || p->stage == 2 ?
+		UMI_WIRED_FINISH_MW : UMI_PPS_TARGET_MW;
 	if (p->steady)
 		goal = umi_pps_min(goal, UMI_PPS_STEADY_MW);
 	if (!p->target_mw) {

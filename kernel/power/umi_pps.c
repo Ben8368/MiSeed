@@ -396,7 +396,7 @@ void umi_pps_work(struct work_struct *work)
 	umi_pps_power_update(&c->power, &s, c->thermal.virtual_mc, umi_pps_now());
 	/* The 71% handoff first reduces pump input to the 5 W finishing budget.
 	 * Existing raw protection gates above remain immediate throughout. */
-	if (c->power.stage == 4 && c->power.target_mw == UMI_WIRED_FINISH_MW &&
+	if (c->power.stage == 2 && c->power.target_mw == UMI_WIRED_FINISH_MW &&
 	    c->power.filtered_mw <= UMI_WIRED_FINISH_MW + UMI_PPS_POWER_BAND_MW &&
 	    s.vbus_mv * s.ibus_ma / 1000 <= UMI_WIRED_FINISH_MW + UMI_PPS_POWER_BAND_MW) {
 		umi_pps_stop(c, PPS_DONE, 0);

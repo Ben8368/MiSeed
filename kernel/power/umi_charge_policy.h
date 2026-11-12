@@ -16,16 +16,16 @@
 #define UMI_CHARGE_TEST_SECONDS 60
 #define UMI_CHARGE_EXTENDED_TEST_SECONDS 600
 
-#define UMI_WIRED_FINISH_MW 5000
-#define UMI_WIRED_PRECHARGE_MW 10000
+#define UMI_WIRED_LOW_MW 5000
+#define UMI_WIRED_FINISH_MW UMI_WIRED_LOW_MW
 #define UMI_PPS_ENTRY_SOC 6
 #define UMI_PPS_FINISH_SOC 71
-#define UMI_WIRED_BYPASS_STAGE 5
+#define UMI_WIRED_BYPASS_STAGE 3
 
 static inline int umi_pps_soc_stage(int soc)
 {
-	return soc < 6 ? 0 : soc <= 15 ? 1 : soc <= 30 ? 2 :
-		soc <= 70 ? 3 : soc <= 80 ? 4 : UMI_WIRED_BYPASS_STAGE;
+	return soc < UMI_PPS_ENTRY_SOC ? 0 : soc < UMI_PPS_FINISH_SOC ? 1 :
+		soc <= 80 ? 2 : UMI_WIRED_BYPASS_STAGE;
 }
 
 static inline int umi_charge_policy(int online, int present, int good,

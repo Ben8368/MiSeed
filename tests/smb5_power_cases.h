@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* Exercise the actual SMB5 worker: finishing input limit and 81/71 hysteresis. */
+/* Exercise SMB5's 5/18/5 W bands and 81/71 bypass hysteresis. */
 static void test_smb5_power_and_recharge(void)
 {
- struct smb5_chip c = { .max_fv_uv = 4400000 };
+ struct smb5_chip c = { .max_fv_uv = 4400000,
+                        .usb_in_v_chan = &input_voltage_channel };
  int previous, old_feeds;
  unsigned long t = 0;
 
@@ -14,22 +15,22 @@ static void test_smb5_power_and_recharge(void)
  input_limit = 3000000;
  values[POWER_SUPPLY_PROP_CAPACITY] = 5;
  tick(&c, t++, 1);
- assert(enabled && input_limit == 2000000 && c.power_stage == 0);
+ assert(enabled && input_limit == 1000000 && c.power_stage == 0);
  values[POWER_SUPPLY_PROP_CAPACITY] = 6;
- for (int i = 0; i < 10; i++) tick(&c, t++, 1);
+ for (int i = 0; i < 20; i++) tick(&c, t++, 1);
  assert(enabled && input_limit == 3000000 && c.power_stage == 1);
  values[POWER_SUPPLY_PROP_CAPACITY] = 16;
- tick(&c, t++, 1); assert(c.power_stage == 2);
+ tick(&c, t++, 1); assert(c.power_stage == 1);
  values[POWER_SUPPLY_PROP_CAPACITY] = 31;
- tick(&c, t++, 1); assert(c.power_stage == 3);
+ tick(&c, t++, 1); assert(c.power_stage == 1);
  values[POWER_SUPPLY_PROP_CAPACITY] = 71;
  for (int i = 0; i < 20; i++) {
   previous = input_limit; tick(&c, t++, 1);
   assert(enabled && input_limit == (unsigned int)previous - 100000);
  }
- assert(input_limit == 1000000 && c.power_stage == 4);
+ assert(input_limit == 1000000 && c.power_stage == 2);
  values[POWER_SUPPLY_PROP_CAPACITY] = 70;
- tick(&c, t++, 1); assert(input_limit == 1000000 && c.power_stage == 4);
+ tick(&c, t++, 1); assert(input_limit == 1000000 && c.power_stage == 2);
  values[POWER_SUPPLY_PROP_CAPACITY] = 80;
  tick(&c, t++, 1); assert(enabled && !c.full_bypass);
  values[POWER_SUPPLY_PROP_CAPACITY] = 81;
@@ -48,14 +49,14 @@ static void test_smb5_power_and_recharge(void)
  battery_error = -EIO;
  tick(&c, t++, 1); assert(!enabled && c.full_bypass);
  battery_error = 0; c.cooling_state = 1;
- tick(&c, t++, 1); assert(!enabled && !c.full_bypass && c.power_stage == 4);
+ tick(&c, t++, 1); assert(!enabled && !c.full_bypass && c.power_stage == 2);
  c.cooling_state = 0; c.inhibit = true;
  tick(&c, t++, 1); assert(!enabled);
  c.inhibit = false;
  tick(&c, t++, 1); assert(enabled && input_limit == 1000000); /* 71% resumes 5 W. */
  values[POWER_SUPPLY_PROP_CAPACITY] = 71;
  for (int i = 0; i < 20; i++) tick(&c, t++, 1);
- assert(enabled && input_limit == 1000000 && c.power_stage == 4);
+ assert(enabled && input_limit == 1000000 && c.power_stage == 2);
  /* Failed inhibition must not raise the input budget or feed watchdog. */
  values[POWER_SUPPLY_PROP_CAPACITY] = 81;
  stop_error = -EIO; old_feeds = feeds;
@@ -66,7 +67,7 @@ static void test_smb5_power_and_recharge(void)
  /* An external stricter ICL remains authoritative, including bypass. */
  input_limit = 800000;
  tick(&c, t++, 1); assert(input_limit == 800000 && c.full_bypass);
- values[POWER_SUPPLY_PROP_CAPACITY] = 70; /* A skipped 71% sample still uses 5 W. */
+ values[POWER_SUPPLY_PROP_CAPACITY] = 70; /* Resume stays in the 5 W band. */
  tick(&c, t++, 1); assert(enabled && input_limit == 800000 && !c.full_bypass);
 }
 

@@ -72,12 +72,12 @@ int main(void) {
  write_error=1;assert(umi_smb5_claim(&p)==-EIO && c.pps_owned);
  write_error=0;assert(!umi_smb5_release(&p));
  assert(!umi_smb5_claim(&p));
- assert(umi_smb5_check(&p, 4)==4380000 && c.power_stage==4);
+ assert(umi_smb5_check(&p, 2)==4380000 && c.power_stage==2);
  assert(!umi_smb5_release(&p));
  assert(umi_smb5_claim(&p)==-EBUSY); /* No 70/71% repeated pump restart. */
- c.power_stage=3;
+ c.power_stage=1;
  assert(!umi_smb5_claim(&p));
- assert(umi_smb5_check(&p, 5)==4380000 && c.full_bypass);
+ assert(umi_smb5_check(&p, 3)==4380000 && c.full_bypass);
  assert(!umi_smb5_release(&p) && !charge && input==0);
  assert(umi_smb5_claim(&p)==-EBUSY); /* Bypass cannot be overridden by PPS. */
  return 0;

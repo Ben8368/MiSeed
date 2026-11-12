@@ -16,12 +16,14 @@
 #include "qcom_pm8150b_internal.h"
 #include "umi_pps_policy.h"
 
-/* Fixed 5 V supplies the low-SOC 10 W and 71-80% 5 W stages.
- * Preserve any observed external ICL change as the new, stricter baseline.
+/* Fixed PD uses the same 18 W fast-charge target as PPS where the PDO allows
+ * it; low/finishing bands target 5 W. Preserve any stricter external ICL.
  */
 int smb5_power_limit(struct smb5_chip *chip, int soc)
 {
 	unsigned int icl_ua, target;
+	int input_uv;
+	int target_mw;
 	int rc = smb5_get_current_limit(chip, &icl_ua);
 
 	if (rc)
@@ -29,8 +31,21 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
 		chip->saved_icl_ua = icl_ua;
 	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
-	target = chip->power_stage == 0 ? UMI_WIRED_PRECHARGE_MW * 1000 / 5 :
-		chip->power_stage == 4 ? UMI_WIRED_FINISH_MW * 1000 / 5 : UMI_CHARGE_USB_ICL_UA;
+	if (chip->power_stage == UMI_WIRED_BYPASS_STAGE) {
+		target = UMI_CHARGE_USB_ICL_UA;
+	} else {
+		target_mw = chip->power_stage == 0 ? UMI_WIRED_LOW_MW :
+			chip->power_stage == 2 ? UMI_WIRED_FINISH_MW : UMI_PPS_TARGET_MW;
+		rc = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input_uv);
+		if (rc)
+			return rc;
+		if (input_uv <= 0)
+			return -ERANGE;
+		target = (unsigned int)((long long)target_mw * 1000000000LL /
+				input_uv);
+		if (target > UMI_CHARGE_USB_ICL_UA)
+			target = UMI_CHARGE_USB_ICL_UA;
+	}
 	target = umi_pps_min(target, chip->saved_icl_ua);
 	if (icl_ua < target)
 		target = umi_pps_min(target, icl_ua + 100000);
