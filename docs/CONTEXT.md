@@ -4,7 +4,7 @@
 
 WP10 使用 SN100T Linux NFC/NCI 与标准 Netlink；新驱动 RF/读卡/恢复 L3、eSE 和 Debian 服务待验，见[NFC 适配](archive/research/2026-11-10-sn100t-linux-nci.md)。
 
-有线新策略已过240项L1及双配置L2/DT。新L3 6→56%：PPS约49分钟持续，1.2→2.0A降额回升通过，峰值14.60W；71/81旁路复充、热暂停待验。本轮附带记录下次提交删除；设备仍RAM，见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。温标及源码黄灯开放。
+有线新策略已过240项L1及双配置L2/DT。新L3 6→56%：PPS约49分钟持续，1.2→2.0A降额回升通过，峰值14.60W；71/81旁路复充、热暂停待验。完整日志附件下次提交移出源码，验证文档保留；设备仍RAM，见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。温标及源码黄灯开放。
 
 有线 SMB5 bit5 状态误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM 启动/Android 回退 L3 通过，见[真机读数](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 
