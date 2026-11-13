@@ -46,6 +46,13 @@ static irqreturn_t smb5_handle_usb_plugin(int irq, void *data)
 	rc = smb5_get_prop_usb_online(chip, &online);
 	if (!rc && !online) {
 		mutex_lock(&chip->lock);
+		chip->full_bypass = false;
+		chip->power_stage = 0;
+		chip->pps_fault = false;
+		chip->pd_transition = false;
+		chip->pd_limit_uv = chip->pd_voltage_uv = chip->pd_current_ua = 0;
+		chip->thermal_sampled = chip->thermal_recover = false;
+		chip->thermal_drop_ua = 0;
 		if (chip->test_armed && !chip->test_active)
 			chip->test_saw_disconnect = true;
 		mutex_unlock(&chip->lock);
@@ -149,6 +156,11 @@ static int smb5_probe(struct platform_device *pdev)
  chip->bms = devm_power_supply_get_by_reference(chip->dev, "qcom,fuel-gauge");
  if (IS_ERR(chip->bms)) return PTR_ERR(chip->bms);
  if (!chip->bms) return -EPROBE_DEFER;
+ chip->pd = devm_power_supply_get_by_reference(chip->dev, "power-supplies");
+ if (IS_ERR(chip->pd)) return PTR_ERR(chip->pd);
+ if (!chip->pd) return -EPROBE_DEFER;
+ if (!device_link_add(chip->dev, chip->pd->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER))
+  return -ENOMEM;
  if (!device_link_add(chip->dev, chip->bms->dev.parent, DL_FLAG_AUTOREMOVE_CONSUMER))
   return -ENOMEM;
  rc = devm_delayed_work_autocancel(chip->dev, &chip->status_change_work, smb5_status_change_work);
@@ -218,6 +230,9 @@ static int smb5_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, rc, "Couldn't set wake irq\n");
 
 	platform_set_drvdata(pdev, chip);
+	rc = smb5_register_thermal(chip);
+	if (rc)
+		return rc;
 #ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
  rc = devm_device_add_group(&chip->chg_psy->dev, &smb5_group);
  if (rc) return rc;

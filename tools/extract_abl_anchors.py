@@ -10,7 +10,7 @@ from pathlib import Path
 
 ALL_SYMBOL = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^\"]+)";\s*$')
 INCLUDE = re.compile(r'^\s*#include\s+"([^"]+)"|^\s*/include/\s+"([^"]+)"')
-ISOLATED_TARGETS = ("soc", "spmi_bus", "tlmm")
+ISOLATED_TARGETS = ("soc", "spmi_bus", "tlmm", "mdss_mdp", "sdhc_2")
 
 LABEL = re.compile(r'(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:')
 
@@ -102,7 +102,11 @@ def main() -> int:
     # These downstream targets must never resolve to live mainline buses.
     # Export is redirected after dtc; compiled mainline phandles stay intact.
     for name in ISOLATED_TARGETS:
-        content.append(f'\t\tmiseed_dtbo_{name}: isolated-{name.replace("_", "-")} {{ status = "disabled"; }};')
+        node = "isolated-" + name.replace("_", "-")
+        if name in ("mdss_mdp", "sdhc_2"):
+            content.append(f'\t\t{node} {{ status = "disabled"; miseed_dtbo_{name}: target {{ status = "disabled"; }}; }};')
+        else:
+            content.append(f'\t\tmiseed_dtbo_{name}: {node} {{ status = "disabled"; }};')
     content.append("\t};")
     generated = "\n".join(content) + "\n"
     if len(sys.argv) == 7:

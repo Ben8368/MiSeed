@@ -9,6 +9,8 @@ ATTRIBUTES = ("type", "model_name", "status", "health", "online", "present",
               "capacity", "voltage_now", "current_now", "temp",
               "charge_full_design", "voltage_min_design", "voltage_max_design",
               "input_current_limit", "charge_behaviour", "usb_type")
+BATTERY_NAME = "qcom-battery"
+SWITCH_CHARGER_NAME = "pm8150b-charger"
 
 
 def discover(root):
@@ -17,8 +19,8 @@ def discover(root):
     if not root.is_dir():
         raise ValueError("power_supply class is missing")
     for path in root.iterdir():
-        if path.name in ("qcom-battery", "pm8150b-charger"):
-            role = "battery" if path.name == "qcom-battery" else "switch_charger"
+        if path.name in (BATTERY_NAME, SWITCH_CHARGER_NAME):
+            role = "battery" if path.name == BATTERY_NAME else "switch_charger"
         else:
             try:
                 model = (path / "model_name").read_text().strip()
@@ -46,6 +48,31 @@ def snapshot(supplies):
                 values[attr] = {"error": exc.errno}
         result[role] = values
     return result
+
+
+def ups_status(supplies_snapshot):
+    """Report wired input presence independently from the battery's status.
+
+    A battery may report Discharging while bypass power is active, so only the
+    wired switch charger’s standard `online` property determines input state.
+    Missing, unreadable, and malformed values remain unknown.
+    """
+    charger = supplies_snapshot.get("switch_charger", {})
+    online = charger.get("online")
+    if online == "1":
+        wired_power = "online"
+    elif online == "0":
+        wired_power = "offline"
+    else:
+        wired_power = "unknown"
+
+    battery = supplies_snapshot.get("battery", {})
+    return {
+        "external_wired_power": wired_power,
+        "external_wired_power_online": online,
+        "battery_status": battery.get("status", "unknown"),
+        "battery_capacity": battery.get("capacity", "unknown"),
+    }
 
 
 def set_behaviour(supplies, action):
@@ -80,7 +107,9 @@ def main():
         supplies = discover(args.sysfs_root)
         missing = sorted({"battery", "switch_charger", "pump"} - supplies.keys())
         errors = {} if args.action == "status" else set_behaviour(supplies, args.action)
-        print(json.dumps({"scope": "wired", "supplies": snapshot(supplies),
+        values = snapshot(supplies)
+        print(json.dumps({"scope": "wired", "supplies": values,
+                          "ups": ups_status(values),
                           "missing": missing, "control_errors": errors}, indent=2))
         return int(bool(missing or errors))
     except (OSError, ValueError) as exc:

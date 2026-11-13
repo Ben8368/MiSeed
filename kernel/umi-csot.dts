@@ -8,7 +8,9 @@
 /dts-v1/;
 
 #include <dt-bindings/arm/qcom,ids.h>
+#include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include "sm8250.dtsi"
 #include "pm8150.dtsi"
@@ -53,6 +55,21 @@
 			height = <2340>;
 			stride = <4320>;
 			format = "a8r8g8b8";
+		};
+	};
+
+	/* Volume Up is wired to PM8150 GPIO6 on Xiaomi Mi 10 (umi). */
+	gpio_keys: gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&vol_up_n>;
+
+		key-volume-up {
+			label = "Volume Up";
+			gpios = <&pm8150_gpios 6 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_VOLUMEUP>;
+			debounce-interval = <15>;
+			wakeup-source;
 		};
 	};
 
@@ -114,6 +131,27 @@
 	mode-bootloader = <0x2>;
 };
 
+/* PON PWRKEY is power; PON RESIN is the volume-down input on umi. */
+&pon_pwrkey {
+	status = "okay";
+};
+
+&pon_resin {
+	linux,code = <KEY_VOLUMEDOWN>;
+	status = "okay";
+};
+
+/* Umi volume-up is active-low on PM8150 GPIO6, separate from SM8250 TLMM. */
+&pm8150_gpios {
+	vol_up_n: vol-up-n-state {
+		pins = "gpio6";
+		function = "normal";
+		power-source = <1>;
+		input-enable;
+		bias-pull-up;
+	};
+};
+
 /* Umi test profile exposes only the active consumers: UART12 34/35,
  * I2C15 44/45, the LOS BQ25970 fault IRQ on GPIO68, and the NQ NFC signals
  * on GPIO7/83/110/111 with QUP1 I2C on GPIO4/5. Keep GPIO8 reserved: its LOS
@@ -165,6 +203,8 @@
 };
 
 &i2c1 {
+	/* Match Umi's active Android DT qcom,clk-freq-out: 1 MHz. */
+	clock-frequency = <1000000>;
 	status = "okay";
 
 	umi_nfc: nfc@28 {

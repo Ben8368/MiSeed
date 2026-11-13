@@ -18,6 +18,31 @@
 		charge-full-design-microamp-hours = <4780000>;
 		constant-charge-voltage-max-microvolt = <4450000>;
 	};
+
+	/* Wired fixed-PD/SMB5: conservative stop using its existing warm bound.
+	 * Cold/invalid sensors remain independently gated by the SMB5 worker.
+	 * The PPS six-sensor model and wireless RX/TX are separate.
+	 */
+	thermal-zones {
+		wired-pd-thermal {
+			polling-delay-passive = <1000>;
+			polling-delay = <1000>;
+			thermal-sensors = <&umi_charger>;
+			trips {
+				umi_wired_pd_warm: warm {
+					temperature = <45000>;
+					hysteresis = <0>;
+					type = "passive";
+				};
+			};
+			cooling-maps {
+				map-warm {
+					trip = <&umi_wired_pd_warm>;
+					cooling-device = <&umi_charger 1 1>;
+				};
+			};
+		};
+	};
 };
 
 &spmi_bus {
@@ -42,6 +67,9 @@
 			io-channel-names = "usb_in_i_uv", "usb_in_v_div_16";
 			monitored-battery = <&umi_battery>;
 			qcom,fuel-gauge = <&umi_fg>;
+			power-supplies = <&pm8150b_typec>;
+			#thermal-sensor-cells = <0>;
+			#cooling-cells = <2>;
 		};
 	};
 };

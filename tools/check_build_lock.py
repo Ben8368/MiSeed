@@ -18,7 +18,12 @@ PROFILE = "umi-csot-boot-l2"
 MANIFEST = "manifests/sources.lock.json"
 SCRIPT = "tools/build_kernel_l2.sh"
 REQUIRED_INPUTS = {
+    "tools/tcpm_fixed_profile.py", "kernel/power/tcpm_fixed_profile.inc",
     SCRIPT, "tools/check_build_lock.py", "tools/verify_kernel_source.py",
+    "tools/fetch_kernel_source.py", "tests/test_kernel_source_fetch.py",
+    "tools/run_build_command.py",
+    "tools/validate_kernel_dt.py", "tools/requirements-dtschema.txt",
+    "tools/check_wired_dt.py", "tests/test_wired_dt.py",
     "tools/download_locked.py", "tools/extract_abl_anchors.py",
     "tools/extract_boot_v2_dtb.py", "tools/isolate_abl_targets.py",
     "tools/apply_power_port.py",
@@ -36,6 +41,18 @@ REQUIRED_INPUTS = {
     "kernel/nfc/sn100x.c", "kernel/nfc/Kconfig",
     "kernel/nfc/bindings/nxp,sn100t.yaml",
     "LICENSES/BSD-3-Clause.txt", "LICENSES/GPL-2.0-only.txt",
+    "tools/apply_display_port.py", "tools/check_runtime_dt.py",
+    "tests/test_runtime_dt.py", "tests/test_native_display.py", "tests/native_panel_harness.c",
+    "tests/test_display_handoff.py",
+    "tools/apply_clock_handoff.py", "tests/test_clock_handoff.py",
+    "tools/collect_display_evidence.py", "tests/test_display_diagnostics.py",
+    "tools/collect_dtbo.py", "tools/dtbo_table.py", "tests/test_dtbo_table.py",
+    "tests/display_diagnostics_harness.c",
+    "tests/test_bq_lifecycle.py", "tests/bq_lifecycle_harness.c",
+    "kernel/display/panel-xiaomi-umi-csot.c", "kernel/display/umi_csot_commands.h",
+    "kernel/display/umi_abl_ubwc.h",
+    "kernel/display/Kconfig", "kernel/display/umi-native-dsi.dtsi",
+    "kernel/display/umi-native-dsi.config", "kernel/display/bindings/xiaomi,umi-csot.yaml",
 } | SPLIT_INPUTS
 
 
@@ -92,6 +109,14 @@ def check_build_lock(root, actual=None):
                     or not isinstance(source.get("patches"), list)):
                 raise ValueError(f"invalid reviewed source identity: {field}")
             resolved[field] = source
+        kernel = resolved["kernel_source"]
+        mirror_url = kernel.get("mirror_url")
+        tag = kernel.get("tag")
+        tag_object = kernel.get("tag_object")
+        if (not isinstance(mirror_url, str) or not re.fullmatch(r"https://[^\s]+", mirror_url)
+                or not isinstance(tag, str) or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag)
+                or not isinstance(tag_object, str) or not re.fullmatch(r"[0-9a-f]{40}", tag_object)):
+            raise ValueError("invalid locked Linux mirror/tag identity")
         template = profile["boot_header_template"]
         if (not isinstance(template, dict) or not isinstance(template.get("url"), str)
                 or not re.fullmatch(r"https://[^\s]+", template["url"])
@@ -101,6 +126,9 @@ def check_build_lock(root, actual=None):
         expected = {
             "kernel_url": resolved["kernel_source"]["url"],
             "kernel_revision": resolved["kernel_source"]["revision"],
+            "kernel_mirror_url": mirror_url,
+            "kernel_tag": tag,
+            "kernel_tag_object": tag_object,
             "reference_revision": resolved["device_reference"]["revision"],
             "boot_url": template["url"], "boot_sha256": template["sha256"],
         }
@@ -143,7 +171,8 @@ def check_build_lock(root, actual=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    keys = ("kernel_url", "kernel_revision", "reference_revision", "boot_url", "boot_sha256")
+    keys = ("kernel_url", "kernel_revision", "kernel_mirror_url", "kernel_tag",
+            "kernel_tag_object", "reference_revision", "boot_url", "boot_sha256")
     for key in keys:
         parser.add_argument("--" + key.replace("_", "-"))
     args = parser.parse_args()

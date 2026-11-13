@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* Read-only diagnostic PID 1 for the first MiSeed Umi/CSOT RAM boot. */
+/* Diagnostic PID 1 for the first MiSeed Umi/CSOT RAM boot; no storage is mounted. */
 #define _GNU_SOURCE
 #include "rescue_internal.h"
 
@@ -29,6 +29,7 @@ void report_runtime_status(void) {
     report_spmi_devices();
     print_file("/sys/kernel/reboot/mode");
     report_usb_probe_devices();
+    report_display_status();
 }
 
 static void usb_console(void) {
@@ -38,8 +39,10 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, nfc-status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("Commands: help, status, dtb, display, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-l3, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("display/dmesg are read-only; display-on/off set only the identified CSOT backlight to 1500/0.");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
+        puts("thermal reads thermal sysfs; thermal-stop/thermal-clear set only umi-wired-pd cooling state 1/0.");
         puts("Wired controls: charge-stop; bounded charge-test commands require a diagnostic kernel.");
         puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
         fputs("miseed> ", stdout);
@@ -50,9 +53,19 @@ static void usb_console(void) {
         }
         line[strcspn(line, "\r\n")] = '\0';
         if (!strcmp(line, "help")) continue;
-        if (!strcmp(line, "status")) report_runtime_status();
+        if (!strcmp(line, "display")) report_display_status();
+        else if (!strcmp(line, "display-on")) (void)set_display_brightness(1500);
+        else if (!strcmp(line, "display-off")) (void)set_display_brightness(0);
+        else if (!strcmp(line, "dmesg")) export_kernel_log();
+        else if (!strcmp(line, "status")) report_runtime_status();
+        else if (!strcmp(line, "dtb")) export_runtime_dtb("/sys/firmware/fdt");
+        else if (!strcmp(line, "thermal")) report_thermal_devices();
+        else if (!strcmp(line, "thermal-stop")) (void)set_wired_pd_cooling_state(1);
+        else if (!strcmp(line, "thermal-clear")) (void)set_wired_pd_cooling_state(0);
         else if (!strcmp(line, "nfc-status"))
             report_nfc_status("/sys/bus/i2c/devices", "/sys/class/nfc");
+        else if (!strcmp(line, "nfc-l3"))
+            (void)run_nfc_l3_probe();
         else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");
@@ -111,7 +124,7 @@ int main(void) {
     charge_kmsg_fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (charge_kmsg_fd < 0) charge_log_append("ERROR", "kernel_log_unavailable errno=%d", errno);
     charge_screen_fd = open("/dev/tty0", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-    charge_log_append("START", "samples_read_only=1 controls=charge-test,charge-test-10min,charge-stop sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
+    charge_log_append("START", "samples_read_only=1 controls=thermal-stop,thermal-clear,charge-test,charge-test-10min,charge-stop sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
     charge_kernel_drain();
     charge_snapshot();
 

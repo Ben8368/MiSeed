@@ -14,13 +14,21 @@ if __package__:
     from . import apply_pd_diagnostics as pd
     from .apply_power_port import RPMHPD_KCONFIG_RULE
     from .source_layout import POWER_FILES, POWER_RULES
+    from .apply_display_port import HOST_TRANSFORMS
 else:
     import apply_pd_diagnostics as pd
     from apply_power_port import RPMHPD_KCONFIG_RULE
     from source_layout import POWER_FILES, POWER_RULES
+    from apply_display_port import HOST_TRANSFORMS
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
+    "drivers/soc/qcom/umi_abl_ubwc.h",
+    "drivers/gpu/drm/panel/panel-xiaomi-umi-csot.c",
+    "drivers/gpu/drm/panel/umi_csot_commands.h",
+    "drivers/gpu/drm/panel/umi-csot.Kconfig",
+    "arch/arm64/boot/dts/qcom/umi-native-dsi.dtsi",
+    "Documentation/devicetree/bindings/display/panel/xiaomi,umi-csot.yaml",
     "drivers/nfc/sn100x.c",
     "drivers/nfc/sn100x.Kconfig",
     "Documentation/devicetree/bindings/net/nfc/nxp,sn100t.yaml",
@@ -43,6 +51,8 @@ GENERATED = {
     "drivers/power/supply/umi_smb5_diagnostics.h",
 } | {"drivers/power/supply/" + name for name in POWER_FILES}
 OVERLAY_RULES = {
+    "drivers/gpu/drm/panel/Makefile": [(b"\n", b"obj-$(CONFIG_DRM_PANEL_XIAOMI_UMI_CSOT) += panel-xiaomi-umi-csot.o")],
+    "drivers/gpu/drm/panel/Kconfig": [(b"\n", b'source "drivers/gpu/drm/panel/umi-csot.Kconfig"')],
     "drivers/nfc/Makefile": [(b"", b"obj-$(CONFIG_NFC_SN100X) += sn100x.o")],
     MAKEFILE: [(b"\n", b"dtb-y += umi-csot.dtb"),
                (b"", b"DTC_FLAGS_umi-csot += -@")],
@@ -116,6 +126,10 @@ def verify_source(repository, revision, source):
             actual = digest.hexdigest()
             if name in patched_pd and path.read_bytes() == patched_pd[name]:
                 continue
+            if actual != oid and name in HOST_TRANSFORMS:
+                original = git(repository, "show", revision + ":" + name)
+                if path.read_bytes() == HOST_TRANSFORMS[name](original):
+                    continue
             if actual != oid and name == "drivers/pmdomain/qcom/Kconfig":
                 original = git(repository, "show", revision + ":" + name).decode("utf-8")
                 base = RPMHPD_KCONFIG_RULE.removesuffix("\n\tselect PM_OPP")

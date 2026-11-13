@@ -11,27 +11,41 @@
 | 项目 | 固定 LOS Umi | MiSeed 主线适配 |
 | --- | --- | --- |
 | 入口 | SE15 I2C、0x66 BQ25970、GPIO68；`usbpd_pm` 自动管理 PPS | 主线 TCPM + 本控制器；测试镜像 enabled，RPMh/I2C15/BQ 绑定已 L3 |
-| BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 关闭 | 按 LOS 保留明确数值，准确复现其禁用位；外部温控/FCC 路径承担软件限流。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
-| 热控与电量 | `mi_thermald` 通过 SMB5 thermal FCC 投票；常规 Umi PPS 上限表为 16 档；PD 策略在 95% SOC 退出 charge pump | 已移植同一六路虚拟温度及 FCC 表；PPS 在 LOS 的 95% SOC 门槛退出，普通充电不再额外卡 70% |
+| BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 30 秒档启用；本地 HEAD 正常运行刷新 L3 已验收 | 限值继续按 LOS；watchdog 刷新方式参考同系列 BQ25968，依靠成功 I²C 事务，不设独立喂狗任务。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
+| 热控与电量 | `mi_thermald` 通过 SMB5 thermal FCC 投票；常规 Umi PPS 上限表为 16 档；PD 策略在 95% SOC 退出 charge pump | 已移植六路虚拟温度及 FCC 表；本地11–70% PPS、71%起固定5V、80/71旁路复充，95%原安全边界保留 |
 | 运行方式 | USB/PD 事件驱动，符合条件即进入持续策略，拔线/故障/高电量时退出 | 驱动 probe 后轮询 PD attach 并自动尝试 PPS；拔线回到等待态，故障回固定 PDO 并恢复 SMB5 策略 |
 
-来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；节点绑定已 L3；PD 与 PPS 分别约 10 分钟真机通过并宣告稳定。保护故障注入、温控标度与发布验收另项开放。
+来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；节点绑定已 L3；镜像 `44854093…e98a89f94c` 的 PD/PPS 分别约 10 分钟真机通过并宣告稳定。本地 HEAD `2bdb266` 另完成 watchdog 正常刷新及 PPS thermal cooling state 8 停泵/固定 PDO/SMB5 恢复 L3，见[2026-11-11 记录](../../docs/archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。其余保护故障注入、完整板级温标和发布验收仍开放。
 
-仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。固定 PDO 为 5 V / 3 A，PPS APDO 为 3.3–11 V / 3 A；策略限制到 9.5 V、3 A 总线和 6 A 电池，SMB5 与 LOS 相同设为 3 A USB ICL、6 A FCC、4.45 V FV。这些是 LOS 配置，不是实测充电功率。
+仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。默认固定 PDO 为 5 V / 3 A，另有9V/2A profile；PPS sink APDO 为 3.3–11 V / 3 A，运行限制9.5 V、3 A总线和6 A电池，SMB5 与 LOS 相同设为 3 A USB ICL、6 A FCC、4.45 V FV。这些是 LOS 配置，不是实测充电功率。
 
 ## 状态与安全退出
 
-`WAIT_PLUG → SETTLE → RUN → DONE/FAULT`。驱动自动检测 USB-PD attach；合格后独占 SMB5、请求 APDO 并运行持续调节循环。SOC 上限为 LOS Umi `CAPACITY_TOO_HIGH_THR=95`。每个 PD/泵操作有 10 秒完成检查，SETTLE 仍有 5 秒窗口；这些是 I/O/启动超时，不是会话时长。
+当前有线策略（2026-11-13调整；本版验证与接口审查见[记录](../../docs/archive/reviews/2026-11-13-wired-policy.md)，不能将旧镜像L3直接计为新策略验收）：
 
-先独占 SMB5、停主充并暂停其 USB 输入，再配置并逐项读回保护；激活 TCPM 的 `ONLINE=2` 后读取 APDO 能力。电压/电流请求使用微伏/微安接口，读取实际协商结果，再检查电池和泵 ADC。初始目标为 `2 × VBAT + 400 mV`，之后按 20 mV 调节；电压、电池电流、总线电流三个限制取最严格方向。ADC 通道对齐固定 LOS：IBUS/VBUS/VAC/VBAT 启用，泵 IBAT 禁用（0x15=0x2f）；电池电流取 BMS 净值，不把净放电直接视为泵反向，总线负电流仍停止。电压请求保留作 PPS 刷新；当前电流与目标一致时跳过重复写入。激活、电压和降额电流请求仅对 `-EAGAIN` 追加最多三次重试，间隔 20–25 ms，仍检查原期限。控制器保留额外 ADC 一致性门控；SETTLE 在泵关闭、绝对采样限值与故障检查通过、VBUS 不超过目标 +200 mV 时于原 5 秒窗口内等待两路转换收敛；启泵仍须满足 VBAT 差 ±50 mV 和 VBUS 目标 ±200 mV，RUN 不再以跨芯片 VBAT 差单独停泵，各路绝对限值仍须满足；运行 VBUS 保留目标 +200 mV 上界，低于目标的固定差值仅作启泵前检查，带载时依原绝对范围、switching 和 bus_low/high 保护，不把源端合约值当作泵端 ADC；调压及收尾采用 BMS/泵 VBAT 较高值。
+| SOC / 周期 | PPS 可用 | 仅固定 PD |
+| --- | --- | --- |
+| 0–10% | 固定5V/SMB5，输入≤2A，标称10W | 同左 |
+| 11–70% | 30W期望目标，输入≤3A，电压随2:1工作点调整 | 优先9V/≤2A、18W；无匹配9V档时5V/≤3A、15W |
+| 71–79% | 退出PPS，固定5V/≤2A、10W补电 | 同左 |
+| ≥80%或硬件Full | 停止电池充电，固定5V供系统，输入预算≤10W/2A | 同左 |
+| 旁路后≤71% | 固定5V/≤2A复充至80%；周期锁定10W | 同左 |
 
-任何活动期间遥测错误、合约不匹配、保护读回不符、温控/过压/过流或硬件锁存故障都会停泵。退出读回 CHG_EN 与 switching 状态，返回固定合约并确认 5 V / ≤3 A，最后释放 SMB5 并恢复 LOS 普通主充策略。无法停止时保留独占、记录错误并重试，不发送独立 watchdog 保活。硬件失效无法被软件保证消除，必须断开充电器。
+旁路在72–79%保持；复充采样跨到70%以下也不恢复快充。SOC限充不伪报硬件Full，旁路不承诺电池电气隔离或高负载下完全不补电。27W固定PD仅为后续评估目标；匹配LOS协议出于电感等器件安全考虑将9V限制为2A，本版保持该限额。
 
-BQ watchdog 与固定 LOS `bq2597x_init_device()` 一致关闭：仅设置 0x0b bit2，保留频率/时间选择位，删除周期刷新。关闭位读回不符仍退出，关闭状态下不把历史 timeout flag 当作当前超时。不再要求验证一个未启用的泵 watchdog 刷新/到期机制；关闭模式没有该硬件超时停泵保障，软件循环和 I/O 挂死后的退出能力仍须如实分项验证。来源与变更见[对齐记录](../../docs/archive/reviews/2026-11-08-los-watchdog-alignment.md)。
+PPS电压基准保留`2×VBAT+400mV`启动值，BMS/泵VBAT取高，运行按20mV步进匹配；请求上限仍9.5V，不为凑30W追到10V。输入电流取功率预算、APDO、3A及电池热限额折算的严格值，向下量化50mA。30W不是实际功率承诺，10V/2A仅为20W。1A可编程请求区下界与7W工作预算下限保留，预算不足时停泵保留PPS；请求限额不是实际IBUS。
 
-阻塞 I/O 返回后重新检查操作窗口：PPS 激活、电压/电流请求、保护复核与启泵分别检查，SETTLE 还受 5 秒窗口约束。超出操作窗口时不继续提交主动请求，进入停泵/固定合约回退；清理操作不被窗口拦截。这不能中止已经发出的挂死事务，也不是硬实时保证。
+六路PPS权重、trigger/clear/FCC、电池温区、6A电池边界和BQ保护不变；38°C提前降到18W，冷却后可恢复30W预算。功率恢复≤1W/秒、电流请求恢复≤50mA/秒。降流必要时先小幅调压，使IBUS低于新请求至少100mA后收紧限额，不能把“稳电压”解释为禁止必要调压。
 
-常规温控取自本机 LOS 有效配置及已核实的动作映射：电池温度加五路 PMIC IIO 温度，计算虚拟温度、九档滞回，再查原 16 档 PPS FCC 表。未知屏幕状态取两种动作的严格值；读取错误、ADC 端点、整组采样超过 200 ms 均停止。降额先降低 PD 电流，单次会话不再提高；超出实测电流上限或降至现有泵工作范围之外则停止。原系统 3 秒延迟降额不移植。细节和 L1/L2 见[移植记录](../../docs/archive/research/2026-11-08-los-thermal-port.md)，主线温度标度仍待 L3。
+固定PD使用独立BMS温度反馈：每次观测升温增加100mA输入降额；温度持平时维持，观测降温后每秒最多解除100mA降额，再升温即停止恢复。不新增温度触发点，不复用PPS六路模型；已有冷端、45°C暖端、cooling停充及读错保护更优先。此控制反馈效果与板级温标需L3，不把趋势反馈当成硬件保护。
+
+固定切档先停电池充电、暂停SMB5输入，设置匹配LOS的高档FSW/连续输入范围，再通过TCPM选择标准DT capability profile。确认SNK_READY、合约电压/电流和无负载电压后，配置对应5/9V输入范围及FSW，限流后才恢复输入/充电。9V≤2A；5V≤3A，低电量/收尾/旁路≤2A；更严格用户限额、源合约和温控优先，降额立即生效，恢复每worker≤100mA。切档10秒超时或读回错误禁止自动充电，保留暂停状态并尝试安全5V恢复；物理拔线才解除故障锁。
+
+TCPM本地通用化提案以标准`power_supply/input_voltage_limit`（µV）选择firmware已声明的sink profile，同时限制固定PDO和PPS请求；不新增私有sysfs。capabilities/caps-0为5V+PPS的接入默认，caps-1增加9V/2A；通过该属性选择的profile在断开/协议复位时恢复默认。PPS启用后显式设置9.5V上限，退出确认固定5V后恢复5V上限。该扩展未上游合入，复核/退出路径归TD-004/TD-007。
+
+`WAIT_PLUG → SETTLE → RUN`只用于11–70%且未锁定复充周期；71%起交回固定PD。`THERMAL`用于已确认的单纯热限额越限：核实停泵、保留SMB5独占与PPS合约刷新，全部非热条件通过后重新SETTLE/启泵。该暂停期间SMB5输入仍暂停，不声称系统正由外部旁路供电。
+
+真实错误进入FAULT；停泵和固定合约恢复失败时保留所有权并重试。独立SMB5故障锁不被auto/cooling清除；无APDO的`-EOPNOTSUPP`允许普通PD承接。8秒PPS刷新、5秒SETTLE、10秒操作窗口、传感器新鲜度、watchdog和绝对保护保持原边界。旧PD/PPS及旁路L3保留其原镜像证据范围，新9V、80/71循环与本版3A另验。无线RX/TX未改。
 
 ## 板级属性与固定 LOS 差异
 
@@ -59,7 +73,33 @@ BQ25970 注册 `/sys/class/power_supply/bq25970-charger`，提供 `online/status
 
 thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cooling device `umi-wired-pps` 提供 0–15 档。DT trip/滞回与既有表一致；最终限流取 cooling 请求与独立保护的严格值，用户写 cooling state=0 不解除保护。该 zone 只管理有线 PPS，不能当作固定 PD、无线 RX/TX 的完整热模型。
 
+有线固定 PD/SMB5 单独提供 `wired-pd-thermal`（电池温度，m°C）与 `umi-wired-pd`（0=允许原策略、1=停充）。DT 以已有 45°C 暖端保守停充，不引入新的温控阈值、滞回或 FCC 表；冷端/读错保护仍由 worker 独立执行。cooling 请求跨拔插和 PPS 所有权释放保持，state=0 不清用户 inhibit、也不直接启充；PPS 占用时不触碰其互锁。此实现与新 DT 的 L3 另验，完整板级热模型未宣称完成，见[完善记录](../../docs/archive/reviews/2026-11-10-linux-standard-interfaces.md)。
+
 `python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。有界 `charge_test` 仅在显式启用 `CONFIG_MISEED_CHARGE_DIAGNOSTICS` 时存在，默认镜像关闭，不作为产品依赖。
+
+### 有线旁路供电的上层调用
+
+自动旁路：有效健康/遥测下，SOC≥80%或硬件 STATUS=Full 锁定停止电池充电；保留固定 5 V/SMB5 系统输入，SOC处于72–79%时不复充，≤71%才解除自动锁定，仍须满足独立温控/健康条件。标准 charge_control_end_threshold/start_threshold 分别读回80/71；SOC限充不伪报硬件Full。停电池充电请求成功后恢复系统输入预算，不继承收尾5 W限制，也不承诺电池电气隔离或负载高于源能力时电池绝不补电。物理拔线清除自动锁定；用户 inhibit 独立保留，写 auto 不能绕过80/71回差。已有手动旁路 L3 保留，新SOC触发、复充及交接需重新L3。
+
+旁路供电复用已经开放的 Linux 标准 `power_supply` ABI：外部有线电源供系统运行，电池充电禁止并保持净电流近零；能力与 L3 证据归 [platforms](../../docs/platforms.md#硬件能力)。上层无需新增私有 sysfs、ioctl、Android HAL 或诊断命令；标准属性含义遵循 [内核 ABI 文档](https://raw.githubusercontent.com/torvalds/linux/master/Documentation/ABI/testing/sysfs-class-power)。
+
+| 上层操作 | 现有接口与顺序 |
+| --- | --- |
+| 开启有线旁路 | 先向 BQ25970 泵的 `charge_behaviour` 写 `inhibit-charge`，再向 SMB5 写同值；保留外部输入供系统，不把 `input_current_limit=0` 当作旁路开关 |
+| 退出旁路 / 恢复自动充电 | 先向 SMB5 写 `auto`，成功后再向泵写 `auto`；恢复原有保护策略，故障/停机未完成时保留 `EBUSY`，不强制清除故障 |
+| 查询请求与实际效果 | 读取两路 `charge_behaviour/status/health/online` 和 `qcom-battery` 的 `status/current_now/voltage_now`；外部在线、两路停充及电池净电流共同判断效果，µA/µV 分别换算，不将读错或缺失填 0 |
+
+现有协调消费者可直接供上层调用（以下命令在目标 Linux 上执行）：
+
+```sh
+python3 tools/wired_power.py --action status
+sudo python3 tools/wired_power.py --action inhibit-charge
+sudo python3 tools/wired_power.py --action auto
+```
+
+工具按名称/泵型号唯一发现设备，仅操作有线路径，JSON 返回 `supplies`、`missing` 和逐设备 `control_errors`。退出 0 表示设备齐全且控制写入无报告错误；上层仍须检查属性中的 `error`，异步轮询实际状态，不能把请求成功直接显示为已生效。控制是跨两路的有序操作，不是用户空间原子事务：禁止时即使泵写入失败仍尝试禁止 SMB5 并报告错误；恢复时 SMB5 失败即不请求泵，内核继续保持互锁。外部离线时显示为禁止充电请求已保持，不显示外部供电中；单独 `pps-stop` 仍允许 SMB5 充电，不能代替整条路径旁路请求。
+
+写控制由 root 或显式授权的系统服务持有权限，上层普通应用通过该服务调用，避免全局放宽 sysfs 写权限。Debian 服务/界面尚待集成；状态反馈可消费标准属性和 uevent。该契约不添加持久 ABI，不修改电气阈值，不把有线结果复用于无线 RX/TX；旁路供电的控制器仍保留既有故障、温控和停机恢复边界。
 
 DT 使用 `monitored-battery` 只指向 simple-battery；`qcom,fuel-gauge`/`xiaomi,fuel-gauge` 指向遥测提供者，`power-supplies` 表示 TCPM 电源。三份本地 binding 位于 [bindings](bindings/)，属于可校验的本地提案，未宣称上游已接受。内核内部 `umi_smb5_*` 原子互锁仍保留：通用属性不能表达失败保留所有权，不能用用户空间分步写入取代它。完整接口审查与本轮验证见[记录](../../docs/archive/reviews/2026-11-10-wired-mainline-power.md)。
 

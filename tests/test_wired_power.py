@@ -30,6 +30,20 @@ class WiredPowerTests(unittest.TestCase):
         self.assertNotIn("charge_counter", values["battery"])
         self.assertEqual(values["pump"]["charge_behaviour"], "[auto] inhibit-charge")
 
+    def test_registered_switch_name_drives_status_and_successful_actions(self):
+        supplies = wired_power.discover(self.root)
+        self.assertEqual(supplies["switch_charger"].name, "pm8150b-charger")
+        (supplies["switch_charger"] / "online").write_text("1\n")
+        self.assertEqual(wired_power.ups_status(wired_power.snapshot(supplies))[
+            "external_wired_power"], "online")
+        for action in ("inhibit-charge", "auto"):
+            self.assertEqual(wired_power.set_behaviour(supplies, action), {})
+            for role in ("switch_charger", "pump"):
+                self.assertEqual((supplies[role] / "charge_behaviour").read_text(), action + "\n")
+        (self.root / "pm8150b_charger").mkdir()
+        self.assertEqual(wired_power.discover(self.root)["switch_charger"],
+                         supplies["switch_charger"])
+
     def test_missing_and_ambiguous_never_write(self):
         supplies = wired_power.discover(self.root)
         with self.assertRaisesRegex(ValueError, "missing"):

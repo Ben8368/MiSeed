@@ -16,6 +16,8 @@ WP1 先维护人工审查的 `manifests/sources.lock.json` 版本锁。构建器
 
 当前 [check_build_lock.py](../tools/check_build_lock.py) 仅做一致性检查：核对 Boot L2 的来源身份、脚本固定值及完整列举的本地输入哈希；仓库检查和构建前均调用，异常即失败。它不从锁文件选择、下载或执行来源，不表示传递依赖或许可闭包已完成；新增构建依赖须人工审查并扩充清单。运行状态只维护在 platforms，历史镜像留在证据归档。
 
+Boot L2 的 Linux 源仍以锁定的 kernel.org stable tag/commit 为权威身份。若 kernel.org 拉取失败，构建可改从锁定的 `gregkh/linux` 镜像读取同一 annotated tag；tag object 与 peeled commit 都须逐字匹配 `sources.lock.json` 后才继续，镜像只作为传输回退，不改变源码身份。
+
 ## 既有 fork 与验证记录
 
 RQ-03 的既有成果是优先核对的线索，不指定默认基线。先固定 fork 与对应上游的完整 commit，区分继承代码、个人修改及依赖；不能用领先提交数代替功能清单，也不能用对话中的短 SHA 或移动分支名锁定输入。
