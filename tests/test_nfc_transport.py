@@ -39,6 +39,11 @@ static void enable_irq(int irq) { (void)irq; assert(depth==1); depth--; }
 static void disable_irq_nosync(int irq) { (void)irq; assert(depth==0); depth++; }
 static void synchronize_irq(int irq) { (void)irq; assert(!held); syncs++; }
 #define dev_err_ratelimited(...) ((void)0)
+#define dev_dbg(...) ((void)0)
+static void dev_info_stub(struct device *d, const char *fmt, ...) {
+ (void)d; (void)fmt;
+}
+#define dev_info(...) dev_info_stub(__VA_ARGS__)
 static void usleep_range(int a,int b) { (void)a;(void)b; }
 static void *nci_get_drvdata(struct nci_dev *n) { return n->data; }
 static int gpiod_get_value_cansleep(struct gpio_desc *g) { return g->value; }
@@ -87,10 +92,11 @@ int main(int argc,char **argv) {
   for(int i=-1;i<4;i++){read_count=0;packet[2]=4;read_result[0]=3;read_result[1]=i;
    assert(sn100x_read(&p,&s)==(i<0?i:-EBADMSG));assert(!s && !live);}
   oom=1;assert(sn100x_read(&p,&s)==-ENOMEM && !s);
- } else if(test==2) { /* Firmware mode/read/direction errors do not enable IRQ. */
-  firm.value=1;assert(sn100x_open(&ndev)==-EBUSY);assert(!firm.writes && !ven.writes);
-  firm.value=-EIO;assert(sn100x_open(&ndev)==-EIO);
-  firm.value=0;firm.failure=-EIO;assert(sn100x_open(&ndev)==-EIO);assert(!ven.writes);
+ } else if(test==2) { /* Normalize inherited FIRM high without cycling shared VEN. */
+  firm.value=1;assert(sn100x_open(&ndev)==0);
+  assert(firm.value==0 && ven.value==1 && depth==0 && ven.writes==1);
+  sn100x_close(&ndev);assert(p.fault==-ETIMEDOUT && ven.value==1 && depth==1);
+  p.fault=0;firm.failure=-EIO;assert(sn100x_open(&ndev)==-EIO);assert(ven.writes==1);
   firm.failure=0;ven.failure=-EIO;assert(sn100x_open(&ndev)==-EIO);assert(!p.opened && depth==1);
  } else if(test==3) { /* Valid/invalid TX, partial transfer latched with balanced IRQ. */
   assert(sn100x_send(&ndev,tx(3))==-ENETDOWN && !sends);

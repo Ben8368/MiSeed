@@ -165,6 +165,8 @@
 };
 
 &i2c1 {
+	/* Match Umi's active Android DT qcom,clk-freq-out: 1 MHz. */
+	clock-frequency = <1000000>;
 	status = "okay";
 
 	umi_nfc: nfc@28 {

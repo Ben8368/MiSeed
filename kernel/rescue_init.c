@@ -39,7 +39,7 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, dtb, display, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("Commands: help, status, dtb, display, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-l3, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("display/dmesg are read-only; display-on/off set only the identified CSOT backlight to 1500/0.");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("thermal reads thermal sysfs; thermal-stop/thermal-clear set only umi-wired-pd cooling state 1/0.");
@@ -64,6 +64,8 @@ static void usb_console(void) {
         else if (!strcmp(line, "thermal-clear")) (void)set_wired_pd_cooling_state(0);
         else if (!strcmp(line, "nfc-status"))
             report_nfc_status("/sys/bus/i2c/devices", "/sys/class/nfc");
+        else if (!strcmp(line, "nfc-l3"))
+            (void)run_nfc_l3_probe();
         else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");
         else if (!strcmp(line, "memory")) print_file("/proc/meminfo");

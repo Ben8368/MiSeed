@@ -61,7 +61,12 @@ class MdssResetTests(unittest.TestCase):
                 path.unlink()
                 victim = root / "victim"
                 victim.write_bytes(original)
-                path.symlink_to(victim)
+                try:
+                    path.symlink_to(victim)
+                except OSError as error:
+                    if getattr(error, "winerror", None) == 1314:
+                        self.skipTest("Windows symlink privilege required; covered in WSL")
+                    raise
                 with self.assertRaisesRegex(ValueError, "symlink"):
                     port.stage_mdss(root)
                 self.assertEqual(victim.read_bytes(), original)

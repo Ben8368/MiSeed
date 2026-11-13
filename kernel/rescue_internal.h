@@ -42,6 +42,7 @@ void report_tcpm_logs(void);
 int pps_control_path(char *path, size_t size);
 int pps_control(const char *value);
 void report_nfc_status(const char *root, const char *class_root);
+int run_nfc_l3_probe(void);
 int write_value(const char *path, const char *value);
 int setup_usb_acm(void);
 void wait_for_usb_acm(void);

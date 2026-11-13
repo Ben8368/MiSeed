@@ -49,7 +49,8 @@ class BuildLockTests(unittest.TestCase):
     def test_changed_source_and_host_tool_fail(self):
         paths = ("kernel/power/umi_pps.c", "tools/collect_charge_log.py",
                  "kernel/power/qcom_fg_io.c", "kernel/rescue_internal.h",
-                 "tools/source_layout.py")
+                 "kernel/rescue_nfc_l3.c", "kernel/rescue_nfc_netlink.c",
+                 "kernel/rescue_nfc_netlink.h", "tools/source_layout.py")
         for name in paths:
             (self.root / name).write_bytes(b"changed\n")
         self.assertEqual(sum("SHA-256 mismatch" in e for e in self.errors()), len(paths))

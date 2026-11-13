@@ -16,7 +16,7 @@
 | Android | Android 16 / LOS 23.2-20261108、`4.19.325-cip131-st15-perf-g71b13e62f057`；只读后恢复普通 ADB | 其余固件待核验 |
 | 底层固件 | USER_REPORTED：国行；刷 Lineage 前官方 1.0.5；最新 Fastboot 包 1.0.3 | 其余固件尚未读取 |
 | Recovery | USER_REPORTED：无需个人数据备份；官方 Recovery 1.0.7 / Fastboot 1.0.3 在 `.work/` | `misc` 随官方线刷允许更新；Recovery 入口未验证；身份/NV 禁访，BL 重锁严禁 |
-UPSTREAM_VERIFIED 非本机直测；本地包未鉴真。[root 核查](archive/hardware/2026-11-08-android-root-power-audit.md) PARTIAL（1），原始采集在忽略的 `local/`。
+UPSTREAM_VERIFIED 非本机直测；本地包未鉴真。[root 核查](archive/hardware/2026-11-08-android-root-power-audit.md) PARTIAL（1），采集在忽略的 local/。
 
 ## 只读采集入口
 
@@ -27,8 +27,8 @@ adb devices
 python -X utf8 tools/collect_device.py --serial <设备序列号> --output local/device-identity.json
 ```
 
-[采集器](../tools/collect_device.py)默认仅 `get-state`、`getprop`、`ls -l /dev/block/by-name`，不提权、重启或读分区。非 umi / 不可用即停止，不换设备。
-仅存忽略的 local/，不覆盖；退出码 0＝完整、1＝部分、2＝失败；默认不提权。
+[采集器](../tools/collect_device.py)仅读设备状态/属性与 by-name 列表；非 umi / 不可用即停止，不换设备、不提权、不重启或读分区。
+结果只存忽略的 local/，不覆盖；退出码 0/1/2＝完整/部分/失败。
 `--power` 读取板级/内核、泵 ID 日志与缓存 PDO；不存原始 dmesg、不协商，见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 不采集序列号/IMEI；公开前脱敏。采集不是硬件验收或写入授权。
 
@@ -54,7 +54,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | UEFI → Linux | 设计中 | 无 L2/L3 |
 | CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；触控未实现 | [本轮](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
-| NFC / eSE | 标准 NCI 本地 L2；新驱动 L3/读卡/eSE 未测 | [NFC](NFC.md)；RISK-011 |
+| NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线 FG/SMB5、PD/PPS / 旁路供电 | 旁路供电已实现并完成 L3：外部供系统、电池停充；PD/PPS 稳定，故障清理/恢复/禁止保持 L3；硬件保护归 RISK-004 | [ABI](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [PPS](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [旁路/恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md) |
+| 有线 FG/SMB5、PD/PPS / 旁路 | 旁路 L3：外供系统、电池停充；PD/PPS 稳定；故障清理/恢复/禁止 L3；保护归 RISK-004 | [ABI](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [PPS](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |

@@ -252,7 +252,9 @@ readonly kernel_image="$build_tree/arch/arm64/boot/Image"
 readonly -a rescue_sources=("$repo_root/kernel/rescue_init.c"
     "$repo_root/kernel/rescue_fs.c" "$repo_root/kernel/rescue_usb_diag.c"
     "$repo_root/kernel/rescue_devices.c" "$repo_root/kernel/rescue_power.c"
-    "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_usb.c" "$repo_root/kernel/rescue_dt.c"
+    "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_nfc_l3.c"
+    "$repo_root/kernel/rescue_nfc_netlink.c"
+    "$repo_root/kernel/rescue_usb.c" "$repo_root/kernel/rescue_dt.c"
     "$repo_root/kernel/rescue_display.c" "$repo_root/kernel/rescue_thermal.c"
     "$repo_root/kernel/charge_log.c")
 aarch64-linux-gnu-gcc -Os -static -s -Wall -Wextra -Werror \
@@ -268,6 +270,7 @@ printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
     "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
     "${rescue_sources[@]}" "$repo_root/kernel/charge_log.h" "$repo_root/kernel/rescue_internal.h" \
+    "$repo_root/kernel/rescue_nfc_netlink.h" \
     "$repo_root/kernel/power/umi_smb5_diagnostics.h" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/kernel/power/qcom_fg_core.c" "$repo_root/kernel/power/qcom_fg_io.c" \
     "$repo_root/kernel/power/qcom_fg_measure.c" "$repo_root/kernel/power/qcom_fg_internal.h" \

@@ -27,10 +27,11 @@ POWER_RULES = (
 )
 RESCUE_FILES = (
     "rescue_init.c", "rescue_fs.c", "rescue_usb_diag.c", "rescue_devices.c",
-    "rescue_power.c", "rescue_nfc.c", "rescue_usb.c", "rescue_dt.c",
+    "rescue_power.c", "rescue_nfc.c", "rescue_nfc_l3.c",
+    "rescue_nfc_netlink.c", "rescue_usb.c", "rescue_dt.c",
     "rescue_display.c", "rescue_thermal.c", "charge_log.c",
 )
-RESCUE_HEADERS = ("rescue_internal.h", "charge_log.h")
+RESCUE_HEADERS = ("rescue_internal.h", "rescue_nfc_netlink.h", "charge_log.h")
 SPLIT_INPUTS = {"tools/source_layout.py",
                 *("kernel/" + name for name in RESCUE_FILES + RESCUE_HEADERS),
                 *("kernel/power/" + name for name in POWER_FILES)}
