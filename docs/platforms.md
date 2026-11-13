@@ -2,35 +2,34 @@
 
 ## 本机身份
 
-来源分类见[WP1 输入调查](archive/research/2026-11-05-wp1-input-review.md)。
 | 项 | 当前值 / 证据 | 待核实 |
 | --- | --- | --- |
 | 设备身份 | DEVICE_OBSERVED：`umi` / Mi 10 / `kona`；hwversion `2.9.1`、board-id `<0x2b 0>`；USER_REPORTED：国行 | SKU、物理板号待核 |
 | 内存 | USER_REPORTED：12GB | 本机容量、保留区、ABL 占用 |
-| 存储 | USER_REPORTED：256GB；UPSTREAM_VERIFIED：UFS；观测到 122 个 by-name 链接，无 A/B 后缀 | GPT/LUN 与分区未知；本地包 `boot` 128MiB，[研究](archive/research/2026-11-06-stock-boot-layout.md)；名称不证明可写 |
+| 存储 | USER_REPORTED：256GB；UPSTREAM_VERIFIED：UFS；122 个 by-name 链接，无 A/B | GPT/LUN/分区未知；`boot` 128MiB，[研究](archive/research/2026-11-06-stock-boot-layout.md)；名称不证明可写 |
 | 显示 | CSOT；simpledrm/原生 DSI 点屏 L3；1080×2340@60、DSC/1500 亮度命令通过 | SMMU 交接/独立供电/PM 待验 |
 | 触控 | UNVERIFIED；候选树同时含 ST FTS 与 Goodix | 实际 Touch IC、固件及驱动 |
 | Bootloader | Fastboot：`umi`、已解锁、安全启动开启、下载上限 805306368；版本空 | 槽位、ABL 版本、内存图未知；下载上限非启动上限 |
-| ABL / boot header | DEVICE_OBSERVED：官方 LOS 23.2 v2 boot 与仅替换 kernel 的同组件镜像均经 `fastboot boot` 启动；128 MiB boot 中 122.984 MiB kernel 启动完成 | ABL `Load Error` 未定位；最大尺寸未知 |
-| DTB / DTBO | 五处隔离/UBWC L3，见[本轮](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md) | DTBO 12 项/#11 已锁；根身份仍被 ABL 覆写 |
-| Android | Android 16 / LOS 23.2-20261108、`4.19.325-cip131-st15-perf-g71b13e62f057`；只读后恢复普通 ADB | 其余固件待核验 |
-| 底层固件 | USER_REPORTED：国行；刷 Lineage 前官方 1.0.5；最新 Fastboot 包 1.0.3 | 其余固件尚未读取 |
+| ABL / boot header | DEVICE_OBSERVED：LOS 23.2 v2 与仅换 kernel 镜像均经 `fastboot boot` 启动；128 MiB boot 中 122.984 MiB kernel 启动 | ABL `Load Error`、最大尺寸未知 |
+| DTB / DTBO | 五处隔离/UBWC L3，[记录](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md) | DTBO 12 项/#11 已锁；根身份仍被 ABL 覆写 |
+| Android | Android 16 / LOS 23.2-20261108、`4.19.325-cip131-st15-perf-g71b13e62f057`；只读后恢复 ADB | 其余固件待核验 |
+| 底层固件 | USER_REPORTED：国行；Lineage 前官方 1.0.5；Fastboot 1.0.3 | 其余未读取 |
 | Recovery | USER_REPORTED：无需个人数据备份；官方 Recovery 1.0.7 / Fastboot 1.0.3 在 `.work/` | `misc` 随官方线刷允许更新；Recovery 入口未验证；身份/NV 禁访，BL 重锁严禁 |
 UPSTREAM_VERIFIED 非本机直测；本地包未鉴真。[root 核查](archive/hardware/2026-11-08-android-root-power-audit.md) PARTIAL（1），采集在忽略的 local/。
 
 ## 只读采集入口
 
-用官方 [ADB](https://developer.android.com/tools/adb)，授权 USB 调试后指定设备：
+用官方 [ADB](https://developer.android.com/tools/adb)，授权调试并指定设备：
 
 ```text
 adb devices
 python -X utf8 tools/collect_device.py --serial <设备序列号> --output local/device-identity.json
 ```
 
-[采集器](../tools/collect_device.py)仅读设备状态/属性与 by-name 列表；非 umi / 不可用即停止，不换设备、不提权、不重启或读分区。
-结果只存忽略的 local/，不覆盖；退出码 0/1/2＝完整/部分/失败。
-`--power` 读取板级/内核、泵 ID 日志与缓存 PDO；不存原始 dmesg、不协商，见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
-不采集序列号/IMEI；公开前脱敏。采集不是硬件验收或写入授权。
+[采集器](../tools/collect_device.py)仅读状态/属性/by-name；非 umi 或不可用即停，不提权/重启/读分区。
+结果存忽略的 local/，不覆盖；退出码 0/1/2＝完整/部分/失败。
+`--power` 读板级/内核、泵 ID、缓存 PDO，不存 dmesg/协商；[续查](archive/research/2026-11-08-pps-topology-followup.md)。
+不采序列号/IMEI；公开前脱敏。采集不等于验收/写入授权。
 
 ## 待锁定的运行契约
 
@@ -40,7 +39,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | ABL 载荷 | 上游 header v2、kernel/initrd/DTB 与 DTBO 约束；MiSeed 产物仍须对照官方包静态核对 |
 | 内存交接 | 采用上游 CSOT 配置起步；本机保留区未知，不能声明可运行 |
 | 存储 / 恢复 | 用户报告官方 MiFlash 已成功恢复并保留身份信息；本项目不得触碰身份/NV，且所有恢复保持 BL 解锁 |
-| 有线供电 / 温控 | 泵 ID 0x10、sense 选择 2 mΩ（仅配置）；GPIO8/68；实板热敏/OCP、完整保护待核；绿联45W屏显（用户报告，档位未核） |
+| 有线供电 / 温控 | 泵 ID 0x10、sense 2 mΩ（仅配置）；GPIO8/68；热敏/OCP/保护待核；绿联45W屏显（用户报告，档位未核） |
 
 未锁定项不得声明可用；RAM 载荷须审查写盘行为，其他设备参数不可直接套用。
 
@@ -50,11 +49,12 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 
 | 功能 | 状态 | 证据 |
 | --- | --- | --- |
-| Linux RAM bring-up / UEFI | `b53705e` / `9f4713db…69e32014` 启动与 Fastboot→Android 往返 L3；UEFI 未测 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)；[PON](archive/hardware/2026-11-08-upstream-power-ramboot.md) |
+| Linux RAM bring-up / UEFI | `b53705e` / `9f4713db…69e32014` 启动、Fastboot→Android 往返 L3；UEFI 未测 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)；[PON](archive/hardware/2026-11-08-upstream-power-ramboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
 | CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；触控未实现 | [本轮](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
+| 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线 FG/SMB5、PD/PPS / 旁路 | 旁路 L3：外供系统、电池停充；PD/PPS 稳定；故障清理/恢复/禁止 L3；保护归 RISK-004 | [ABI](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [PPS](archive/hardware/2026-11-09-umi-pps-windows-l2.md) / [恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md) |
+| 有线 FG/SMB5、PD/PPS / 旁路 | 接电 SOC2→80% 充电场景 L3 通过；旁路在线时电池净电流接近零。其他 PD 档位、断开输入回差、硬件保护归 RISK-004；无线 RX/TX 独立验收 | [本轮](archive/hardware/2026-11-13-umi-wired-charge-l3-log-review.md) / [ABI](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |

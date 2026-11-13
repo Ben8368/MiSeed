@@ -118,8 +118,8 @@
         "split_rescue_nfc_netlink_header": "kernel/rescue_nfc_netlink.h"
       },
       "input_sha256": {
-        "kernel/umi-csot.dts": "45615f6d7a5eeb17bffb47f0948d4215e0d1f93fd857ae429c35b980024d1e65",
-        "kernel/umi-l2.config": "a1e411841f58ee7e13e00ac19322b8fcd4fc3ab09acbd8fc32734e5d45b29fd1",
+        "kernel/umi-csot.dts": "8b047ceca25bebdf582dc46791fdde402356f2509c597b3502908aff1f5d8c58",
+        "kernel/umi-l2.config": "4f0f54fd98b07ebef10729c593a3c269e2218c43d58f0771cee0590bd0fdc44f",
         "kernel/rescue_init.c": "fd525bd6481bf4195b7d17cadac843440b0e3c94e31d1b52e63da6d64f48598d",
         "tools/build_kernel_l2.sh": "8d0f293d8f1014e93104e47b98eaedf4743e054581dfa3c6d5a0751302fa2e41",
         "tools/extract_abl_anchors.py": "235d3e782563624742f0acab3d1ea31f245903ec5d72f1399588696f7a1612d8",
