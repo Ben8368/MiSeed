@@ -86,3 +86,19 @@ Windows 10.0.26200 x64 / PowerShell 7.6.9、WSL Ubuntu 24.04 x86_64；本地核�
 - `.work/ci-dns-l3-20261112/build-l2.sh simpledrm` 调用锁定 `tools/build_kernel_l2.sh` 及 `validate_kernel_dt.py`：ARM64 L2、定向 binding/最终 DTB/schema/四项 DT 反例通过，均退出 0。boot.img SHA-256 `71619df18f35ff4c0b58c0c96b0dddeab5c48986cb6739d59b2ef1baa5aebbc6`，与前一轮一致；充电源代码没有改变。
 
 修复最初按维护者要求保留本地并进入真机 L3；之后维护者要求保持实测策略，核实已有数据后提交推送 PR #6。本地通过不替代新 HEAD 的远端 CI，旧失败是否关闭须查新 run；材料与现场证据见[有线记录](../hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
+
+## 2026-11-13：PR6 源码传输回退与署名修复
+
+精确旧 HEAD `d286f871110f12148f9eb8d743be3707d37c0744` 的 [run 43405356371](https://github.com/Ben8368/MiSeed/actions/runs/43405356371) 中，四个 Repository job 成功；PR commits 因最新提交缺少作者 trailer 失败，Boot L2 因连接 git.kernel.org:443 超时退出 128，未进入编译。该次 apt 安装成功，与上一节的 apt DNS 故障不同。
+
+修复：源码获取独立到 `tools/fetch_kernel_source.py`，首选 kernel.org，60 秒超时或失败后转到 stable 维护者的 `gregkh/linux` 镜像；固定 v6.18.60 tag object `16829bf498b811706e98e480879e3fe1754d797e` 与 commit `f45ed76d6791cf72ff1265ee93511175bbbc2f18`。新缓存、缓存命中、镜像失败、超时、tag/commit 不匹配和重复调用绕过校验均有离线回归；镜像只替换传输位置。来源锁新增工具/回归输入并更新哈希。
+
+原 HEAD 仅补 `Co-authored-by: Codex <codex@openai.com>`，变为 `87aaef08566a99694e4e604777fd8b3a03617b3c`；修改前后源码树与父提交相同，维护者作者身份保留。提交检查器未放宽。
+
+宿主 Windows x64 / PowerShell 7.6.9 / Python 3.14，另以 WSL Ubuntu 24.04 / Python 3.12.3 验证：
+
+- `python -X utf8 -m unittest discover -s tests -v`：Windows 255 项、109 项跳过，退出 0；WSL 同命令 255 项、4 项跳过，退出 0。跳过项保留原有平台/构建依赖条件。
+- `bash -n tools/build_kernel_l2.sh` 与 `shellcheck --severity=error tools/build_kernel_l2.sh`：WSL 退出 0；workflow 未修改。
+- 本轮不重建或操作手机；旧 L2/L3 镜像不冒充新 CI 成功，推送后的精确 HEAD 运行需另查。
+
+分支核对：`codex/native-dsi-dt-power` 为旧 PR HEAD 的祖先；`codex/wired-six-stage-power` 等于旧 PR HEAD；前者提交完整保留，后者由等树、等父的署名修正保留全部源码。按维护者要求集中到 `codex/linux-standard-interfaces`，保留 main，不合并 main。

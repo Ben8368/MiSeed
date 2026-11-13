@@ -71,6 +71,12 @@ class BuildLockTests(unittest.TestCase):
         self.data["build_profiles"][0]["input_sha256"][lock.SCRIPT] = hashlib.sha256(path.read_bytes()).hexdigest()
         self.assertTrue(any("script/lock mismatch" in e for e in self.errors()))
 
+    def test_linux_mirror_identity_is_locked(self):
+        self.data["sources"][0]["mirror_url"] = "https://example.invalid/linux.git"
+        self.assertTrue(any("script/lock mismatch" in error for error in self.errors()))
+        self.data["sources"][0].pop("mirror_url")
+        self.assertTrue(any("build lock invalid" in error for error in self.errors()))
+
     def test_executing_identity_is_checked_separately(self):
         self.assertTrue(any("executing build/lock mismatch" in e
                             for e in lock.check_build_lock(self.root, {"kernel_revision": "a" * 40})))

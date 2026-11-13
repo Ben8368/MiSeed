@@ -3,6 +3,9 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly kernel_url="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+readonly kernel_mirror_url="https://github.com/gregkh/linux.git"
+readonly kernel_tag="v6.18.60"
+readonly kernel_tag_object="16829bf498b811706e98e480879e3fe1754d797e"
 readonly kernel_revision="f45ed76d6791cf72ff1265ee93511175bbbc2f18"
 readonly reference_revision="cf83073887899f485a5c606f9842c5e691ea796c"
 readonly boot_url="https://github.com/misaka-link/umi-linux/releases/download/v2026-09-27/boot-umi-csot-ovf-wifi6-gpu-oc-final.img"
@@ -51,6 +54,8 @@ fi
 make() { python3 "$repo_root/tools/run_build_command.py" -- make "$@"; }
 python3 "$repo_root/tools/check_build_lock.py" --root "$repo_root" \
     --kernel-url "$kernel_url" --kernel-revision "$kernel_revision" \
+    --kernel-mirror-url "$kernel_mirror_url" --kernel-tag "$kernel_tag" \
+    --kernel-tag-object "$kernel_tag_object" \
     --reference-revision "$reference_revision" --boot-url "$boot_url" \
     --boot-sha256 "$boot_sha256"
 
@@ -75,13 +80,9 @@ if [[ -n "${MISEED_KERNEL_SOURCE:-}" ]]; then
     [[ "$(git -C "$MISEED_KERNEL_SOURCE" rev-parse HEAD)" == "$kernel_revision" ]] || fail "Linux source revision mismatch"
     [[ -z "$(git -C "$MISEED_KERNEL_SOURCE" status --porcelain)" ]] || fail "Linux source tree must be clean"
 else
-    if [[ ! -d "$source_cache" ]]; then
-        git init --bare "$source_cache"
-        git -C "$source_cache" remote add origin "$kernel_url"
-    fi
-    if ! git -C "$source_cache" cat-file -e "${kernel_revision}^{commit}" 2>/dev/null; then
-        git -C "$source_cache" fetch --depth=1 --filter=blob:none origin "$kernel_revision"
-    fi
+    python3 "$repo_root/tools/fetch_kernel_source.py" --cache "$source_cache" \
+        --kernel-url "$kernel_url" --mirror-url "$kernel_mirror_url" \
+        --tag "$kernel_tag" --tag-object "$kernel_tag_object" --revision "$kernel_revision"
 fi
 readonly source_repository="${MISEED_KERNEL_SOURCE:-$source_cache}"
 [[ "$(git -C "$source_repository" rev-parse "${kernel_revision}^{commit}")" == "$kernel_revision" ]] || fail "Linux revision mismatch"

@@ -1,6 +1,6 @@
 # 当前状态
 
-2026-11-13｜`codex/wired-six-stage-power`；最新有线镜像接电场景 L3 通过，其他档位/保护另验。
+2026-11-13｜`codex/linux-standard-interfaces`；最新有线镜像接电场景 L3 通过，其他档位/保护另验。
 
 WP10：SN100T/NCI 镜像L2、reset/init、RF target、close/reopen L3过；QUP1=1MHz，CORE_RESET有界重试。普通卡仅发现target；NDEF/PM/HCE/eSE未验。禁共享VEN；复位/NACK待查，见[记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)。
 

@@ -115,13 +115,15 @@
         "fixed_profile_control": "kernel/power/tcpm_fixed_profile.inc",
         "split_rescue_nfc_l3": "kernel/rescue_nfc_l3.c",
         "split_rescue_nfc_netlink": "kernel/rescue_nfc_netlink.c",
-        "split_rescue_nfc_netlink_header": "kernel/rescue_nfc_netlink.h"
+        "split_rescue_nfc_netlink_header": "kernel/rescue_nfc_netlink.h",
+        "kernel_source_fetcher": "tools/fetch_kernel_source.py",
+        "kernel_source_fetch_regression": "tests/test_kernel_source_fetch.py"
       },
       "input_sha256": {
         "kernel/umi-csot.dts": "8b047ceca25bebdf582dc46791fdde402356f2509c597b3502908aff1f5d8c58",
         "kernel/umi-l2.config": "4f0f54fd98b07ebef10729c593a3c269e2218c43d58f0771cee0590bd0fdc44f",
         "kernel/rescue_init.c": "fd525bd6481bf4195b7d17cadac843440b0e3c94e31d1b52e63da6d64f48598d",
-        "tools/build_kernel_l2.sh": "8d0f293d8f1014e93104e47b98eaedf4743e054581dfa3c6d5a0751302fa2e41",
+        "tools/build_kernel_l2.sh": "67fa8cbbc3089383a16f7247c5e82c7d7107ea145a326c2d9b38221b0bc6c3e5",
         "tools/extract_abl_anchors.py": "235d3e782563624742f0acab3d1ea31f245903ec5d72f1399588696f7a1612d8",
         "tools/extract_boot_v2_dtb.py": "965e05764c9013b9f106949f6a69a8bc05fceaa920f67f456a8a6b62c774805f",
         "tools/make_initramfs.py": "644d4cbcffc58aaf02715af9d6e2dbe45df2072dd2c3cfffafe5694a6c95dbf3",
@@ -135,7 +137,7 @@
         "tools/apply_power_port.py": "8e9c63969a8e167cdf956e672de08cdc1414024924f2158867b43c1352f89b77",
         "kernel/power/umi_charge_policy.h": "d9247f2e5995a3fece3526bdb4d4a3755d29587357fdee8d4a3ce861b728ab8c",
         "kernel/power/umi-pm8150b.dtsi": "872366ce27363051548a34b66b0b988f2f685e830264a4b080d7f89c3ea9ec4a",
-        "tools/check_build_lock.py": "d9e8ccccdd21295cdf1a1206b551c7fc32893102af0c012fc993897cdf21d161",
+        "tools/check_build_lock.py": "de7229199015eca8480efd0cddd22eb8d90be1ab561d0e6b4102c83b3ebdfae1",
         "tools/download_locked.py": "6f4833c07e154fde16cfac2ff7322ddfd53f9295468ccbb0d93b172a94bdd422",
         "tools/isolate_abl_targets.py": "5513069fa1c218944e64a08924476a9842ff0f07c500e9de62f7c263a2d9867b",
         "tests/test_abl_isolation.py": "ba466f6cc1b28f9e1541fb14e540022b24947ca8fe732994cb954d593f6df834",
@@ -217,7 +219,9 @@
         "kernel/power/tcpm_fixed_profile.inc": "0ab43ad2593cbb55e0067bac6166e1e67c3500724b2f5a473917d95aa0807c78",
         "kernel/rescue_nfc_l3.c": "3f7330f2dfddf46a6f27bea0cd2d8790916474d1b393d2b3e7dc7e21ac5ce129",
         "kernel/rescue_nfc_netlink.c": "2934c2688aeabe786e7ad977059bf1c5d8b2e451df44eb1cff176af6a91fbb05",
-        "kernel/rescue_nfc_netlink.h": "d05317e596ba3bc0ccb05f4a2f51728b1f8ef9809cec03d41181d2a538747544"
+        "kernel/rescue_nfc_netlink.h": "d05317e596ba3bc0ccb05f4a2f51728b1f8ef9809cec03d41181d2a538747544",
+        "tools/fetch_kernel_source.py": "9307926a6f5e04b7fd488c103b61850bedd7515799d9b202bb687d5398a7af57",
+        "tests/test_kernel_source_fetch.py": "b6d18176f79681bb00611dc47a297690e37abb46cd93a6877ebbe0c0d8d0e863"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",
@@ -256,6 +260,7 @@
     {
       "id": "linux-stable",
       "url": "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git",
+      "mirror_url": "https://github.com/gregkh/linux.git",
       "tag": "v6.18.60",
       "tag_object": "16829bf498b811706e98e480879e3fe1754d797e",
       "revision": "f45ed76d6791cf72ff1265ee93511175bbbc2f18",
