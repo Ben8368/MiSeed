@@ -26,7 +26,7 @@ int main(void) {
  assert(D(1,1,1,300,4100000,68,0,0) == 1);
  assert(D(1,1,1,300,4100000,68,1,0) == 1);
  assert(D(1,1,1,300,4100000,78,0,1) == 1);
- assert(D(1,1,1,300,4100000,80,0,1) == 1);
+ assert(D(1,1,1,300,4100000,80,0,1) == 0);
  assert(D(1,1,1,300,4100000,81,0,1) == 0);
  assert(D(1,1,1,300,4100000,100,0,1) == 0);
  assert(D(0,1,1,300,4100000,60,1,1) == 0);
@@ -109,7 +109,9 @@ struct smb5_chip {
  struct delayed_work status_change_work;
  int lock, max_fv_uv;
  bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
- bool full_bypass, pps_fault;
+ bool full_bypass, pps_fault, pd_transition, thermal_sampled, thermal_recover;
+ int pd_limit_uv, pd_voltage_uv, pd_current_ua;
+ unsigned int thermal_drop_ua;
  int power_stage;
  void *usb_in_v_chan;
  unsigned int policy_icl_ua, saved_icl_ua;
@@ -141,6 +143,8 @@ static void log_message(const char *fmt, ...) { (void)fmt; }
 #define dev_err(d,...) log_message(__VA_ARGS__)
 static int smb5_get_prop_usb_online(struct smb5_chip *c, int *v)
 { (void)c; *v = online; return usb_error; }
+static int smb5_fixed_update(struct smb5_chip *c) { (void)c; return 0; }
+static void smb5_thermal_limit(struct smb5_chip *c,int t) { (void)c; (void)t; }
 static void smb5_log_registers(struct smb5_chip *c) { (void)c; }
 static int smb5_battery_value(struct smb5_chip *c, int prop, int *v)
 { (void)c; *v = values[prop]; return battery_error; }
@@ -186,7 +190,7 @@ int main(void) {
  tick(&c, 1000, 1); assert(!enabled && !c.test_active);
  tick(&c, 2000, 0); assert(!enabled && c.test_saw_disconnect);
  tick(&c, 3000, 1); assert(enabled && c.test_active && c.test_deadline == 603000);
- assert(smb5_get_charge_control_threshold(&c, true) == 81);
+ assert(smb5_get_charge_control_threshold(&c, true) == 80);
  assert(smb5_get_charge_control_threshold(&c, false) == 71);
  tick(&c, 62000, 1); assert(enabled); /* not the default 60-second timeout */
  tick(&c, 602999, 1); assert(enabled && c.test_active);

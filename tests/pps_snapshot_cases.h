@@ -27,58 +27,36 @@ static void power_tick(void)
 
 static void test_power_policy(void)
 {
- struct umi_pps_sample s = {.soc=6, .thermal_bat_ma=6000,
+ struct umi_pps_sample s = {.soc=11, .thermal_bat_ma=6000,
   .vbus_mv=9000, .ibus_ma=2000, .vbat_mv=4000, .pump_vbat_mv=4000};
  struct umi_pps_power p = {0};
  struct umi_pps_caps caps = {3300, 11000, 3000};
  umi_pps_power_update(&p,&s,35000,100);
- assert(p.target_mw==20000 && !p.steady);
- assert(umi_pps_request_current(&s,&caps,&p)==2350);
+ assert(p.target_mw==30000 && !p.steady);
+ assert(umi_pps_request_current(&s,&caps,&p)==3000);
  assert(umi_pps_current(&caps,1200)==1200);
- assert(umi_pps_current(&caps,999)<0 && umi_pps_current(&caps,2501)<0);
- umi_pps_power_update(&p,&s,38000,1100);
- assert(p.steady && p.target_mw==19000);
- umi_pps_power_update(&p,&s,38000,2100);
- assert(p.target_mw==18000);
- umi_pps_power_update(&p,&s,35000,3100);
- assert(!p.steady && p.target_mw==19000);
- umi_pps_power_update(&p,&s,35000,4100);
- assert(p.target_mw==20000);
- s.soc=71;
- for(int i=0;i<10;i++)umi_pps_power_update(&p,&s,35000,5100+i*1000);
- assert(p.stage==2 && p.target_mw==10000);
- assert(umi_pps_request_current(&s,&caps,&p)==1150);
- s.soc=70;umi_pps_power_update(&p,&s,35000,16000);
- assert(p.stage==2 && p.target_mw==10000);
- /* Direct plug at 71-80% may enter PPS, with a 10 W source request. */
- for(int soc=71;soc<=80;soc++) {
-  reset();check_operating_power=1;bms.prop[POWER_SUPPLY_PROP_CAPACITY]=soc;
-  run();assert(c.power.stage==2 && c.power.target_mw==10000);
-  assert(c.request_ma>=1000 && c.request_ma<2000 && !fixed_count);
+ assert(umi_pps_current(&caps,999)<0 && umi_pps_current(&caps,3001)<0);
+ for(int i=1;i<=12;i++)umi_pps_power_update(&p,&s,38000,100+i*1000);
+ assert(p.steady && p.target_mw==18000);
+ for(int i=13;i<=25;i++)umi_pps_power_update(&p,&s,35000,100+i*1000);
+ assert(!p.steady && p.target_mw==30000);
+ for(int soc=71;soc<=100;soc++) {
+  reset();bms.prop[POWER_SUPPLY_PROP_CAPACITY]=soc;begin();
+  assert(c.state==PPS_WAIT_PLUG && !claim_owned && !pps_activations);
  }
- reset();bms.prop[POWER_SUPPLY_PROP_CAPACITY]=5;begin();
+ reset();bms.prop[POWER_SUPPLY_PROP_CAPACITY]=10;begin();
  assert(c.state==PPS_WAIT_PLUG && !claim_owned);
- bms.prop[POWER_SUPPLY_PROP_CAPACITY]=6;tick();
- assert(c.state==PPS_SETTLE && c.power.target_mw==20000 && c.request_ma<=2500);
+ bms.prop[POWER_SUPPLY_PROP_CAPACITY]=11;tick();
+ assert(c.state==PPS_SETTLE && c.power.target_mw==30000 && c.request_ma==3000);
  reset();run();
  for(int i=0;i<120;i++)power_tick();
- assert(c.state==PPS_RUN && c.request_ma<=2500 && !fixed_count);
- bms.prop[POWER_SUPPLY_PROP_CAPACITY]=71;
- for(int i=0;i<150;i++)power_tick();
- assert(c.state==PPS_RUN && c.power.target_mw==10000 && !fixed_count);
- bms.prop[POWER_SUPPLY_PROP_CAPACITY]=81;tick();
- assert(c.state==PPS_WAIT_PLUG && smb_bypass && !claim_owned && fixed_count==1);
- bms.prop[POWER_SUPPLY_PROP_CAPACITY]=72;tick();
- assert(c.state==PPS_WAIT_PLUG && !claim_owned);
- /* Simulate the actual SMB5 worker clearing its latch at <=71%. */
- smb_bypass=0;smb_stage=2;bms.prop[POWER_SUPPLY_PROP_CAPACITY]=70;tick();
- assert(c.state==PPS_SETTLE && c.power.stage==2 && c.power.target_mw==10000);
- clock_ms+=200;tick();assert(c.state==PPS_RUN && fixed_count==1);
- /* A fast-to-bypass jump must reset the old 20 W budget on recharge. */
- reset();run();assert(c.power.target_mw==20000);
- bms.prop[POWER_SUPPLY_PROP_CAPACITY]=81;tick();
- smb_bypass=0;smb_stage=2;bms.prop[POWER_SUPPLY_PROP_CAPACITY]=70;tick();
- assert(c.state==PPS_SETTLE && c.power.target_mw==10000);
+ assert(c.state==PPS_RUN && c.request_ma<=3000 && !fixed_count);
+ bms.prop[POWER_SUPPLY_PROP_CAPACITY]=71;power_tick();
+ assert(c.state==PPS_WAIT_PLUG && !claim_owned && fixed_count==1);
+ smb_stage=2;bms.prop[POWER_SUPPLY_PROP_CAPACITY]=70;tick();
+ assert(c.state==PPS_WAIT_PLUG && !claim_owned); /* Fixed-PD recharge only. */
+ reset();run();bms.prop[POWER_SUPPLY_PROP_CAPACITY]=80;tick();
+ assert(c.state==PPS_WAIT_PLUG && smb_bypass && !claim_owned);
  /* Trip jumps stop immediately without dropping the PPS contract. */
  reset();run();bms.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3187000;
  c.cooling_state=11;tick();
@@ -87,7 +65,7 @@ static void test_power_policy(void)
  clock_ms+=200;tick();assert(c.state==PPS_RUN && c.request_ma==1200);
  c.cooling_state=0;
  for(int i=0;i<30;i++){clock_ms+=1000;tick();}
- assert(c.state==PPS_RUN && c.request_ma>1200 && c.request_ma<=2500);
+ assert(c.state==PPS_RUN && c.request_ma>1200 && c.request_ma<=3000);
  /* Below the PPS current-limit region: stay paused, refresh, then recover. */
  reset();run();c.cooling_state=15;tick();
  assert(c.state==PPS_THERMAL && claim_owned && !fixed_count);

@@ -47,7 +47,8 @@ enum power_supply_property { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_PRESENT
  POWER_SUPPLY_PROP_VOLTAGE_NOW, POWER_SUPPLY_PROP_CURRENT_NOW, POWER_SUPPLY_PROP_USB_TYPE,
  POWER_SUPPLY_PROP_VOLTAGE_MIN, POWER_SUPPLY_PROP_VOLTAGE_MAX, POWER_SUPPLY_PROP_CURRENT_MAX,
  POWER_SUPPLY_PROP_MANUFACTURER, POWER_SUPPLY_PROP_MODEL_NAME,
- POWER_SUPPLY_PROP_STATUS, POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR, PROP_COUNT };
+ POWER_SUPPLY_PROP_STATUS, POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
+ POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT, PROP_COUNT };
 #define POWER_SUPPLY_HEALTH_GOOD 1
 #define POWER_SUPPLY_USB_TYPE_PD 6
 #define POWER_SUPPLY_USB_TYPE_PD_PPS 7
@@ -168,7 +169,7 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
  return 0;
 }
 int umi_smb5_claim(struct power_supply *p, int *stage) {
- if (fail_claim || smb_bypass || smb_fault) return -EBUSY;
+ if (fail_claim || smb_bypass || smb_fault || smb_stage>=2) return -EBUSY;
  *stage=smb_stage;
  claim_owned=1; suspended=1; return 0;
 }
@@ -340,7 +341,7 @@ int main(void) {
    prop==1 ? POWER_SUPPLY_PROP_VOLTAGE_NOW : POWER_SUPPLY_PROP_CURRENT_NOW;
   busy_count=2;run();assert(retry_sleeps==2 && !busy_count);
  }
- reset();pd.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=2350000;run();
+ reset();pd.prop[POWER_SUPPLY_PROP_CURRENT_NOW]=3000000;run();
  assert(current_requests==0);
  clock_ms+=200;tick();assert(c.state==PPS_RUN && current_requests==0 && voltage_requests==1);
  /* Keep the control loop fast, but avoid repeated identical APDO requests.

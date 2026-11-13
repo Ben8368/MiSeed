@@ -32,6 +32,9 @@ properties:
       - const: usb_in_i_uv
       - const: usb_in_v_div_16
   monitored-battery: true
+  power-supplies:
+    maxItems: 1
+    description: Type-C TCPM input contract provider for wired charging.
   '#thermal-sensor-cells':
     const: 0
   '#cooling-cells':
@@ -48,6 +51,7 @@ required:
   - io-channels
   - io-channel-names
   - monitored-battery
+  - power-supplies
   - qcom,fuel-gauge
   - '#thermal-sensor-cells'
   - '#cooling-cells'

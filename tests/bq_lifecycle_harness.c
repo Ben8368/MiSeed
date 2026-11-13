@@ -26,7 +26,7 @@ static int bq25970_disable(int *map) {
 }
 enum umi_pps_state { PPS_OFF, PPS_FAULT };
 enum { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_VOLTAGE_NOW,
-       POWER_SUPPLY_PROP_CURRENT_NOW };
+       POWER_SUPPLY_PROP_CURRENT_NOW, POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT };
 #define PPS_FIXED 1
 #define UMI_CHARGE_USB_ICL_UA 3000000
 #define UMI_PPS_PERIOD_MS 200
@@ -47,6 +47,10 @@ static int umi_pps_get(void *psy, int prop, int *value) {
     return 0;
 }
 static int umi_pps_set(void *psy, int prop, int value) {
+    if (prop == POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT) {
+        assert(pd_online == PPS_FIXED && value == 5000000);
+        return fail_pd ? -EIO : 0;
+    }
     assert(prop == POWER_SUPPLY_PROP_ONLINE && value == PPS_FIXED);
     if (fail_pd) return -EIO;
     pd_online = value;

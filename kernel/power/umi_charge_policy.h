@@ -10,23 +10,24 @@
 #define UMI_CHARGE_MAX_UV 4450000
 #define UMI_CHARGE_USB_ICL_UA 3000000
 #define UMI_CHARGE_FCC_UA 6000000
-#define UMI_CHARGE_END_SOC 81
+#define UMI_CHARGE_END_SOC 80
 #define UMI_CHARGE_START_SOC 71
 #define UMI_CHARGE_RESUME_SOC UMI_CHARGE_START_SOC
 #define UMI_CHARGE_TEST_SECONDS 60
 #define UMI_CHARGE_EXTENDED_TEST_SECONDS 600
 
-#define UMI_WIRED_LOW_MW 5000
+#define UMI_WIRED_LOW_MW 10000
 #define UMI_WIRED_FINISH_MW 10000
 #define UMI_WIRED_PD_FAST_MW 15000
-#define UMI_PPS_ENTRY_SOC 6
+#define UMI_WIRED_PD_9V_MW 18000
+#define UMI_PPS_ENTRY_SOC 11
 #define UMI_PPS_FINISH_SOC 71
 #define UMI_WIRED_BYPASS_STAGE 3
 
 static inline int umi_pps_soc_stage(int soc)
 {
 	return soc < UMI_PPS_ENTRY_SOC ? 0 : soc < UMI_PPS_FINISH_SOC ? 1 :
-		soc <= 80 ? 2 : UMI_WIRED_BYPASS_STAGE;
+		soc < UMI_CHARGE_END_SOC ? 2 : UMI_WIRED_BYPASS_STAGE;
 }
 
 static inline int umi_charge_policy(int online, int present, int good,

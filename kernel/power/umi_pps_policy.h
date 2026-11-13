@@ -11,7 +11,7 @@
 #define UMI_PPS_STEP_MV 20
 #define UMI_PPS_STEP_MA 50
 #define UMI_PPS_MAX_MV 9500
-#define UMI_PPS_MAX_MA 2500
+#define UMI_PPS_MAX_MA 3000
 /* USB PPS programmable current-limit region starts at 1 A, not 2 A. */
 #define UMI_PPS_MIN_MA 1000
 #define UMI_PPS_BAT_MAX_MA 6000
@@ -25,7 +25,7 @@
 #define UMI_PPS_START_MS 5000
 #define UMI_PPS_OPERATION_MS 10000
 #define UMI_PPS_MAX_SOC 95 /* LineageOS CAPACITY_TOO_HIGH_THR for Umi. */
-#define UMI_PPS_TARGET_MW 20000
+#define UMI_PPS_TARGET_MW 30000
 #define UMI_PPS_STEADY_MW 18000
 /* Reuse the first LOS thermal step's clear point for proactive boost exit.
  * This power-policy target does not replace any protection trip.
@@ -237,7 +237,7 @@ static inline int umi_pps_control_vbat(const struct umi_pps_sample *s)
 	return umi_pps_max(s->vbat_mv, s->pump_vbat_mv);
 }
 
-/* 20 W fast / 10 W finishing; thermal derating is reversible. Raw safety
+/* 30 W aspirational fast budget; thermal derating is reversible. Raw safety
  * measurements are never filtered. SOC stages advance until a new cycle. */
 static inline void umi_pps_power_update(struct umi_pps_power *p,
 		const struct umi_pps_sample *s, int virtual_mc, unsigned long long now)

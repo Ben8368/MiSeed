@@ -48,6 +48,8 @@ int umi_pps_stop(struct umi_pps *c, enum umi_pps_state state, int reason)
 					ma < 0 || ma > UMI_CHARGE_USB_ICL_UA))
 				pd_ret = -EPROTO;
 		}
+		if (!pd_ret && online)
+			pd_ret = umi_pps_set(c->pd, POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT, 5000000);
 		if (!pd_ret)
 			c->pps = false;
 	}
@@ -101,6 +103,9 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 		c->pps = false;
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
+	if (!ret)
+		ret = umi_pps_negotiate(c, POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT,
+					UMI_PPS_MAX_MV * 1000);
 	if (!ret)
 		ret = umi_pps_caps(c);
 	if (ret)
@@ -205,7 +210,7 @@ void umi_pps_work(struct work_struct *work)
 	if (c->state == PPS_WAIT_PLUG) {
 		/* Wait without claiming SMB5 until the LOS PPS entry conditions hold. */
 		if (!umi_pps_battery_ok(&s, UMI_CHARGE_MAX_UV / 1000) ||
-		    s.soc < UMI_PPS_ENTRY_SOC || s.soc >= UMI_CHARGE_END_SOC)
+		    s.soc < UMI_PPS_ENTRY_SOC || s.soc >= UMI_PPS_FINISH_SOC)
 			goto out;
 		c->deadline = umi_pps_now() + UMI_PPS_OPERATION_MS;
 		fail_stage = "begin_pps";
@@ -238,7 +243,7 @@ void umi_pps_work(struct work_struct *work)
 	}
 	if (ret)
 		goto fail;
-	if (c->power.stage == UMI_WIRED_BYPASS_STAGE || s.soc >= UMI_CHARGE_END_SOC) {
+	if (c->power.stage >= 2 || s.soc >= UMI_PPS_FINISH_SOC) {
 		umi_pps_stop(c, PPS_WAIT_PLUG, 0);
 		goto out;
 	}

@@ -51,7 +51,14 @@ class WiredDtTests(unittest.TestCase):
     def test_fixed_pd_thermal_and_bq_pinctrl_regressions_rejected(self):
         nodes = check(self.dtb, self.schema)
         zone = "/thermal-zones/wired-pd-thermal"
+        profiles = nodes["pm8150b_typec"] + "/connector/capabilities/"
+        unsafe = subprocess.check_output(
+            ["fdtget", "-t", "u", str(self.dtb), profiles + "caps-1", "sink-pdos"],
+            text=True).split()
+        unsafe[1] = str((int(unsafe[1]) & ~0x3ff) | 300)  # Reject 9 V/3 A.
         cases = ((zone, "thermal-sensors", "0"),
+                 (profiles + "caps-1", "sink-pdos", " ".join(unsafe)),
+                 (profiles + "caps-0", "sink-pdos", " ".join(unsafe)),
                  (zone + "/trips/warm", "temperature", "46000"),
                  (zone + "/cooling-maps/map-warm", "cooling-device", "0 1 1"),
                  (nodes["pm8150b_typec"] + "/connector", "op-sink-microwatt", "14000000"))

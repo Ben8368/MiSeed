@@ -36,7 +36,8 @@ int umi_smb5_claim(struct power_supply *psy, int *stage)
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
 	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit ||
-	    chip->full_bypass || chip->cooling_state || chip->pps_fault) {
+	    chip->full_bypass || chip->power_stage >= 2 ||
+	    chip->pd_transition || chip->cooling_state || chip->pps_fault) {
 		rc = -EBUSY;
 		goto out;
 	}
@@ -61,6 +62,11 @@ int umi_smb5_claim(struct power_supply *psy, int *stage)
 	if (!rc)
 		rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
 					USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
+	/* The shared VBUS will follow the pump's PPS work point while SMB5 is
+	 * suspended. Keep its input allowance continuous until fixed-PD recovery.
+	 */
+	if (!rc)
+		rc = regmap_write(chip->regmap, chip->base + 0x344, BIT(3));
 out:
 	mutex_unlock(&chip->lock);
 	return rc;
@@ -100,13 +106,21 @@ EXPORT_SYMBOL_GPL(umi_smb5_check);
 int umi_smb5_release(struct power_supply *psy, int fault)
 {
 	struct smb5_chip *chip;
-	int rc;
+	int rc, online;
 
 	if (!smb5_is_ours(psy))
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
 	rc = smb5_inhibit_with_fallback(chip, "pps-release");
+	/* Apply the 10 W handoff ceiling before restoring system input, not one
+	 * worker later. Offline releases need no input budget or ADC sample.
+	 */
+	if (!rc && chip->power_stage >= 2) {
+		rc = smb5_get_prop_usb_online(chip, &online);
+		if (!rc && online)
+			rc = smb5_power_limit(chip, UMI_PPS_FINISH_SOC);
+	}
 	if (!rc)
 		rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL,
 					USBIN_SUSPEND_BIT, 0);
@@ -177,12 +191,12 @@ void smb5_status_change_work(struct work_struct *work)
  if (!rc) rc = smb5_get_prop_health(chip, &health);
  if (!rc) rc = smb5_limits_verified(chip);
 	if (!rc && bms_current > UMI_CHARGE_FCC_UA) rc = -EOVERFLOW;
- /* Automatic stop hysteresis: 81% inhibits until <=71%; user inhibit is
+ /* Automatic stop hysteresis: 80% inhibits until <=71%; user inhibit is
   * independent. A new charge cycle may then advance through SOC stages. */
  if (!rc && online && health == POWER_SUPPLY_HEALTH_GOOD &&
      chip->full_bypass && soc >= 0 && soc <= UMI_CHARGE_RESUME_SOC) {
   chip->full_bypass = false;
-	  chip->power_stage = 2; /* PPS or SMB5 recharge keeps the 10 W stage. */
+	  chip->power_stage = 2; /* Fixed 5 V recharge keeps the 10 W stage. */
  }
  if (!rc && online && soc >= 0 && soc <= 100)
   chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
@@ -196,6 +210,16 @@ void smb5_status_change_work(struct work_struct *work)
   chip->power_stage = 0;
  if (!usb_rc && !online)
   chip->pps_fault = false;
+ if (!usb_rc && !online) {
+  chip->pd_transition = false;
+  chip->pd_limit_uv = chip->pd_voltage_uv = chip->pd_current_ua = 0;
+  chip->thermal_sampled = chip->thermal_recover = false;
+  chip->thermal_drop_ua = 0;
+ }
+ if (!rc && online && !chip->pps_owned) {
+  smb5_thermal_limit(chip, temp);
+  rc = smb5_fixed_update(chip);
+ }
  if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
      !chip->inhibit && !chip->full_bypass) {
   if (soc >= UMI_CHARGE_END_SOC)

@@ -101,7 +101,8 @@ class PpsTests(unittest.TestCase):
 #include "umi_pps_policy.h"
 #define CURRENT_SCALE_FACTOR 50000
 struct smb5_chip {
- int enabled, power_stage;
+ int enabled, power_stage, pd_voltage_uv, pd_current_ua, full_bypass;
+ unsigned int thermal_drop_ua;
  void *usb_in_v_chan;
  unsigned int policy_icl_ua, saved_icl_ua;
 };
@@ -116,9 +117,9 @@ static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 ''' + function + r'''
 int main(void) {
  struct smb5_chip c = {0};
- assert(!smb5_power_limit(&c, 5) && current == 1000000 && c.power_stage == 0);
+ assert(!smb5_power_limit(&c, 5) && current == 2000000 && c.power_stage == 0);
  c.enabled = 1;
- for (int i = 0; i < 20; i++) assert(!smb5_power_limit(&c, 6));
+ for (int i = 0; i < 20; i++) assert(!smb5_power_limit(&c, 11));
  assert(current == 3000000 && c.power_stage == 1);
  assert(!smb5_power_limit(&c, 5) && current == 3000000);
  assert(!smb5_power_limit(&c, 30) && c.power_stage == 1);
@@ -128,24 +129,24 @@ int main(void) {
  assert(!smb5_power_limit(&c, 70) && current == 2000000);
  assert(!smb5_power_limit(&c, 80) && current == 2000000);
  c = (struct smb5_chip){0}; current = 3000000; input_uv = 9000000;
- assert(!smb5_power_limit(&c, 10) && current == 1650000 && c.power_stage == 1);
+ assert(!smb5_power_limit(&c, 10) && current == 1100000 && c.power_stage == 0);
  c = (struct smb5_chip){0}; current = 3000000;
- assert(!smb5_power_limit(&c, 5) && current == 550000);
+ assert(!smb5_power_limit(&c, 5) && current == 1100000);
  c = (struct smb5_chip){0}; current = 3000000; input_uv = 4800000;
- assert(!smb5_power_limit(&c, 5) && current == 1000000);
- for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 6));
+ assert(!smb5_power_limit(&c, 5) && current == 2000000);
+ for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 11));
  assert(current == 3000000 && c.saved_icl_ua == 3000000);
  /* Fractional 5 W target must not become a permanent 950 mA ceiling. */
  c = (struct smb5_chip){0}; current = 3000000; input_uv = 5100000;
- assert(!smb5_power_limit(&c, 5) && current == 950000);
- for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 6));
+ assert(!smb5_power_limit(&c, 5) && current == 1950000);
+ for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 11));
  assert(current == 2900000 && c.saved_icl_ua == 3000000);
  voltage_error = -EIO; int before_voltage = writes;
- assert(smb5_power_limit(&c, 6) == -EIO && writes == before_voltage);
+ assert(smb5_power_limit(&c, 11) == -EIO && writes == before_voltage);
  voltage_error = 0; input_uv = 0;
- assert(smb5_power_limit(&c, 6) == -ERANGE && writes == before_voltage);
+ assert(smb5_power_limit(&c, 11) == -ERANGE && writes == before_voltage);
  input_uv = -1;
- assert(smb5_power_limit(&c, 6) == -ERANGE && writes == before_voltage);
+ assert(smb5_power_limit(&c, 11) == -ERANGE && writes == before_voltage);
  input_uv = 5000000;
  current = 500000; /* A user limit is never silently raised. */
  assert(!smb5_power_limit(&c, 80) && current == 500000);

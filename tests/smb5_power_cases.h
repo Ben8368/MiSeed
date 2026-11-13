@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-/* Exercise SMB5's 5/15/10 W bands and 81/71 bypass hysteresis. */
+/* Exercise SMB5's 10/15/10 W bands and 80/71 bypass hysteresis. */
 static void test_smb5_power_and_recharge(void)
 {
  struct smb5_chip c = { .max_fv_uv = 4400000,
                         .usb_in_v_chan = &input_voltage_channel };
- int previous, old_feeds;
+ int old_feeds;
  unsigned long t = 0;
 
  usb_error = battery_error = limit_error = stop_error = status_error = 0;
@@ -15,8 +15,8 @@ static void test_smb5_power_and_recharge(void)
  input_limit = 3000000;
  values[POWER_SUPPLY_PROP_CAPACITY] = 5;
  tick(&c, t++, 1);
- assert(enabled && input_limit == 1000000 && c.power_stage == 0);
- values[POWER_SUPPLY_PROP_CAPACITY] = 6;
+ assert(enabled && input_limit == 2000000 && c.power_stage == 0);
+ values[POWER_SUPPLY_PROP_CAPACITY] = 11;
  for (int i = 0; i < 20; i++) tick(&c, t++, 1);
  assert(enabled && input_limit == 3000000 && c.power_stage == 1);
  values[POWER_SUPPLY_PROP_CAPACITY] = 16;
@@ -25,20 +25,20 @@ static void test_smb5_power_and_recharge(void)
  tick(&c, t++, 1); assert(c.power_stage == 1);
  values[POWER_SUPPLY_PROP_CAPACITY] = 71;
  for (int i = 0; i < 20; i++) {
-  previous = input_limit; tick(&c, t++, 1);
-  assert(enabled && input_limit == (previous > 2000000 ? (unsigned int)previous - 100000 : 2000000));
+  tick(&c, t++, 1);
+  assert(enabled && input_limit == 2000000);
  }
  assert(input_limit == 2000000 && c.power_stage == 2);
  values[POWER_SUPPLY_PROP_CAPACITY] = 70;
  tick(&c, t++, 1); assert(input_limit == 2000000 && c.power_stage == 2);
- values[POWER_SUPPLY_PROP_CAPACITY] = 80;
+ values[POWER_SUPPLY_PROP_CAPACITY] = 79;
  tick(&c, t++, 1); assert(enabled && !c.full_bypass);
  values[POWER_SUPPLY_PROP_CAPACITY] = 81;
  old_feeds = feeds;
  tick(&c, t++, 1);
  assert(!enabled && c.full_bypass && feeds == old_feeds && !c.inhibit);
  for (int i = 0; i < 25; i++) tick(&c, t++, 1);
- assert(input_limit == 3000000); /* System input is no longer capped at 5 W. */
+ assert(input_limit == 2000000); /* System input is no longer capped at 5 W. */
  for (int soc = 80; soc >= 72; soc--) {
   values[POWER_SUPPLY_PROP_CAPACITY] = soc;
   tick(&c, t++, 1); assert(!enabled && c.full_bypass);
@@ -81,7 +81,7 @@ static void test_smb5_full_and_unplug(struct smb5_chip *c)
 {
  /* Hardware FULL still terminates before the SOC cap. Status failures stop;
   * unplug clears only the automatic session latch, never user inhibit. */
- values[POWER_SUPPLY_PROP_CAPACITY] = 80;
+ values[POWER_SUPPLY_PROP_CAPACITY] = 79;
  tick(c, 4700, 1); assert(enabled && !c->full_bypass);
  status_error = -EIO;
  tick(c, 4710, 1); assert(!enabled && !c->full_bypass);
@@ -91,7 +91,7 @@ static void test_smb5_full_and_unplug(struct smb5_chip *c)
  int bypass_suspends = suspends, bypass_feeds = feeds;
  for (int i = 0; i < 20; i++) tick(c, 4730 + i, 1);
  assert(!enabled && c->full_bypass && suspends == bypass_suspends && feeds == bypass_feeds);
- assert(c->power_stage == UMI_WIRED_BYPASS_STAGE && input_limit == 3000000);
+ assert(c->power_stage == UMI_WIRED_BYPASS_STAGE && input_limit == 2000000);
  tick(c, 4800, 0); assert(!c->full_bypass);
  tick(c, 4900, 1); assert(enabled);
  /* An IRQ also preserves a brief unplug/replug between worker polls. */

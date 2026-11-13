@@ -1,10 +1,10 @@
 # 当前状态
 
-2026-11-12｜`codex/linux-standard-interfaces` @ `5359a4f`；PR #4/#5 已合入；聚焦主线接口，Debian 后续。
+2026-11-13｜`codex/wired-six-stage-power`；有线新策略本地提交，L3待验；聚焦主线接口，Debian后续。
 
 WP10 使用 SN100T Linux NFC/NCI、标准 Netlink；RF/读卡/恢复 L3、eSE、Debian 服务待验，见[NFC记录](archive/research/2026-11-10-sn100t-linux-nci.md)。
 
-有线L1 240项、双L2/DT通过。PPS 6→56%49分，续测44→56%15分47秒。最新同boot至82%：71→76%见10W PPS，固定5V至81%旁路；完整71–80%限额、81→71%复充及热暂停待验。0–5%维护者报告已测(4→5%，电脑USB)，附件未含；附件已移除，温标/源码黄灯，见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
+有线新策略PPS30W目标/≤3A、PD9V/2A、80/71固定5V旁路复充。L1 242项零跳过、双L2/DT通过，新L3待验，见[记录](archive/reviews/2026-11-13-wired-policy.md)。旧PPS持续49分、低流回升及81%旁路L3保留，见[实机](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；温标/硬件保护仍开放。
 
 有线 SMB5 bit5 状态误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM 启动/Android 回退 L3 通过，见[真机读数](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 

@@ -67,6 +67,7 @@
 			io-channel-names = "usb_in_i_uv", "usb_in_v_div_16";
 			monitored-battery = <&umi_battery>;
 			qcom,fuel-gauge = <&umi_fg>;
+			power-supplies = <&pm8150b_typec>;
 			#thermal-sensor-cells = <0>;
 			#cooling-cells = <2>;
 		};

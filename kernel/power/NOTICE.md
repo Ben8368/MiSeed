@@ -47,3 +47,5 @@ PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 mi
 2026-11-11 有线芯片边界：`bq25970_core` 独立拥有 I2C/regmap、身份与 IRQ；`umi-bq25970` 经 auxiliary bus 消费充电功能，保留板级 TCPM/SMB5 策略。TI 后端归属不变，未引入新外部驱动或改动 watchdog/电气阈值。范围与验证见[实施记录](../../docs/archive/research/2026-11-11-native-dsi-chip-boundaries.md)。无线 RX/TX 未移植。
 
 2026-11-12：TCPM属性访问、协商重试和合约核验从状态机提取为`umi_pps_pd.c`，复合模块名、原作者与许可证不变；未引入外部代码。
+
+2026-11-13 有线分段调整：`qcom_pm8150b_pd.c`依据同一锁定LOS的USBIN_ADAPTER_ALLOW_OVERRIDE（5V/9V/CONTINUOUS）及FSW编码自行实现主线TCPM协调，保留Qualcomm/The Linux Foundation来源；无新外部代码或固件。`tcpm_fixed_profile.inc`为本地GPL-2.0-only通用化提案，通过标准input_voltage_limit选择既有firmware capabilities，并约束固定/PPS请求；不导入Android协议栈。实现与未覆盖项见[审查](../../docs/archive/reviews/2026-11-13-wired-policy.md)。

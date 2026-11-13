@@ -181,7 +181,7 @@ install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 # a standalone umi-bq25970.o is only materialized for the module case.
 # Check both built-in constituents here and their linked symbols below.
 readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
-    qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply qcom_pm8150b_thermal
+    qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply qcom_pm8150b_thermal qcom_pm8150b_pd
     umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970 bq25970_i2c)
 power_objects=()
 for driver in "${power_drivers[@]}"; do
@@ -285,6 +285,7 @@ sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" 
     "$repo_root/kernel/power/umi_smb5.h" "$repo_root/kernel/power/umi-pps.dtsi" \
     "${power_objects[@]}" \
     "$repo_root/tools/apply_pd_diagnostics.py" "$repo_root/kernel/power/pmic_pdphy_receive.inc" \
+    "$repo_root/tools/tcpm_fixed_profile.py" "$repo_root/kernel/power/tcpm_fixed_profile.inc" \
     "$output_root/pd-diagnostics-inputs.json" "$output_root/qcom_pmic_typec_pdphy.o" \
     "$repo_root/tools/pack_android_boot_v2.py" "$template" \
     "$build_tree/.config" "$kernel_image" "$initramfs" "$dtb" "$output_root/boot.img"

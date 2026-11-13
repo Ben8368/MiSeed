@@ -9,7 +9,8 @@ SCHEMAS = ("power/supply/qcom,pm8150b-fg.yaml",
            "power/supply/qcom,pm8150b-charger.yaml",
            "power/supply/xiaomi,umi-bq25970.yaml",
            "power/supply/battery.yaml", "thermal/thermal-zones.yaml",
-           "thermal/thermal-sensor.yaml", "pinctrl/qcom,sm8250-pinctrl.yaml")
+           "thermal/thermal-sensor.yaml", "pinctrl/qcom,sm8250-pinctrl.yaml",
+           "connector/usb-connector.yaml")
 
 
 def check(dtb, schema):
@@ -32,12 +33,23 @@ def check(dtb, schema):
     if (len(pdos) != 2 or pdos[0] >> 30 != 0 or pdos[1] >> 30 != 3
             or ((pdos[0] >> 10) & 0x3ff) * 50 != 5000
             or (pdos[0] & 0x3ff) * 10 != 3000
-            or (pdos[1] & 0x7f) * 50 != 2500):
-        raise ValueError("wired sink must advertise fixed 5 V/3 A and PPS <=2.5 A")
+            or (pdos[1] & 0x7f) * 50 != 3000):
+        raise ValueError("wired sink must advertise fixed 5 V/3 A and PPS <=3 A")
+    safe = connector + "/capabilities/caps-0"
+    fast = connector + "/capabilities/caps-1"
+    if prop(safe, "sink-pdos", "u") != prop(connector, "sink-pdos", "u"):
+        raise ValueError("attach profile must retain fixed 5 V and PPS")
+    fast_pdos = [int(value) for value in prop(fast, "sink-pdos", "u").split()]
+    if (fast_pdos != [pdos[0], (9000 // 50 << 10) | (2000 // 10), pdos[1]]):
+        raise ValueError("fast profile must restrict fixed PD to 9 V/2 A")
+    for profile in (safe, fast):
+        if prop(profile, "op-sink-microwatt", "i") != "7000000":
+            raise ValueError("PD profiles must retain the operating floor")
     handles = {name: prop(node, "phandle") for name, node in nodes.items()}
     references = (("umi_fg", "monitored-battery", "umi_battery"),
                   ("umi_charger", "monitored-battery", "umi_battery"),
                   ("umi_charger", "qcom,fuel-gauge", "umi_fg"),
+                  ("umi_charger", "power-supplies", "pm8150b_typec"),
                   ("umi_pps", "xiaomi,fuel-gauge", "umi_fg"),
                   ("umi_pps", "xiaomi,switch-charger", "umi_charger"),
                   ("umi_pps", "power-supplies", "pm8150b_typec"))

@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include "umi_pps_policy.h"
+#define BIT(n) (1U << (n))
 #define CHARGING_ENABLE_CMD 0x42
 #define CHARGING_ENABLE_CMD_BIT 1
 #define USBIN_CMD_IL 0x340
@@ -18,6 +19,7 @@
 struct delayed_work { int unused; };
 struct smb5_chip {
  bool stopping, pps_owned, test_armed, inhibit, enabled, full_bypass, pps_fault;
+ bool pd_transition;
  unsigned long cooling_state;
  int power_stage;
  int max_fv_uv, lock; unsigned int base; void *regmap;
@@ -47,6 +49,13 @@ static int regmap_read(void *m,unsigned int r,unsigned int *v) {
  if(r==0x1042)*v=charge;
  else {assert(r==0x1340);*v=input;}
  return 0;
+}
+static int regmap_write(void *m,unsigned int r,unsigned int v) {
+ (void)m; assert(r==0x1344 && v==8); return write_error ? -EIO : 0;
+}
+static int smb5_get_prop_usb_online(struct smb5_chip *c,int *v) { *v=1;return 0; }
+static int smb5_power_limit(struct smb5_chip *c,int soc) {
+ assert(soc==71 && c->power_stage>=2 && !charge && input);return 0;
 }
 /* MISEED_SMB5_UNDER_TEST */
 int main(void) {
@@ -78,14 +87,14 @@ int main(void) {
  assert(!umi_smb5_claim(&p, &stage));
  assert(umi_smb5_check(&p, 2)==4380000 && c.power_stage==2);
  assert(!umi_smb5_release(&p, 0));
- assert(!umi_smb5_claim(&p, &stage) && stage==2); /* Recharge inherits 10 W. */
- assert(!umi_smb5_release(&p, 0));
+ assert(umi_smb5_claim(&p, &stage)==-EBUSY); /* Recharge stays on fixed PD. */
  c.power_stage=1;
  assert(!umi_smb5_claim(&p, &stage));
  assert(umi_smb5_check(&p, 3)==4380000 && c.full_bypass);
  assert(!umi_smb5_release(&p, 0) && !charge && input==0);
  assert(umi_smb5_claim(&p, &stage)==-EBUSY); /* Bypass cannot be overridden by PPS. */
  c.full_bypass=false;
+ c.power_stage=1;
  assert(!umi_smb5_claim(&p, &stage));
  assert(!umi_smb5_release(&p, 1) && c.pps_fault);
  assert(umi_smb5_claim(&p, &stage)==-EBUSY);
