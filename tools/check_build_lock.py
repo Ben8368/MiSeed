@@ -44,6 +44,7 @@ REQUIRED_INPUTS = {
     "tools/apply_display_port.py", "tools/check_runtime_dt.py",
     "tests/test_runtime_dt.py", "tests/test_native_display.py", "tests/native_panel_harness.c",
     "tests/test_display_handoff.py",
+    "tools/apply_clock_handoff.py", "tests/test_clock_handoff.py",
     "tools/collect_display_evidence.py", "tests/test_display_diagnostics.py",
     "tools/collect_dtbo.py", "tools/dtbo_table.py", "tests/test_dtbo_table.py",
     "tests/display_diagnostics_harness.c",

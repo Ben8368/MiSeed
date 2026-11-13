@@ -117,7 +117,9 @@
         "split_rescue_nfc_netlink": "kernel/rescue_nfc_netlink.c",
         "split_rescue_nfc_netlink_header": "kernel/rescue_nfc_netlink.h",
         "kernel_source_fetcher": "tools/fetch_kernel_source.py",
-        "kernel_source_fetch_regression": "tests/test_kernel_source_fetch.py"
+        "kernel_source_fetch_regression": "tests/test_kernel_source_fetch.py",
+        "clock_handoff_applier": "tools/apply_clock_handoff.py",
+        "clock_handoff_regression": "tests/test_clock_handoff.py"
       },
       "input_sha256": {
         "kernel/umi-csot.dts": "8b047ceca25bebdf582dc46791fdde402356f2509c597b3502908aff1f5d8c58",
@@ -137,7 +139,7 @@
         "tools/apply_power_port.py": "8e9c63969a8e167cdf956e672de08cdc1414024924f2158867b43c1352f89b77",
         "kernel/power/umi_charge_policy.h": "d9247f2e5995a3fece3526bdb4d4a3755d29587357fdee8d4a3ce861b728ab8c",
         "kernel/power/umi-pm8150b.dtsi": "872366ce27363051548a34b66b0b988f2f685e830264a4b080d7f89c3ea9ec4a",
-        "tools/check_build_lock.py": "de7229199015eca8480efd0cddd22eb8d90be1ab561d0e6b4102c83b3ebdfae1",
+        "tools/check_build_lock.py": "3f1f14a277a23f072a690af5e4e6188e975ff5903e99c2d8f75af32979932f60",
         "tools/download_locked.py": "6f4833c07e154fde16cfac2ff7322ddfd53f9295468ccbb0d93b172a94bdd422",
         "tools/isolate_abl_targets.py": "5513069fa1c218944e64a08924476a9842ff0f07c500e9de62f7c263a2d9867b",
         "tests/test_abl_isolation.py": "ba466f6cc1b28f9e1541fb14e540022b24947ca8fe732994cb954d593f6df834",
@@ -199,7 +201,7 @@
         "tests/native_panel_harness.c": "7a99e0e6bf5192cf5e18b405d4cf6847ded4094f5fb6c328c62c7635c7d71cf1",
         "tests/test_native_display.py": "9f9d1f9eec7b2d37bfa03739a918c9d0d7f1d17f716b71a79e0e534b719a31db",
         "tests/test_runtime_dt.py": "3a178bc7410298f5f24e73db821a23700d93ecaf1dfd2eec514e22ab66eb9658",
-        "tools/apply_display_port.py": "b5ad5839366b6189c0ef2a332042ff3ddc70cc2a63e4f3fcb5a4f8ea6c30c04e",
+        "tools/apply_display_port.py": "65c3f129928eb0781e41802454e059435602ea862a9207288e33093fb88a5fdb",
         "tools/check_runtime_dt.py": "17334ff8ef43c733e3740d8d9728625a1663c6c5004ebbdaf2c4b1664af3725e",
         "tests/bq_lifecycle_harness.c": "1526e77578cc6ea892f68c3648a02a7bcb7f1ffad6b307f06d5ca2ba6c370111",
         "tests/test_bq_lifecycle.py": "077ed295ccfae76f2a80e248b24a74053bc11d8c1d1d193c9d3ecb27dc370715",
@@ -221,7 +223,9 @@
         "kernel/rescue_nfc_netlink.c": "2934c2688aeabe786e7ad977059bf1c5d8b2e451df44eb1cff176af6a91fbb05",
         "kernel/rescue_nfc_netlink.h": "d05317e596ba3bc0ccb05f4a2f51728b1f8ef9809cec03d41181d2a538747544",
         "tools/fetch_kernel_source.py": "9307926a6f5e04b7fd488c103b61850bedd7515799d9b202bb687d5398a7af57",
-        "tests/test_kernel_source_fetch.py": "b6d18176f79681bb00611dc47a297690e37abb46cd93a6877ebbe0c0d8d0e863"
+        "tests/test_kernel_source_fetch.py": "b6d18176f79681bb00611dc47a297690e37abb46cd93a6877ebbe0c0d8d0e863",
+        "tests/test_clock_handoff.py": "ea5245b56fee72e2b2c1d3694fdab2ce37173aaa0b59de20fe4795ba9afc4e51",
+        "tools/apply_clock_handoff.py": "997c195735796d3031bfcc8fae407fc12727c4f8d365b574fb390c8fc3538ce3"
       },
       "project_code_license": "AGPL-3.0-only",
       "dts_license": "BSD-3-Clause",

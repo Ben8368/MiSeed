@@ -8,7 +8,7 @@ WP10：SN100T/NCI 镜像L2、reset/init、RF target、close/reopen L3过；QUP1=
 
 有线 SMB5 bit5 误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM启动/Android回退L3通过，见[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 
-RAM/USB、隔离/UBWC、BQ probe 已 L3。旧镜像点屏L3保留；`2bdb266` MDSS/SMMU失败未点亮，已回退Android，见[记录](archive/hardware/2026-11-11-umi-mdss-reset-smmu-attempt-l3.md)。UEFI根/触控开放。
+显示：CCF修复后初始化/文字/背光L3收尾，PLL/WARNING消失；顶部（横屏右侧）约一行白色花屏留待修复。禁用simpledrm试验已撤回，设备退Fastboot。首帧/PM开放，见[记录](archive/hardware/2026-11-13-umi-native-display-l3.md)。
 
 旧旁路、PD/PPS 恢复及 watchdog/热保护L3见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；温标/保护开放，无线未移植。
 

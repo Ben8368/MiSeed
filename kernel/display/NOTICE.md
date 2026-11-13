@@ -27,3 +27,10 @@ MiSeed also makes that existing sequence return assert/deassert errors and
 release its reset handle on failure (GPL-2.0, original Linux Foundation notice
 retained in the staged source). This stops probe before a failed takeover;
 it does not disable the SMMU or add identity mappings. Umi behavior requires L3.
+
+Native-profile staging also fixes idle orphan adoption in the pinned Linux
+`drivers/clk/clk.c` (GPL-2.0): resolving a software parent link must not power
+an unconfigured DSI PLL through CLK_OPS_PARENT_ENABLE. Prepared orphans keep
+the existing reference migration. Original CCF copyright notices are retained;
+this local change has not been accepted upstream. See the 2026-11-13 clock
+handoff review in docs/archive/research.

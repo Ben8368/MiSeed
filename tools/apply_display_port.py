@@ -4,8 +4,10 @@ import argparse
 import hashlib
 from pathlib import Path
 if __package__:
+    from .apply_clock_handoff import CLOCK_PATH, transform_clock, stage_clock
     from .apply_power_port import REVISION, destination_dir
 else:
+    from apply_clock_handoff import CLOCK_PATH, transform_clock, stage_clock
     from apply_power_port import REVISION, destination_dir
 
 UBWC_PATH = "drivers/soc/qcom/ubwc_config.c"
@@ -99,7 +101,7 @@ def transform_dsi(original):
 
 
 HOST_TRANSFORMS = {UBWC_PATH: transform_ubwc, DSI_PATH: transform_dsi,
-                   MDSS_PATH: transform_mdss}
+                   MDSS_PATH: transform_mdss, CLOCK_PATH: transform_clock}
 
 
 def stage_mdss(source):
@@ -154,6 +156,7 @@ def stage(source, project, native=False):
     stage_ubwc(source, inputs)
     stage_dsi(source)
     stage_mdss(source)
+    stage_clock(source, native)
     for name in ("panel-xiaomi-umi-csot.c", "umi_csot_commands.h", "Kconfig", "Makefile", "umi-csot.Kconfig"):
         if (target / name).is_symlink():
             raise ValueError("symlink panel target: " + name)
