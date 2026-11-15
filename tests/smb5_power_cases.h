@@ -68,6 +68,12 @@ static void test_smb5_power_and_recharge(void)
  c.full_bypass=false;c.pps_fault=true;
  values[POWER_SUPPLY_PROP_CAPACITY]=60;tick(&c,t++,1);assert(!enabled);
  c.cooling_state=0;tick(&c,t++,1);assert(!enabled && c.pps_fault);
+ /* A latched input fault at 80% must not reopen the bypass input. */
+ values[POWER_SUPPLY_PROP_CAPACITY]=80;
+ c.full_bypass=true;input_limit=800000;
+ int fault_resumes=resumes, fault_feeds=feeds;
+ tick(&c,t++,1);assert(!enabled && c.pps_fault && input_limit==800000);
+ assert(resumes==fault_resumes && feeds==fault_feeds);
  tick(&c,t++,0);assert(!c.pps_fault);
  values[POWER_SUPPLY_PROP_CAPACITY]=81;tick(&c,t++,1);assert(c.full_bypass);
  /* An external stricter ICL remains authoritative, including bypass. */

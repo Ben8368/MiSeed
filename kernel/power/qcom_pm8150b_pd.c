@@ -42,6 +42,31 @@ void smb5_thermal_limit(struct smb5_chip *chip, int temp)
 	chip->thermal_last_decic = temp;
 }
 
+/* TCPM CURRENT_NOW is the negotiated budget, not an ADC measurement.
+ * Monitor the buck separately while the fixed contract is carrying load.
+ * Do not compare a live ADC sample against a just-lowered thermal ICL:
+ * those observations are not simultaneous and no settling model is qualified.
+ */
+static int smb5_fixed_monitor(struct smb5_chip *chip, int contract_ua)
+{
+	unsigned int icl_ua;
+	int measured_ua, ret;
+
+	ret = smb5_get_current_limit(chip, &icl_ua);
+	if (ret)
+		return ret;
+	ret = smb5_get_input_current(chip, &measured_ua);
+	if (ret)
+		return ret;
+	if (icl_ua > (unsigned int)contract_ua || measured_ua > contract_ua) {
+		dev_err(chip->dev,
+			"miseed-fixed-pd input-overlimit measured_ua=%d icl_ua=%u contract_ua=%d\n",
+			measured_ua, icl_ua, contract_ua);
+		return -EOVERFLOW;
+	}
+	return 0;
+}
+
 int smb5_fixed_update(struct smb5_chip *chip)
 {
 	union power_supply_propval limit;
@@ -118,6 +143,11 @@ verify:
 	/* Reuse the existing no-load settle tolerance, not a new cable model. */
 	if (!ret && chip->pd_transition && (input <= 0 || abs(input - voltage) > 200000))
 		ret = -ERANGE;
+	/* A transition is deliberately unloaded; apply its new ICL before the
+	 * worker restores input. Only monitor the previous limit under load.
+	 */
+	if (!ret && !chip->pd_transition)
+		ret = smb5_fixed_monitor(chip, input_ua);
 	if (ret)
 		goto failed;
 	if (chip->pd_transition) {
@@ -137,5 +167,18 @@ failed:
 	if (ret == -EAGAIN && time_before(jiffies, chip->pd_deadline))
 		return ret;
 	chip->pps_fault = true; /* No automatic charging after an unverified shift. */
+	chip->enabled = false;
+	/* A fixed-input fault also forbids bypass system input. Attempt both
+	 * stops even if the first fails; do not feed the watchdog on this path.
+	 */
+	{
+		int stop_ret = smb5_inhibit_with_fallback(chip, "fixed-pd-fault");
+		int suspend_ret = regmap_update_bits(chip->regmap,
+			chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
+
+		dev_err(chip->dev,
+			"miseed-fixed-pd fault rc=%d stop_rc=%d suspend_rc=%d\n",
+			ret, stop_ret, suspend_ret);
+	}
 	return ret == -EAGAIN ? -ETIMEDOUT : ret;
 }

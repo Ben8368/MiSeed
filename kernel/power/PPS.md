@@ -41,6 +41,8 @@ PPS电压基准保留`2×VBAT+400mV`启动值，BMS/泵VBAT取高，运行按20m
 
 固定切档先停电池充电、暂停SMB5输入，设置匹配LOS的高档FSW/连续输入范围，再通过TCPM选择标准DT capability profile。确认SNK_READY、合约电压/电流和无负载电压后，配置对应5/9V输入范围及FSW，限流后才恢复输入/充电。9V≤2A；5V≤3A，低电量/收尾/旁路≤2A；更严格用户限额、源合约和温控优先，降额立即生效，恢复每worker≤100mA。切档10秒超时或读回错误禁止自动充电，保留暂停状态并尝试安全5V恢复；物理拔线才解除故障锁。
 
+固定PD带载时随SMB5 worker核对配置ICL及ADC实测输入电流均不超过已验证合约预算；TCPM的`current_now`是协商预算，SMB5的同名属性才是实测。超限或监测读错触发既有故障锁，分别尝试停电池充电和暂停USB输入；旁路不得绕过故障锁恢复输入。原始电流不滤波、不钳位；不将非同步的ADC与刚收紧的温控ICL直接作瞬态保护判据。标称1秒的软件轮询不能替代硬件瞬态保护，证据与未闭项见[异常修复](../../docs/archive/reviews/2026-11-15-fixed-pd-input-monitor.md)。
+
 TCPM本地通用化提案以标准`power_supply/input_voltage_limit`（µV）选择firmware已声明的sink profile，同时限制固定PDO和PPS请求；不新增私有sysfs。capabilities/caps-0为5V+PPS的接入默认，caps-1增加9V/2A；通过该属性选择的profile在断开/协议复位时恢复默认。PPS启用后显式设置9.5V上限，退出确认固定5V后恢复5V上限。该扩展未上游合入，复核/退出路径归TD-004/TD-007。
 
 `WAIT_PLUG → SETTLE → RUN`只用于11–70%且未锁定复充周期；71%起交回固定PD。`THERMAL`用于已确认的单纯热限额越限：核实停泵、保留SMB5独占与PPS合约刷新，全部非热条件通过后重新SETTLE/启泵。该暂停期间SMB5输入仍暂停，不声称系统正由外部旁路供电。

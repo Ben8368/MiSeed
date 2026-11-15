@@ -164,7 +164,8 @@ for option in ARCH_QCOM ARM64_VA_BITS_48 ARM64_PA_BITS_48 PM PINCTRL_MSM PINCTRL
 done
 grep -Fqx 'CONFIG_ARM64_VA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit virtual addresses"
 grep -Fqx 'CONFIG_ARM64_PA_BITS=48' "$build_tree/.config" || fail "resolved config is not using 48-bit physical addresses"
-grep -Fqx 'CONFIG_CMDLINE="console=ttyMSM0,115200n8 console=tty0 loglevel=8 keep_bootcon earlycon pd_ignore_unused clk_ignore_unused regulator_ignore_unused fbcon=font:TER16x32,rotate:3 rdinit=/init"' "$build_tree/.config" || fail "resolved config lost the forced diagnostic command line"
+python3 "$repo_root/tools/check_display_profile.py" --config "$build_tree/.config" \
+    "${display_args[@]}"
 
 if [[ "$native_dsi" == 1 ]]; then
     for option in DRM_MSM DRM_MSM_DPU DRM_MSM_DSI DRM_MSM_DSI_7NM_PHY SM_DISPCC_8250 DRM_PANEL_XIAOMI_UMI_CSOT; do
@@ -256,7 +257,8 @@ readonly -a rescue_sources=("$repo_root/kernel/rescue_init.c"
     "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_nfc_l3.c"
     "$repo_root/kernel/rescue_nfc_netlink.c"
     "$repo_root/kernel/rescue_usb.c" "$repo_root/kernel/rescue_dt.c"
-    "$repo_root/kernel/rescue_display.c" "$repo_root/kernel/rescue_thermal.c"
+    "$repo_root/kernel/rescue_display.c" "$repo_root/kernel/rescue_framebuffer.c"
+    "$repo_root/kernel/rescue_thermal.c"
     "$repo_root/kernel/charge_log.c")
 aarch64-linux-gnu-gcc -Os -static -s -Wall -Wextra -Werror \
     -o "$rescue_bin" "${rescue_sources[@]}"

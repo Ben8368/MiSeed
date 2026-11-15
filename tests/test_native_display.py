@@ -143,6 +143,10 @@ int main(void) {
         for name in ("umi_csot_prepare", "umi_csot_unprepare", "umi_csot_brightness"):
             start = source.index("static int " + name + "(")
             body += source[start:source.index("\n}\n", start) + 3]
+        start = source.index("struct backlight_properties props = {")
+        defaults = source[start:source.index("};", start) + 2].replace(
+            "struct backlight_properties props", "static const struct backlight_properties panel_defaults")
+        body += "\n#define BACKLIGHT_RAW 1\nstruct backlight_properties { int type, max_brightness, brightness; };\n" + defaults
         harness = (ROOT / "tests/native_panel_harness.c").read_text().replace("/* PANEL_UNDER_TEST */", body)
         with tempfile.TemporaryDirectory() as tmp:
             src, binary = Path(tmp) / "panel.c", Path(tmp) / "panel"

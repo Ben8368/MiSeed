@@ -55,7 +55,7 @@ int main(void)
     struct mipi_dsi_device d = {0};
     struct gpio_desc reset = {0};
     struct umi_csot c = {.dsi = &d, .reset = &reset};
-    struct backlight_device bl = {.data = &c, .brightness = 0};
+    struct backlight_device bl = {.data = &c, .brightness = panel_defaults.brightness};
     for (int i = 0; i < 59; i++) {
         command = 0; fail_command = i;
         assert(umi_csot_prepare(&c.panel) == -EIO);
@@ -73,7 +73,14 @@ int main(void)
     msm_packet_count = 1; command = 0;
     assert(umi_csot_prepare(&c.panel) == 0 && c.prepared && command == 59);
     brightness = 42;
+    assert(umi_csot_brightness(&bl) == 0 && brightness == panel_defaults.brightness);
+    /* Exercise the actual probe default and explicit off/on requests. */
+    assert(panel_defaults.max_brightness == 2047 && panel_defaults.brightness == 1);
+    bl.brightness = 0;
     assert(umi_csot_brightness(&bl) == 0 && brightness == 0);
+    bl.brightness = 1500;
+    assert(umi_csot_brightness(&bl) == 0 && brightness == 1500);
+    bl.brightness = 0;
     assert(umi_csot_unprepare(&c.panel) == 0 && !c.prepared && reset.value == 1);
     brightness = 42;
     assert(umi_csot_brightness(&bl) == 0 && brightness == 42);

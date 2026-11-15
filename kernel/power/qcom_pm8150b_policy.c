@@ -231,7 +231,7 @@ void smb5_status_change_work(struct work_struct *work)
   }
  }
  /* Restore system headroom only after battery inhibition succeeds. */
- if (!rc && online && chip->full_bypass && !chip->pps_owned) {
+ if (!rc && online && chip->full_bypass && !chip->pps_owned && !chip->pps_fault) {
   chip->power_stage = UMI_WIRED_BYPASS_STAGE;
   rc = smb5_inhibit_with_fallback(chip, "bypass");
   chip->enabled = false;

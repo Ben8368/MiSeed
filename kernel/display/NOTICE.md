@@ -34,3 +34,11 @@ an unconfigured DSI PLL through CLK_OPS_PARENT_ENABLE. Prepared orphans keep
 the existing reference migration. Original CCF copyright notices are retained;
 this local change has not been accepted upstream. See the 2026-11-13 clock
 handoff review in docs/archive/research.
+
+Native-profile MSM fbdev staging backports Dmitry Baryshkov's upstream fix
+`ea9dadeac79cef509a4b8b4a3e3b39a741e63313` (GPL-2.0-only),
+"drm/msm: mark the fbdev framebuffer as system memory".
+The original file's Red Hat / Rob Clark notices are retained. The single added
+FBINFO_VIRTFB flag matches its existing GEM virtual mapping and sysmem fb ops;
+it does not change memory allocation, rotation, DSI commands or scanout timing.
+Reference: https://lore.kernel.org/r/20260730-drm-msm-fbinfo-virt-v1-1-a27099a6dc58@oss.qualcomm.com

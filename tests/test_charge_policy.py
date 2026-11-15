@@ -123,7 +123,7 @@ struct device_attribute { int unused; };
 static unsigned long jiffies;
 static int online = 1, usb_error, battery_error, limit_error, stop_error;
 static int values[] = { 1, 300, 4100000, 78, 0 };
-static int health = POWER_SUPPLY_HEALTH_GOOD, enabled, feeds, suspends;
+static int health = POWER_SUPPLY_HEALTH_GOOD, enabled, feeds, suspends, resumes;
 static int charge_status, status_error;
 static unsigned int input_limit = 3000000;
 static struct iio_channel input_voltage_channel;
@@ -159,7 +159,7 @@ static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; input_limit = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 static int regmap_update_bits(void *map, unsigned int reg, unsigned int mask, unsigned int v)
-{ (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; return 0; }
+{ (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; else ++resumes; return 0; }
 static int regmap_write(void *map, unsigned int reg, unsigned int v)
 { (void)map; assert(reg == BARK_BITE_WDOG_PET && v == 1); ++feeds; return 0; }
 static int smb5_set_prop_charging_enabled(struct smb5_chip *c, unsigned int v)

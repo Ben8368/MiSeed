@@ -56,5 +56,5 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
 | 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线 FG/SMB5、PD/PPS / 旁路 | 接电 SOC2→80% 充电场景 L3 通过；旁路在线时电池净电流接近零。其他 PD 档位、断开输入回差、硬件保护归 RISK-004；无线 RX/TX 独立验收 | [本轮](archive/hardware/2026-11-13-umi-wired-charge-l3-log-review.md) / [ABI](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md) / [PD](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md) / [恢复](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md) |
+| 有线供电 / 旁路 | 最新HEAD固定PD L3无APDO、SOC6→80%，5→9V/2A→5V→旁路；9V单点2.405A超限，RISK-004待复核。PPS为旧证据，本轮未重测 | [固定PD](archive/hardware/2026-11-15-umi-wired-fixed-pd-l3.md) / [PPS](archive/hardware/2026-11-13-umi-wired-charge-l3-log-review.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |
