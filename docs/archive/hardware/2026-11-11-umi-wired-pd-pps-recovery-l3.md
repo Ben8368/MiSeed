@@ -1,0 +1,345 @@
+# 2026-11-11 Umi 有线旁路供电、PD/PPS/BQ25970 停机与恢复 L3
+
+## 输入、授权与回退
+
+| 项 | 本轮证据 |
+| --- | --- |
+| 操作者 / 主机 | 维护者执行实体换线，Codex 经 USB CDC 采集；Darwin 25.6.0 arm64 / zsh |
+| 授权 | 维护者明确设备已在 Fastboot，并要求验证 PD/PPS/BQ25970 的协商、充电、故障停机、保护与恢复；另确认沿用绿联 45W 屏显有线充电器，可按提示换线 |
+| 设备 | 唯一 Fastboot `product=umi`、`unlocked=yes`、`is-userspace=no`；Mi 10 / CSOT 既有变体，未重新核对面板、底层固件及 Android ROM |
+| 源码 | `codex/linux-standard-interfaces`，HEAD `899d64aa114ab4589bf8ba1544f54ef84b97b59b` 加未提交掉线修复；本轮不修改内核、DTS 或诊断固件源码 |
+| 固定输入 | Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18`；GCC 13.3.0；构建/来源锁与 191 项零跳过回归见[前次复核](../reviews/2026-11-10-pd-pps-detach-clock.md) |
+| 载荷 | `.work/boot-l2-arm64/boot.img`，SHA-256 `9f7534c122669da97defb0d4566ee9aa1732adfd567d5c2e2f291a2aa51872f3`；RAM 用途 |
+| 写入边界 | 仅一次 `fastboot boot` 与标准 power_supply 的有线禁止动作；未刷写、格式化、访问真实块设备、改电气阈值或无线 RX/TX |
+| 回退 | 异常时停泵并禁止有线充电，必要时维护者断开充电器；经 PMIC PON 返回 Fastboot／Android；过压/过流/过温不主动制造 |
+
+启动返回 Sending/Booting 均 OKAY，退出 0。CDC `/dev/cu.usbmodem101` 可读 Linux 6.18.60、BQ25970 model/绑定；`mounts` 仅 rootfs/devtmpfs/proc/sysfs/debugfs/configfs，无真实存储分区。初始 Mac 连接显示 Type-C、5 V/3 A 供电上限；未取得初始 PD 合约前不将它称为已协商 PD。初始电池约 37°C、SOC 64–65%，SMB5 Charging、BQ 未启泵。
+
+## 实际操作与证据
+
+1. 复核镜像 SHA-256、唯一设备身份，执行 `fastboot -s <本机序列号> boot .work/boot-l2-arm64/boot.img`（记录不保留序列号）。
+2. 只读命令 `version`、`pps-status`、`status`、`mounts`；`collect_charge_log.py --port /dev/cu.usbmodem101 --output <本地日志> --timeout 120` 严格验证 BEGIN/END、序号、存储错误。初次串口响应有异步积压，改为在完整 prompt 后等静默 1.5 秒再发下一命令；权威基线为 `baseline-synced-*` 和完整 charge-log，不使用错位文件名推断响应。
+3. 维护者把手机改接绿联约 60 秒，拔线约 10 秒，再接绿联约 60 秒，然后接回 Mac，确认完成。RAM logger 全程记录。
+4. 导出 `two-sessions-charge.log`（1589 条、first=0/next=1589、storage_errors=0），再执行 `pps-status`、`tcpm-log`；TCPM BEGIN/END 为 2997 行、complete=1，读取消费协议环。
+5. 执行 `pps-stop`，确认 `charge_behaviour=inhibit-charge`、BQ Not charging；维护者再接绿联约 60 秒后接回 Mac，单独验证固定 PD/SMB5 与 PPS 禁止保持。
+
+以上主机命令均退出 0；串口控制以明确返回和随后标准属性/时间线核实，不把成功写入等同实际充电。原始日志与临时主机采集器只在忽略目录 `.work/pd-pps-l3-20261111/`，不入库。
+
+## PPS 两段实测
+
+| 项目 | 结果 |
+| --- | --- |
+| 源能力 | Source_Capabilities 含固定 PDO 与 APDO 5–11 V / 5 A；设备先固定 5 V，再 APDO 请求，有 Accept/PS_RDY、实际合约读回 |
+| 初始协议故障 | 156.606831 s `-EAGAIN`；停泵成功，但 PD 清理也 `-EAGAIN`，`owned=1` 保留互锁；156.902940 s 清理成功才 `owned=0`。157.725847 s 又遇 TX failed / `-EIO`，安全清理成功。期间 TCPM 记录发送失败、Soft/Hard Reset、CC 变化；物理诱因未定位 |
+| PPS 恢复 | 159.161268 s 首次启泵；217.385651 s 停机，持续约 58.22 s。重新接入后 230.044402 s 再启泵，288.830663 s 停机，约 58.79 s |
+| 正常掉线修复 | 217.336415 s `detached during control cycle error=-107`，随后 WAIT_PLUG/reason=0、stop=0/pd_stop=0/owned=0；与源 Hard Reset/CC 断开对齐，未误记为持续故障 |
+| 绝对限值停机保留 | 288.773539 s 拔线窗口 VBUS ADC 已降至 1104 mV、CHG_EN/switching 清零，硬件 fault/latch=0；保留 `-ERANGE` FAULT、停泵/清理成功、owned=0，没有用掉线分类掩盖超出绝对限值的采样 |
+| 净充电 | 368 条 RUN 遥测，泵 VBUS 8.087–8.811 V、IBUS 0.638–1.907 A；BMS/泵 VBAT 均低于 4.4 V，电池净充电电流峰值约 3.29 A；启动/切换采样包含负净电流，不能误作泵反向电流 |
+| 温控限流 | 虚拟温度约 39.887–40.558°C、level=8、battery cap=4100 mA；请求电流均 2050 mA，实测 IBUS 不越请求值、电池电流不越 thermal cap。电池 temperature 为 370–380 deci-C，即 37–38°C；SOC 总体 64→68% |
+| BQ 状态 | 断开前健康采样 fault/latch=0、alarm=0x06、status=0x04、watchdog=0x44、control=0x87；启停/故障路径均由驱动自身读取与保护，不直接操作寄存器 |
+
+### 当前 HEAD 的 Thermal 真机验证
+
+2026-11-11 主机 Windows 10.0.26200 x64 / PowerShell 7.6.9、WSL Ubuntu 24.04 x86_64；源码基线 HEAD `af32a2b120a7c4f14fea5cb027e039563acc6a75`，含本轮未提交的一次性 thermal sysfs 诊断命令。Linux `f45ed76d6791cf72ff1265ee93511175bbbc2f18`、GCC 13.3.0、GNU make 4.3。容器用 `--network none`，本机锁定输入齐备；被修改的源码缓存原样保留，构建脚本从本地 Git 对象库导出锁定版本到临时干净树完成构建，无联网取料。
+
+构建产物仅供 RAM 启动：`boot.img` SHA-256 `15134d80309f5d211469c30bcc3ae9e5a3ce49d829ec462b71c58daf5e4b47e2`，resolved config `08b70762778823dac5ffdbd0c72f7516c9d69c0dc0f18c4d4d7b93f4a3634030`，DTB `8c7f8455cf3b6310648971daf38861a495ad354b359dc0572f58f700f03cb8de`，rescue initramfs `3a0ee783723dadbe9c580eded83d68afd62a497d0ccc6a96e6bf8ade6b7b03df`。唯一设备 `product=umi`、`is-userspace=no`；执行 `fastboot boot`，未写分区、改变阈值或操作无线 RX/TX。
+
+标准 thermal sysfs 读数单位为毫摄氏度：初始 `qcom-battery=32000` 与 FG/power_supply `temp=320` deci°C 一致（32.0°C），`wired-pd-thermal=32000`、`wired-pps-thermal=36263`；`umi-wired-pd` cooling `cur_state=0/max_state=1`，PPS cooling `0/15`。这验证接口单位换算与当前读数的一致性，不单独证明板级标定准确。USB CDC 主机连接被识别为 SDP，不存在实际 PD/PPS 合约；SMB5 初始 `Charging`、health `Good`、`charge_behaviour=[auto]`、输入限流 `3000000` µA，故只验证固定 PD thermal cooling 回调，不把结果称为实际 PD 协商/温度越限。
+
+1. 只读 `thermal` 枚举 zone 和 cooling device，确认设备唯一且状态合法。
+2. 执行 `thermal-stop`，回执 `old_state=0 requested_state=1 readback=1 max_state=1 rc=0`。其后 cooling 状态为 1；标准 SMB5 连续采样 `status=Not charging`、health `Good`、行为枚举仍为 `[auto]`，内核遥测为 `chg_enable=0/enabled=0`，证明 cooling stop 生效且未写充电策略枚举。
+3. 执行 `thermal-clear`，回执 `old_state=1 requested_state=0 readback=0 max_state=1 rc=0`。4 秒后 cooling 状态为 0，SMB5 与电池均恢复 `Charging`、health `Good`、内核 `chg_enable=1/enabled=1`，`charge_behaviour=[auto]`。无手工恢复策略或充电限值。
+4. `bootloader` 返回 Fastboot；再次核实唯一设备 `product=umi`、`is-userspace=no`。回到维护者接入前的 Fastboot 状态。
+
+停充时间线 `.work/thermal-stop-l3-20261111/thermal-stopped-charge.log` 为 331 条、无覆盖/存储错误，SHA-256 `0d9d7322bf0d374d07d01fbf8748c800233410144a5d69b7e77879b5c2a3793d`；释放后 `.work/thermal-stop-l3-20261111/thermal-cleared-charge.log` 为 468 条、无覆盖/存储错误，SHA-256 `5629a5d4748fac9fb08736ae3544d086e3f013c2d8bf89f20a5b7a2b6e65147f`。原始日志只保留于忽略目录，不入库。
+
+本轮新增 `thermal` / 有线 `thermal-stop` / `thermal-clear` 一次性救援台命令，严格只允许唯一 `umi-wired-pd` cooling state 0/1；不改变 Linux thermal governor、温度表、阈值、传感器驱动或无线路径。验证证明温度单位/读数可见、固定 PD cooling 回调可停止并自动释放；**不证明 45°C 实际热触发、板级温标准确性、传感器断路/越界时行为，也不证明 PPS 冷却硬件停泵**。未人为加热或拔传感器。传感器异常的合成故障路径由 `test_kernel_thermal.py`、`test_charge_policy.py`、`test_pps.py` 覆盖，仍需真实故障专项及独立复核。
+
+全量 WSL 单测 194 项通过、4 项因测试时无 compiled Umi DTB/dtschema 而跳过；本机 `tools/check_repo.py` 通过（既有 8 项源码篇幅黄灯保持可见），`git diff --check` 通过。源码篇幅按 QUALITY 执行：301 行起黄灯并登记、超过 600 行红灯阻断；本轮未以 300 行作为实现硬门槛。
+
+`-EOPNOTSUPP` 发生在接回只提供固定 PDO 的 Mac 后；此时不启泵、PD/SMB5 路径保留，不能将此码归为绿联 PPS 运行期异常。旧的 PD/PPS 各约 10 分钟稳定结论保留，本次增加指定修复镜像的专项证据。
+
+## 固定 PD、禁止与回退
+
+- `pps-stop` 在 397.890 s（recorder 时间）记录标准 `inhibit-charge` 写入 rc=0，随后 PPS_OFF、stop=0/pd_stop=0/owned=0。绿联下一次固定合约从 TCPM 473.142778 s 到 556.479469 s，约 83.34 秒；PDO 0 为 5 V / 3 A，整个分段没有 APDO Request。
+- 稳态窗口 475–555 s 共 39 组标准供电采样：BQ 全为 Not charging、`inhibit-charge`；SMB5 Charging/Good，输入 4.652592–4.747056 V / 2.979235–2.980860 A，电池净充电 2.381834–2.423338 A，36°C、SOC 70→71%。因此单独停泵会恢复/保留普通充电，不将“泵已停”误写为“整机已停充”。
+- `charge-stop` 在 recorder 605.584 s 记录 rc=0。之后 SMB5 `hw_phase=disabled/chg_enable=0/enabled=0`，BQ 与 SMB5 均 Not charging/inhibit-charge，电池 Discharging；输入仍可给系统负载供电，不能要求 USB 总线电流也为 0。
+- 维护者再接绿联约 30 秒，实际协议接入约 659.273–696.739 s；662–695 s 的 16 组电池/BQ/SMB5 交叉采样全部保持禁止，电池净电流 −3.906 至 −1.464 mA。TCPM 可重新协商固定 PDO，但两条有线充电路径均未自行启用。
+- 最终 `final-charge.log` 为 first=0/next=3144/count=3144、storage_errors=0，严格采集器退出 0；最终 TCPM 分段 198 行、complete=1（此前固定 PD 分段 204 行、complete=1）。最终 PPS 属性仍 inhibit-charge。
+- 全部日志保存后执行救援 `bootloader`，经 PON 回到唯一 `umi` Bootloader Fastboot；最终结果以 `rollback.json` 的枚举和产品只读核验为准。未刷写任何分区。
+
+## 有线旁路供电：已实现并完成真机验证
+
+本项目旁路供电的功能定义为：外部有线电源供系统运行，同时禁止电池充电，电池净电流保持接近零。该功能已实现，并由上述同一载荷、同一轮有线真机操作完成 L3 验证；本节是对已保存证据的功能确认，不是新增设备操作。
+
+实现复用 SMB5 的系统供电路径与标准 `power_supply/charge_behaviour=inhibit-charge`，BQ25970 泵保持关闭。662–695 s 的 16 组采样中：USB 输入功率由同组 µV/µA 读数计算为 1.772–2.658 W、平均 2.216 W；电池净放电仅 1.464–3.906 mA，按同组电池电压折算约 5.89–15.72 mW。结合两路 Not charging、SMB5 `chg_enable=0/input=1`，确认系统主要由外部电源供电，电池停止充电；接入绿联后该状态持续保持。约 2 W 是系统供电与转换损耗的输入估算，不是电池仍在充电的证据。
+
+能力与具体载荷登记在 [platforms](../../platforms.md#硬件能力)，上层标准调用契约见 [PPS 接口](../../../kernel/power/PPS.md#有线旁路供电的上层调用)。本次结论不包含电池电气隔离、拆电池运行或负载突变下的补电行为；它们不影响已经闭合的有线旁路供电功能结论。
+
+## 完整性、分级与未覆盖
+
+`final-charge.log` SHA-256 `e504c43fe31dddd61c6e07d15f0d54b66594ddab4f106483491432db862315b7`；各阶段原始文件摘要另存忽略目录 `evidence-hashes.json`。`two-sessions-charge.log` SHA-256 `a852a1874f61d93331a47e1922505f678689b3e953957584fbe2a12af808dc96`；对应 TCPM 文本 `ca27edb46f16f865f3edc3aeb9927cdee4f166da4d76ef3849c2c41b13d5d83f`。完整导出验证序号连续、覆盖 0、存储错误 0；断开 Mac 仍持续采样。
+
+L3 仅覆盖上述有线协商、实际充电、自然协议故障时安全停机/所有权重试、拔插恢复、掉线分类、温控限流、固定 PD、有线旁路供电、标准禁止控制及跨拔插保持；停止验证后返回 Fastboot。不以标度/阈值代码存在、寄存器读回正确或软件禁止替代硬件保护触发：未主动注入 BQ OVP/OCP/OTP、传感器故障/I2C 断路、真实停泵硬件失效；五路板级温度标度、sense/VOUT_OVP 含义、GPIO8 和全部硬件保护专项仍归 RISK-004/TD-005。显式写入 auto 的恢复、PPS thermal cooling 强制停机与真实温度触发未做 L3；固定 PD cooling 强制停充/释放已在前述 SDP 连接下完成 L3；本轮恢复证据是自动策略在源端掉线/重连后的恢复。未验证无线 RX/TX、其他充电器、Debian 集成或上游合入。
+
+🚦 审计：所列有线 L3、授权与无存储写入边界 🟢；保护专项/物理诱因 🟡 未闭合，归 RISK-004；高风险合并验收 🔴，仍缺开发者以外专项复核与精确 HEAD CI。本轮仅更新证据文档，沿用前次 L1/L2；最终 `python3 -X utf8 tools/check_repo.py` 与 `git diff --check` 退出 0，未提交、推送或合并。
+
+## 2026-11-11 local HEAD BQ25970 watchdog and PPS thermal L3
+
+This follow-up used repository HEAD `2bdb2666e2557aa1d1309845bca57938967621b0`, simpledrm RAM image SHA-256 `042155d91395bb8315418f9cded8b0b2c34c5e7b11715d91de44682287a9dc50`, and the wired Ugreen 45 W charger. No flash or storage operation was performed. Preflight build-source-lock matched the worktree; L2 succeeded and the complete offline suite passed 237 tests with zero skips.
+
+The complete RAM charge log has 2356 records, no gaps/overwrites and zero storage errors. TCPM export has 2429 lines and `complete=1`. PPS entered RUN at boot 40.634 s and continued through 246.134 s: 664 RUN samples, about 205.5 s. Samples reached about 9.0 V / 2.8 A pump input and 5.1 A BMS charging current. The 30 s watchdog configuration stayed enabled; successful per-cycle BQ protection verification continued without `-ETIME` or a timeout flag. The stop snapshot was `bq_watchdog=0x43` (configuration retained, timeout bit clear), with BQ fault/latch zero.
+
+At the end of PPS, the worker returned `-ERANGE` with no BQ fault, bus-low/high, or watchdog timeout. TCPM then explicitly requested fixed PDO 5 V / 3 A at 246.321 s and completed the transition at 246.459 s; stop/pd-stop returned 0 and ownership was released. SMB5 continued charging for about 180 s at roughly 4.8 V / 3 A. This was a controlled thermal fallback, not a spontaneous PD or watchdog failure: after the run, the PPS thermal zone read 39.542°C with cooling state 8; DTS trip 0 is 41°C with 3°C hysteresis and maps to state 8 (4.1 A). The last normal PPS sample was at 40.980°C with about 5.12 A BMS current. This strongly supports the configured thermal limit causing a safe stop and fixed-PDO fallback, although the exact cooling-state edge was not timestamped. The physical cable disconnect occurred later, at TCPM 427.013 s.
+
+**Watchdog normal-operation L3: pass.** The 205.5 s active PPS window exceeds six 30 s intervals with normal periodic I²C verification and no expiry. No deliberate no-refresh timeout injection was performed, so timeout-bite and post-expiry recovery are not claimed. **PPS thermal protection/fixed-PDO fallback L3: pass** for the observed state-8 stop and SMB5 recovery; exact trip edge is inferred. Other chip protection injection, full board thermal calibration, fixed-PD thermal trigger, and wireless RX/TX remain open.
+
+## PPS 分段功率与满电自动旁路 L1/L2（2026-11-11）
+
+维护者最终指定有线 0–14% 为 SMB5 固定 5 V/10 W、15–29% 平滑升至 27 W 目标、30–80% 为 18 W、81% 起为 9 W；优先 PPS、稳定功率及较高电压/较低电流，充满采用已经验证的旁路。授权完成 L2 后推送 PR #6；未操作设备。
+
+环境：Windows 10.0.26200 x64、PowerShell 7.6.9；WSL Ubuntu 24.04 x86_64、GCC 13.3.0、GNU make 4.3、dtschema 2025.8 / yamllint 1.38.0。源码基线 `0cfb6d10d9e82c15aa0d3db4aee728c074cdcc32` 加本节对应提交的输入锁；Linux 仍固定 `f45ed76d6791cf72ff1265ee93511175bbbc2f18`。没有引入外部代码或固件、没有提高电气保护参数。
+
+策略权威说明见 [PPS 接口](../../../kernel/power/PPS.md#状态与安全退出)。0–14% 不激活 PPS，由固定 5 V/SMB5 将输入限至 ≤2 A，10 W 是标称输入目标，实测随压降/负载变化；不是以 SOC 重定义硬件预充阈值。15–29% 进入 PPS，从 10 W 目标以每至少 1 秒最多 1 W 爬向 27 W；30–80% 目标 18 W，81% 起目标 9 W。同次插入 SOC 阶段只向后推进，避免边界回落反复切档。虚拟温度 ≥38°C（沿用已有首档解除点）或 FCC 收紧，锁定快速补能上限 18 W；9 W 阶段不因此升功率。
+
+PPS 泵输入功率取同组 VBUS×IBUS，以 1/4 指数平均与 ±0.5 W 死区调节。现有 9.5 V/3 A、6 A 电池及 APDO/温控保护更优先，不宣称实际达到 27 W。降额时先调压，使 IBUS 低于新的电流请求至少 100 mA，再降低源端限流；实测电池/总线超限仍立即停机，未给予保护宽限。18/9 W 服从恒压末段和更严格温控。固定 5 V/SMB5 在高 SOC 继承 ≤1.8 A 输入限额，其余阶段最高仍为既有 3 A；运行中每次 worker 最多改变 ICL 0.1 A，并保留观测到的外部 ICL 上限，防止预充/收尾/无 APDO 路径丢失功率约束。
+
+接口审查：USB PD/PPS → 固定 Linux Type-C/TCPM power_supply；温度/冷却 → IIO/thermal；满电 → SMB5 标准 STATUS=Full 与现有停电池充电、保留 USB 系统输入机制。没有新增私有 sysfs/ioctl、DT binding 或 Android HAL/Binder 依赖；无线 RX/TX 未修改。现有 umi_smb5 所有权例外仍归 TD-004，温标/真实保护及新策略 L3 归 RISK-004/TD-005。
+
+自动满电旁路仅在有效健康/遥测和硬件 Full 后锁定，SOC=100% 单独不触发。PPS 仍按既有 95%/收尾条件停泵，交回固定 5 V/SMB5 完成末段后旁路；自动锁定仅物理拔线解除（含 IRQ 捕获的短拔插），用户 inhibit 独立保留。停止失败仍采用停充/输入暂停回退、不喂 watchdog，不能根据请求状态声称实际旁路成功。已有手动旁路 L3 保留，新自动终止交接未做 L3。
+
+验证：
+
+- 定向 `python3 -X utf8 -m unittest discover -s tests -p test_pps.py -v`（5 项）及 `-p test_charge_policy.py -v`（2 项）通过。实际 worker 覆盖低 SOC 不激活 PPS、15/30/80% 边界、10→27→18→9 W 目标缓变、SOC/温度回落不返档、18/9 W 平台、降额先调压、原硬限值、协议离线不冒充物理拔线、硬件 Full/状态读错/停机失败/短拔插；SMB5 补充 2/1.8 A 输入限额、外部更严格 ICL、读写错误反例。全量回归沿用这些实际源码，不只测试公式。
+- Windows 经 `wsl -d Ubuntu-24.04 --cd /mnt/c/MiSeed -- bash .work/pps-power-l2-20261111.sh simpledrm` / `native`，分别使用 `MISEED_NATIVE_DSI=0/1`、`MISEED_JOBS=6`、下表 output_root；对应缓存为 `/tmp/miseed-boot-l2/root-default-{source,build}-20261111` / `native-dsi-{source,build}-20261111`，调用 `bash tools/build_kernel_l2.sh`。两套 ARM64 编译、链接、配置/输入锁核验和镜像打包均退出 0。首次新增 SMB5 helper 的 `current` 局部变量与内核宏重名，已改为 `icl_ua`；最终两套重建均成功。
+- 两套分别运行 `python3 tools/validate_kernel_dt.py --source <对应 source> --build <对应 build> --dtb <对应 output_root>/umi-csot.dtb`：定向 dt_binding_check、CHECK_DTBS、最终 DTB/schema 与四项 DT 反例均退出 0、无跳过。本轮没有 DTS/binding 改动。
+- `PATH=/tmp/miseed-dtschema/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`；`MISEED_WIRED_DTB=/mnt/c/MiSeed/.work/pps-power-test-dtb-20261111.dtb`、`MISEED_DT_SCHEMA=/mnt/c/MiSeed/.work/pps-power-test-schema-20261111.json` 为对应默认 DTB/schema 的独立快照。全量 `python3 -X utf8 -m unittest discover -s tests -v`：**238 项、0 跳过，54.584 秒，OK**。快照 DTB 与最终默认打包 DTB 逐字节一致。
+- 两套最终构建的全部 POWER_FILES 与当前工作树逐字节一致，build-source-lock.json 与当前输入锁一致；仓库/来源锁/预算检查及 `git diff --check` 通过。日志未见 future-time/Clock skew。当前新增输入限额仅覆盖有线，不将其作为无线验证。
+
+| 配置 / output_root（仓库相对） | boot.img 字节数 | SHA-256 |
+| --- | --- | --- |
+| 默认 `.work/pps-power-simpledrm-20261111` | 9654272 | `71619df18f35ff4c0b58c0c96b0dddeab5c48986cb6739d59b2ef1baa5aebbc6` |
+| 原生 `.work/pps-power-native-20261111` | 14135296 | `a103bd4a89f8f11ee4f1c2be0881fb03b2ec4d38c4b6053baefcc18bd8efc015` |
+
+完整日志/包装器仅留忽略目录 `.work/pps-power-*-20261111*`，镜像与构建物不提交。Audit：既有 8 项篇幅黄灯归 TD-008（umi_pps.c 515 行、pps_harness.c 600 行），无新源码超限；PR #6 达 100 文件、规模红灯，按维护者指定更新本项后停止扩展，不合并。新功率/温升、SMB5 限额、自动满电旁路 L3、开发者以外专项复核及最终精确 HEAD 远端 CI 仍须分别取证。
+
+## 2026-11-12：分段策略 L3 启动与初始基线
+
+维护者本轮明确要求修复 CI 后暂不推送，并启用真机 L3；报告初始约 5% 电量、继续使用既有绿联 45 W PPS 有线头。CI 修复只涉及 workflow 与离线测试，充电代码未变，见[修复记录](../reviews/2026-11-10-kernel-validation-environment.md#2026-11-12pr6-boot-l2-apt-dns-失败与本地修复)。
+
+先完成上述 240 项零跳过、目标 L2/DT/schema、输入锁与 25 项有线源码/主机工具/脚本核验，再通知接入。载荷为默认 simpledrm，禁用原生 DSI；SHA-256 `71619df18f35ff4c0b58c0c96b0dddeab5c48986cb6739d59b2ef1baa5aebbc6`。主机 Windows x64 / PowerShell 7.6.9、Platform Tools 37.0.1、pyserial 3.5；材料 `.work/ci-dns-l3-20261112/preflight.json`、`L3-steps.md`、一次性 boot_once.py 与限命令采集器均在接入前备齐。
+
+唯一设备只读确认 product=umi、unlocked=yes、is-userspace=no 后仅一次 `fastboot boot`，Sending/Booting OKAY、退出 0；未刷分区。CDC COM6 的 VID/PID 1d6b:0104、MiSeed Umi/CSOT greeting 与 Linux 6.18.60 核实通过，不能只用 Bootloader 接收代替 Linux 启动。mounts 仅 rootfs/devtmpfs/proc/sysfs/debugfs/configfs，无真实存储挂载。
+
+初始 PC 连接下 BMS 实测 SOC 6%、电池 28°C、PPS 虚拟温度 32.636°C，两路 cooling state=0；BQ25970 绑定、Not charging，策略 auto；SMB5 Charging、输入限流标准属性读回 2000000 µA。PC 被识别为 Type-C/SDP、没有实际 PD/PPS 合约，不能据此声称绿联固定 PD 已通过。基线严格导出 `baseline-charge.log`：312 条、first=0、无覆盖、storage_errors=0。status 的旧诊断文本 icl_ua=3000000 是常量，实际配置以标准 input_current_limit=2000000 为准。
+
+下一步沿用绿联自然充电，先覆盖 <15% 固定 5 V/SMB5 ≤2 A、15% PPS 接管与 30% 后 18 W，再按实际 SOC 续测 81%/满电旁路；未人为放电、加热或改保护阈值。故障/保护停机时断开充电器、接回电脑停充采集，保存后用 PON bootloader → Fastboot → Android 回退；现场后续结果另追加，初始基线不外推完整四段 L3。
+
+## 2026-11-12：已有数据复核与有线分段 L3 结论
+
+沿用上节 `bcfd241729f1d285b7d39d598d5556c760efba6d` 有线代码及同一 `71619df1…aebbc6` RAM 镜像。维护者接回电脑后已导出首轮全部日志；随后提出的 0–20%/21–80% 新分段已取消，明确接受本轮实测速度、保留现有策略，并授权核实后提交推送 PR #6。本轮不改充电参数或无线 RX/TX，不再安排设备操作。
+
+完整性复核：`python -X utf8 .work/ci-dns-l3-20261112/verify-round1.py` 退出 0。使用仓库采集器重新严格解析原始 BEGIN/END 与每条序号：基线 312 条，首轮 first=0、next/count=11367，连续、无覆盖、storage_errors=0；977 组电池样本与 3525 条 PPS RUN。TCPM 单独读取至 EOF，4253 行、complete=1。原始摘要如下，日志、复核脚本和派生 JSON 仅留忽略目录 `.work/ci-dns-l3-20261112/`，不提交原始长日志或镜像。
+
+| 证据 | SHA-256 |
+| --- | --- |
+| baseline-charge.log | `607e4774e446c0d266bc0b1ce7a9f5303ef6cb451d8e75c68c50d40358703d53` |
+| round1-charge.log | `c66a6a3cff7162ca799b37f1c8d9be91908cd5b1ecca7064acab88c0f2c554aa` |
+| round1-console.log（含完整 TCPM） | `985937d1b53acce310693a5850e4be3ff20db5c5603fca81177c9f1996f60e97` |
+
+功率口径：固定 PD 用同条 SMB5 voltage_now×current_now；PPS 用同条泵 VBUS×IBUS。均为驱动输入测量估算，不是充电头交流输入或电池净功率。事件时刻用 kmsg 原始 µs 时间戳，BMS 用 boot_ms；SOC 只作异步样本关联，不以采集入库时间认定精确切换边界。
+
+| 已核实阶段 | 原始证据与结论 |
+| --- | --- |
+| 低 SOC 固定 PD/SMB5 | TCPM 157.401 s 请求 PDO 5 V/3 A，157.454 s 到 SNK_READY；源端合约 3 A 不等于手机抽取 3 A。稳定窗口 160–883 s 的 344 组 Charging 样本，标准 ICL 全部 2 A；输入功率中位 9.769 W、P90 9.775 W，最高 9.784 W（启动过渡最低 6.836 W）。首次 APDO 前固定 PD 约 726.6 s。 |
+| 15%附近 PPS 接管与升功率 | 884.009 s 开始 APDO 5 V/3 A，随后 8.38 V/3 A；协议接受/PS_RDY 后均进入 SNK_READY。885.154 s 首条 RUN 目标 11 W，904.248 s 达 27 W 目标；相邻目标最多变 1 W。实测峰值 25.613 W（8.943 V×2.864 A），不是实际 27 W。最后一条 14% 与首条 15% BMS 样本分别在 885.180/887.225 s，异步采样不足以证明精确 SOC 边界；软件边界证据沿用 L1。 |
+| 自然升温平滑降到 18 W | 920.962 s 虚拟温度 38.252°C、steady=1，931.075 s 目标到 18 W，约 10.1 s 完成降功率；之后不再升回 27 W。排除降档过渡（t>934 s），3 A 请求窗口 1534 条：实测中位 17.701 W，P90 17.856 W，范围 16.752–18.214 W。 |
+| state 8 限流仍保持 PPS | 1410.286 s 虚拟温度 41.119°C、state 8、FCC=4100 mA；1411.286 s 源请求已降至 2050 mA，此时 IBUS=1945 mA、IBAT=3373 mA，满足先降到新限值以下再改请求。后续 1838 条 18 W 目标样本：实测中位 16.161 W，P90 16.335 W，范围 14.291–16.706 W。热限流优先于功率目标，因此会低于 18 W。 |
+| 跨 30% 与拔线 | 电量覆盖 6→38%，30% 后持续 18 W 目标；此前已因温升降额，不能把这次观察记作单独由 30% 触发的 27→18 W。RUN 从 885.154 至 1981.818 s，共 1096.664 s（约 18.28 分钟）；无 miseed-pps failure，首次 APDO 至物理断开之间无固定 PDO Request。1982.050 s VBUS off 对应维护者拔线接回电脑，随后正常释放所有权、stop/pd_stop=0。 |
+
+全部 RUN 样本的实测 IBUS 未超过当时请求（≤3 A），IBAT 未超过当时 FCC（≤6 A），VBUS≤9.5 V；本轮没有靠调整限值维持 PPS。电池样本温度 27–40°C，PPS 虚拟温度 37.203–42.208°C；虚拟温度是既有板级模型输出，不能与电池温度或完整温标验收混用。25 项有线源码哈希与接入前材料一致，镜像哈希一致；本轮源代码未变。
+
+**本轮有线 L3 通过：** 低 SOC 固定 5 V/SMB5 ≤2 A、PPS 接管/目标爬升、自然升温平滑降低功率、state 8 先降流后收紧源请求且持续 PPS，以及跨 30% 保持 18 W 目标。较慢的主要已观测原因是温升锁定 18 W 与后续 2050 mA 热限流，并非 PPS 自发退回固定 PD。维护者明确保留此实测策略。
+
+**未覆盖：** 81% 起 9 W、硬件 Full 自动旁路交接及全充电周期尚无本轮 L3；既有手动旁路 L3 保留。完整板级温标、固定 PD 实际热触发、硬件故障注入和其他 RISK-004 专项仍开放。维护者已报告手机重启回 Android；本机只读 ADB 枚举为 0 台，故回退状态按维护者报告记录，不声称读取 sys.boot_completed。重启后的未导出 RAM 末段无法补取，已导出首轮完整性不受影响。
+
+本轮 CI 修复与 240 项零跳过/L2/DT/schema 结果见[环境记录](../reviews/2026-11-10-kernel-validation-environment.md#2026-11-12pr6-boot-l2-apt-dns-失败与本地修复)。高风险合并门禁仍须独立专项复核与最终精确 HEAD 远端 CI；此处提交推送授权不包含合并。
+
+## 2026-11-12：有线六阶段与81/71复充 L1/L2
+
+维护者最后指定六阶段，温控不改，至少完成L2；后续电量低于5%再授权有线L3，单轮可能超过60分钟。最终复充点改为71%：≥81%停止电池充电、保留旁路，降至≤71%以5W低功率复充，72–80%保持旁路。复充整个周期锁在SMB5/5W，即使采样跨过71%也不重新拉起PPS。本文“涓流”需求落实为5V/≤1A的低功率输入，不按SOC强制硬件TRICKLE，不声称电池净电流恒定。
+
+| 整数SOC / 状态 | 本版目标 |
+| --- | --- |
+| 0–5% | 固定5V/SMB5，≤2A，标称10W；仍服从硬件预充/温度条件 |
+| 6–15% | PPS，10W平滑升向27W，必须满足既有电压/健康/采样门控 |
+| 16–30% | PPS，平滑向22.5W；不能解除此前温控降额 |
+| 31–70% | PPS，平滑向18W |
+| 71–80%正常充电、≤71%旁路后复充 | 固定5V/SMB5，≤1A，标称5W；复充阶段锁定此预算 |
+| ≥81%或硬件Full | 禁止电池充电、保留固定5V/SMB5系统输入；≤71%才解除自动锁定 |
+
+PPS进入71%后，目标每至少1秒最多降低1W至5W；滤波和原始输入功率均≤5.5W，才依既有停泵→确认固定5V→释放SMB5顺序交接。≥81%无需等待缓变，协商返回后的新SOC样本同样检查。PPS在本次插入交接后保持DONE；复充由SMB5管理。无APDO保留原固定5V兼容路径，中段实际能力受既有3A输入上限约束。SMB5运行时ICL逐次≤0.1A改变，重新启充前先设收尾限额；外部更严格ICL始终保留。
+
+自动旁路时停止电池充电的写入成功后，再解除收尾5W的系统输入预算；硬件Full提前出现时也同样处理。旁路输入随系统负载变化，不承诺电池电气隔离或高负载下完全不补电。物理拔线清自动锁定，用户inhibit独立保留；71%复充仍受健康/温度/故障门控，写auto不绕回差。标准power_supply的end/start threshold为81/71，不将限充伪报为硬件Full。接口仍为Type-C/TCPM、power_supply及IIO/thermal；仅扩展既有umi_smb5_check的内部阶段交接，归TD-004，不增加私有用户态ABI、binding或Android依赖。无线RX/TX未改。
+
+来源与环境：基线 `e7dee56b93dcb559d8158f74570c86e322d92527` 加本地 `codex/wired-six-stage-power` 工作树，输入锁SHA-256 `219f0278b125a4def8468fce4cd1a361443aea39f4b8d085fcd6438003177ee3`。Linux仍为 `f45ed76d6791cf72ff1265ee93511175bbbc2f18`；Windows x64/PowerShell7.6.9，WSL Ubuntu24.04 x86_64、GCC13.3.0、GNU make4.3、dtschema2025.8/yamllint1.38.0，无新增外部代码或固件。
+
+最终验证（下列命令均退出0）：
+
+- `wsl -d Ubuntu-24.04 --cd /mnt/c/MiSeed -- bash .work/wired-six-stage-20261112/tests.sh`：完整Linux回归 **240项、0跳过，52.611秒，OK**。实际PPS worker及SMB5 worker覆盖5/6、15/16、30/31、70/71、80/81边界，22.5W末步、防返档、保留38°C提前退出/FCC降额、71%功率下降及停泵交接、81%停止、72–80%保持、71%复充、跳过71%采样仍用5W、手动禁止/温控/读取错误/停机失败与外部ICL。模拟时钟跨过2小时仍旁路是L1，不冒充2小时真机。
+- 分别执行 `.work/wired-six-stage-20261112/build-l2.sh simpledrm` / `native`：两套ARM64编译、链接、配置/来源锁检查、镜像打包通过；分别调用 `validate_kernel_dt.py` 完成定向binding、CHECK_DTBS、最终DTB/schema与四项DT反例，无跳过。两套缓存仍用 `/tmp/miseed-boot-l2/{root-default,native-dsi}-{source,build}-20261111`，输出见下表。
+- `wsl -d Ubuntu-24.04 --cd /mnt/c/MiSeed -- python3 .work/wired-six-stage-20261112/verify-materials.py`：两套各25项POWER_FILES与工作树逐字节一致，build-source-lock与当前锁一致，默认DTB与全量测试使用的快照一致；六路温控、FCC表及原始电池/总线限制函数、38°C提前退出、保护常量与硬件/DT输入均和基线精确比较未变。预检摘要存忽略目录preflight.json。
+- `python -X utf8 tools/check_repo.py` 与 `git diff --check` 通过。源码仍8项黄灯归TD-008，PPS状态机534行、测试桩600行，无新源码超限。SMB5功率属性helper归入既有supply文件；回差/功率测试案例独立于原定时/故障测试职责。
+
+| 配置 / output_root（仓库相对） | boot.img字节数 | SHA-256 |
+| --- | --- | --- |
+| 默认 `.work/wired-six-stage-20261112/simpledrm` | 9654272 | `662a5f47494c2c62556266a2dd4df67154b118e8e7525f0ef1df4c986f75bc4f` |
+| 原生 `.work/wired-six-stage-20261112/native` | 14135296 | `f911d95412f116b359267ff0192eb4e98ecff7d9f13ae22e3c35714cb20ecba4` |
+
+本版未操作真机、未提交/推送或修改远端PR；维护者对PR#6文件规模的本轮豁免已记录，不外推为合并或保护参数豁免。镜像和长日志仅留.work；此前旧镜像6→38%/温升保持PPS及手动旁路L3保持原结论，本版提前6%接管、71%交接、81/71自动旁路复充须新L3。
+
+## 2026-11-12：有线六阶段 L3 第一窗口（部分）
+
+最终 simpledrm 镜像 `662a5f47…f75bc4f` 经唯一 umi、Bootloader `unlocked=yes/is-userspace=no` 核验后只做一次 `fastboot boot`；Linux 6.18.60、Umi/CSOT CDC greeting与RAM-only挂载已核。没有刷分区。完整充电快照 `round1-charge.log` first=0/next=count=14063、序号连续、无覆盖、storage_errors=0，持续2659.672秒；SHA-256 `13216d3b496afb2d977975a262eec661c81b8ef1396bfe7604439dabacfc77f2`。TCPM 4498行、`complete=1`。主机/脚本/工具及输入哈希见忽略目录 `.work/wired-six-stage-20261112/host-preflight.json`。
+
+绿联有线PDO0 5V/3A在约14.0秒进入SNK_READY；SOC5%期间SMB5采样23组均Charging、输入限流约1.984A、同组输入功率中位9.665W。SOC6%约62秒请求APDO并启泵；目标从11W按约1W/s升至18W。初始PPS虚拟温度38.824°C使`steady=1`，因此未达到27W目标；SOC15/16约481/540秒、30/31约1244/1302秒，16–30%的22.5W目标同样受温控锁定18W约束。电池温度样本34–42°C，不据此判断温标准确度。
+
+state 8于255秒、虚拟温度40.989°C出现，热限额降至4100mA；约257秒源请求从3000降至2050mA，PPS未回退。温控state0的616组PPS输入功率中位17.693W/P90 17.877W；state8的3331组中位15.894W/P90 16.105W。IBUS未超过请求，IBAT未超过热限额。
+
+约1562.219秒（SOC约36%）出现一次`-ERANGE`。当时记录请求8.9V/2.05A，VBUS 8.576V、IBUS 1.884A、IBAT 3.211A、热限额4.1A，fault/latch=0、bus_low/high=0、switching=1；可见快照没有电流越限或BQ故障证据。随后TCPM约0.10秒内请求固定PDO 5V/3A并进入SNK_READY，SMB5恢复Charging。之后至主机回接前508组SMB5中507组Charging，输入功率中位14.252W/P90 14.260W。温控解释降额，不足以解释停泵；当前日志未定位`-ERANGE`具体内部判定，保留RISK-004。
+
+主机约43分44秒接回，最终SOC52%。已导出日志，设备仍为RAM Linux；回接电脑后的CDC/SDP状态不作PD/PPS证据。当前L3仅部分覆盖SOC5→52%；5%固定PDO窗口约48秒，SOC31→36仍以18W目标且之后发生错误回退。27W/22.5W目标、70/71/80/81%、5W复充及自动旁路未覆盖。继续时从52%接回同一绿联有线头，自动策略自然充至后续阶段；不人为放电、加热或修改保护。每次导出使用新文件名。操作计划与脱敏派生分析在忽略目录 `.work/wired-six-stage-20261112/`，原始日志不入库。
+
+## 2026-11-12：有线2:1电压匹配、2.5A与20/10W策略 L1/L2
+
+维护者确认取消软件2A请求下限，电压匹配约两倍电池电压及必要路径压降，输入≤2.5A；授权修改项目并完成L2。本轮未连接或操作设备，未刷写、提交、推送或更新PR。基线HEAD `7989225bf80f5619c0504321963d5d5560434572`，工作分支`codex/wired-six-stage-power`，含本轮未提交修改；既有无关MDSS记录原样保留。
+
+### 实现与接口审查
+
+| 功能 | 固定Linux子系统/接口 | 本地差异与标准消费者 |
+| --- | --- | --- |
+| 有线PD/PPS | Type-C/TCPM、power_supply，µV/µA | TCPM请求/合约核验从状态机移至`umi_pps_pd.c`，无新用户态ABI；标准power_supply读取/控制 |
+| 电池充电/旁路 | power_supply的charge_behaviour、81/71 start/end threshold | SMB5/PPS内部互锁交接复充阶段及故障锁，归TD-004；Debian标准消费者尚待集成 |
+| 有线温控 | IIO温度、thermal zone/cooling device | 六路模型和实际trip/clear/FCC表保留，新增提前降额与停泵恢复；无线RX/TX不参与 |
+
+0–5%固定5V/≤1A；6–70%优先PPS、20W目标、输入≤2.5A；71–80%保持或启动10W PPS；无PPS时固定PD分别按5/15/10W及1/3/2A限制。≥81%或硬件Full停电池充电，固定5V供系统；≤71%优先PPS以10W复充，跨过71%采样仍保持复充档。20W为输入目标，不能外推实际达到20W。
+
+请求电压沿用`2×VBAT+400mV`启动值及20mV调节，BMS/泵VBAT取高，运行在匹配点保持电压；输入请求由功率、温控、APDO和2.5A共同限幅，按50mA向下编码。2A人为下限撤除，USB PPS 1A可编程限流区与既有7V总线下界形成7W软件工作下限；预算不足1A请求时保持停泵，不猜测更低电流的泵工作范围。
+
+提前降额使用下一热档已有clear点，实际温度阈值和硬限额未放宽。38°C的18W提前降额改为可恢复；功率恢复≤1W/秒，请求电流恢复≤50mA/秒。单纯电池热限额越限立即核实停泵，保持SMB5独占与PPS合约刷新；其余原始保护必须通过，再经SETTLE重新启泵。保护/传感器/合约错误、同时存在的绝对过流或停泵失败不能走普通热恢复。故障退出固定PDO后锁住SMB5电池充电，物理拔线才解除；无APDO仍允许普通PD。停机重试保留故障原因，不能在cleanup时误清故障锁。
+
+修复SMB5按50mA硬件量化后的自身限流被误识别为外部上限；标准属性显式写入仍独立保留用户限额。原始采样门控、六路权重/trigger/clear/FCC表、BQ保护寄存器、FG标度及固定PD安全常量与基线逐项比较一致；仅正常控制目标与恢复状态改变。
+
+### 验证环境与结果
+
+Windows 10.0.26200 x64 / PowerShell7.6.9；WSL Ubuntu24.04 x86_64 / Bash，GCC13.3.0、GNU make4.3、dtschema2025.8/yamllint1.38.0。Linux锁定`f45ed76d6791cf72ff1265ee93511175bbbc2f18`，头模板及来源身份未变，未引入外部代码或固件。构建材料均在忽略目录`.work/wired-adaptive-20261112/`。
+
+- `wsl -d Ubuntu-24.04 --cd /mnt/c/MiSeed -- bash .work/wired-adaptive-20261112/final-tests.sh`：完整回归240项、零跳过，61.848秒，退出0。覆盖实际worker的10W低流、2.5A上限、直接高SOC接入、81/71回差、快充跨入旁路后复充预算、热暂停/刷新/冷却恢复、同时故障、停止失败/cleanup及原协议/I²C错误；SMB5真实50mA量化模拟覆盖5.1V时0.95A低档向快充恢复，硬件Full与故障锁独立验证。合成反例不冒充真机。
+- `.work/wired-adaptive-20261112/build-l2.sh simpledrm`和`native`：两套最终源码ARM64编译、链接、配置/输入锁和镜像打包均退出0；各自`validate_kernel_dt.py`完成定向binding、CHECK_DTBS、最终DTB/schema及四项DT回归，零跳过。两套使用各自保留的`/tmp/miseed-boot-l2/wired-adaptive-<profile>-{source,build}-20261112`，未覆盖旧构建缓存。
+- `verify-materials.py`：两套各26个供电源码/头与工作树逐字节一致，DT输入和构建来源锁一致；镜像内核与实际构建Image一致；从原始DTB重放既有ABL隔离后与最终DTB一致，镜像内DTB也一致；核心PPS/TCPM/SMB5链接符号存在。预检退出0，摘要`preflight.json`。
+- 来源锁SHA-256：`049184aa36893e223778750c3eeb9c80c18dbb261f9a5e325a4802776f68761e`。全量测试日志SHA-256：`22f1448a512b77b9987efe737cde9ae4bea0fb6c160cd18ff92232af11b3006a`。
+
+| 最终RAM镜像 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `.work/wired-adaptive-20261112/simpledrm/boot.img` | 9654272 | `677d913f1e4d88585d0ca55d98dbd1a4240295e110472b863826c0ad975ac022` |
+| `.work/wired-adaptive-20261112/native/boot.img` | 14135296 | `00fae41f08ccd4263826f1614236822b361cc8d638367770e265d7ad5faf1711` |
+
+🚦 Audit：本轮L1/L2与定向DT验证🟢；10项源码篇幅黄灯归TD-008，无源码红灯，TCPM协商与保护测试已按职责提取。新策略的实际20/10W、低流PPS、温控提前降额/暂停/恢复、81/71自动旁路复充、真实故障锁L3及专项独立复核仍开放，归RISK-004/TD-004/TD-005；温标/硬件保护不以L2替代。高风险合并验收仍🔴；未查询本轮远端CI，未发起设备操作。
+
+## 2026-11-12：新有线策略L3材料准备与待接入
+
+维护者本轮明确要求准备后启动镜像完成L3。采用上述simpledrm镜像`677d913f…75ac022`和相同未提交工作树，来源/26项供电输入、镜像内核和最终隔离DTB再次核验一致。材料在`.work/wired-adaptive-l3-20261112/`：`host-preflight.json`锁定镜像、Fastboot/ADB/DLL、采集器及脚本哈希；`boot_once.py`核验精确umi/unlocked/Bootloader身份、全部锁定源码、工具和镜像，排他记录一次boot尝试；`console.py`仅允许只读采集和停止/返回Bootloader命令；`L3-plan.md`给出阶段预期、停止与Android回退。
+
+启动守卫4项模拟正反例通过（不会触及设备），覆盖错误镜像/来源锁、近似型号误认和禁止重复启动。Windows采集器25项中19项通过、6项Linux专用跳过，后者已有完整L1覆盖。工具为Platform Tools37.0.1、Python3.14.2、pyserial3.5；未安装新工具或重建镜像。
+
+本轮首次连接查询Fastboot/ADB均为空，仅有非MiSeed的COM1；未发起RAM启动、设备控制或供电改动。已通知维护者材料就绪，等待接电脑进入Bootloader Fastboot。后续只做自然有线充电：先确认RAM启动/温度健康基线，再由维护者换接既有绿联45W PPS头；不加热、不主动放电、不注入保护故障，不外推无线RX/TX。当前只是准备完成，L3未开始。
+
+## 2026-11-12：新有线策略L3 RAM启动与6%基线
+
+材料准备后维护者明确报告已接电脑并进入Fastboot。唯一设备精确核实`product=umi/unlocked=yes/is-userspace=no`；`boot_once.py`核验当前锁定输入、工具与`677d913f…75ac022`后只执行一次`fastboot boot`，发送/Booting均OKAY，退出0。启动日志和排他尝试记录在`.work/wired-adaptive-l3-20261112/`，未写分区、未重复启动。
+
+COM6以`1d6b:0104`枚举，help身份为Umi/CSOT；version确认Linux6.18.60，mounts仅rootfs/devtmpfs/proc/sysfs/debugfs/configfs，无存储挂载。初始SOC6%、电池温度27°C、PPS虚拟温度31.351°C；SMB5健康Good、Charging，两路cooling均0。电脑源为SDP，TCPM显示5V/0mA，BQ未启泵；这些读数不能作为绿联PPS协商或功率证据。基线charge-log导出206条连续记录，无覆盖、storage_errors=0；TCPM78行、complete=1，基线摘要与SHA-256在`baseline-summary.json`。
+
+已通知维护者换接既有绿联45W PPS有线头并保持RAM系统运行，后续由内核自动采集自然充电过程。起始6%使0–5%未覆盖；PPS20/10W、热降额/恢复、71/81边界及81→71复充须据后续真实日志分别判定。Linux侧采集器25项零跳过复核通过。此时只确认RAM启动与基线，不提前标记整个充电L3通过。
+
+维护者随后明确报告已换接绿联45W PPS有线头，主机CDC消失，进入自然充电采集窗口；`charger-handoff.json`记录主机时间。设备离线于电脑数据口期间无实时SOC/协议读数，PPS接管、功率和后续阶段仍待RAM日志证明；未发送充电控制命令。
+
+## 2026-11-12：新有线策略6→56%及低流降额/回升 L3
+
+维护者报告已接回电脑。本轮只读导出，未重启、改充电参数或发起新充电控制；设备仍在原RAM Linux。沿用`677d913f…75ac022`镜像和`7989225`加未提交工作树，boot_id与启动基线一致。
+
+### 记录与实际过程
+
+- `round1-charge.log`：first=0、next=count=21179，全部序号连续，无覆盖、storage_errors=0、ram_only=1。导出跨度3118.845秒（约51分59秒），BMS 1453组，SOC6→56%，电池温度读数27–38°C；温标准确性仍独立待验。
+- `round1-status.log`：状态/pps-status/thermal/TCPM/version/mounts完整采集；TCPM9242行、complete=1。原始日志与派生`round1-summary.json`均留`.work/wired-adaptive-l3-20261112/`，不入库。
+- 绿联VBUS约125.308秒接入，先固定5V/3A；约125.751秒激活APDO，126.250秒启泵，邻近BMS样本SOC7%。运行至3093.653秒的最后正常采样，PPS RUN窗口2967.214秒（49分27秒）。绿联连接期间只有最初一次固定PDO请求，没有中途退回固定PD或实际Hard/Soft Reset转移。
+- TCPM共480次APDO请求，最大请求间隔8.364秒。激活/初次调压在泵关闭时短暂请求3A（125.751/125.804秒）；125.922秒起限额已收紧至2.5A，125.944秒一次TX discard后重试成功，再启泵。此初始契约限额不混作泵运行电流；RUN请求最大2.5A，实测IBUS峰值1.708A、BMS净充电电流峰值2.821A，9535条有效RUN遥测未记录IBUS高于请求或IBAT高于热限额。
+
+| 时间（内核秒） | 热/协议行为 | 观测 |
+| --- | --- | --- |
+| 126.439起 | PPS20W目标，输入请求最高2.5A | 冷段2128条，输入功率中位13.421W；目标不等于实际20W |
+| 787.191 / 788.437 | 虚拟温度38.017°C，提前降额 | 目标20→19→18W，请求降至2.05A，保持PPS |
+| 2321.887 | 18W预算及电池电压变化 | 请求2.05→2.0A，持续PPS |
+| 2922.227–2927.663 | 虚拟温度最高41.125°C，cooling state8；下一热档提前控制生效 | 实际热限额仍4.1A，请求降至1.2A，输入功率约9W，未停泵/换协议 |
+| 2947.110–2966.719 | 温度回落至约41°C以下，逐步解除提前限流 | 请求以50mA步进从1.2升回2.0A，功率从约9W恢复到约14W；随后保持PPS至换线 |
+
+全RUN输入功率由同条泵VBUS×IBUS计算：中位13.514W、P90 14.173W、峰值14.599W；虚拟温度32.307–41.125°C。1.2→2.0A是源端请求限额，不能误写成实际IBUS达到2A。
+
+### 末尾停机与功率解释
+
+TCPM3093.793秒记录物理CC断开/VBUS off，约3096.631秒重新接入电脑。3093.798秒的采样拒绝紧随拔线，3093.817秒明确分类为`detached during control cycle`，BQ fault/latch均0、watchdog=0x43、泵已停；随后state=WAIT_PLUG、reason=0、stop=pd_stop=0、所有权释放。不是充电过程中自发热故障或PPS回退。回接电脑后5V/0mA及两次无PD能力引起的Hard Reset属于SDP连接，不计入绿联故障。
+
+实际功率未达到20W，亦未达到18W热降额预算。日志中源请求电压相对`2×泵VBAT`的余量中位408mV，泵实测VBUS余量中位155mV；源码在请求到达`2×VBAT+400mV`匹配点时抑制继续升压（`umi_pps_power_next_mv`），这是限制继续追功率的明确软件条件。它与当前优先电压匹配的策略一致；不能仅凭合约值与泵端ADC差认定纯线缆电阻或测量标定。若要实际接近20W，需另评估源端/泵端压降补偿与匹配点控制，不在本次取证中改参数。
+
+### 分项验收与现场状态
+
+**本轮有线L3通过：** PPS接管与约49分钟持续运行、运行请求≤2.5A、低于2A（1.2A）请求下持续PPS、自然热降额后向上恢复及物理拔线正常退出。无`miseed-pps failure stage`或热暂停事件。实际温度未到43°C的2.4A硬热限额档，因此不把提前降额/回升当作该限额跃迁后的停泵/重新启泵证明。
+
+**仍待验：** SOC71–80%的10W档、≥81%自动旁路、81→71%优先PPS复充、THERMAL暂停后重新启泵、38°C以下恢复20W目标及实际20W功率。旧手动旁路与既有L3保持原结论；温标、硬件保护注入、故障锁、固定PD专项、无线与Debian集成未外推。导出时SOC56%，设备保持RAM Linux，回接电脑后SMB5 Charging、健康Good、电池37°C；未执行Android回退或提交/推送。
+
+### SOC 0–5%阶段补充（维护者报告）
+
+维护者补充：此前先将设备放电至自动关机，RAM开测时读数约4%；等待接入有线充电头期间由电脑USB供电，SOC跨过5%。据此将0–5%阶段记为已进行。当前提交的`round1-charge.log`从SOC6%开始，不能独立复核4→5%的读数、输入限额和时间线；原始阶段日志目前未在工作区，状态标注为维护者报告，待历史证据补入而不要求重复测试。
+
+SHA-256：charge-log `66e3be9ad2429efea2ffe7f015ec5d694480d12ea5bb629f755a3448db099147`；status `cebd4010611ae63f7cca07227d6154eab3a625cd10b0f15fe728dbcd861a9b59`；派生完整TCPM `a10d1a8cae8d17356e7cb108cb7df06e3e22cf4d4bcb2668e85bf8a0f81c6a12`。
+
+🚦 Audit：上述连续有线PPS及低流降额/回升L3🟢；实际20W与未覆盖阶段/保护🟡，归RISK-004/TD-005。仅更新证据与状态，沿用240项L1及双L2，不将本段分项通过写成全部充电策略验收完成。
+
+## 2026-11-12：PR #6提交前核验与临时附带范围
+
+维护者授权提交/推送PR #6，并破例临时附带本轮有线完整充电日志；此前单独保留的MDSS/SMMU记录未纳入。**下次提交仅从源码树移除下述完整日志附件，保留本文件的脱敏验证记录、当前状态/风险/来源信息及本地原始日志。** `.work/`目录、镜像和构建产物继续保持忽略，不扩大长期入库范围。
+
+提交前`git diff --check`发现新文件`umi_pps_pd.c`末尾多余空行，仅删除该空行（143→142行），同步该输入哈希；未改变任何充电逻辑或设备参数。再次执行同一`final-tests.sh`：240项通过、零跳过，63.202秒；两套`build-l2.sh`及DT/schema均退出0。`verify-materials.py`再核验两套各26个供电输入与最终来源锁、内核/DTB/config及链接符号；simpledrm/native两个boot.img与前述L3准备镜像逐字节一致，哈希仍分别为`677d913f…75ac022`/`00fae41f…faf1711`，无需重新启动设备。
+
+最终来源锁SHA-256：`03a8587e57c93937152c4ad0dd30d652777fc1cdc282058cf803f7ad480b216e`；重跑L1日志：`d3ab767b0e58aafbc73294efccdea2d7db64b3c1629dbb92ace294b1c4da99fb`；核验摘要为原材料目录的`precommit-verified.json`。此前L1/L2材料已保存至该目录下`precommit-original/`，原L3原始证据哈希未变。本次核验未操作设备；上述分项L3与开放项范围不变。
+
+### 临时完整日志附件清理
+
+提交`5359a4f`曾破例附带完整附件，SHA-256为`10d31f70bbada9066b3405bb5af7df08ace17fb57f0b504356d8ee0ada090361`。本轮完成续测对齐后已从源码树移除；原件仍可从该提交历史追溯，工作副本只留在忽略目录`.work/`。本文继续保留脱敏结果、证据摘要与当前开放项。
+
+## 2026-11-12：同一RAM启动续测44→56%有线PPS L3
+
+维护者确认设备仍在RAM镜像且未重启。通过仓库`tools/collect_charge_log.py`只读导出完整RAM时间线；随后只读采集`status`、`pps-status`、`tcpm-log`、`version`和`mounts`。未发送充电控制、重启或存储写入命令。内核版本仍为Linux 6.18.60，charge-log的`boot_id=64707853-ae1b-40d8-bb13-04291c7689f1`与临时附件相同。
+
+- 新快照`first=0 next=count=48130`，`storage_errors=0`、未覆盖；序号0–21178与临时附件逐条完全相同，新增序号21179–48129共26,951条连续记录。完整快照SHA-256为`8dd520786d288bffd61c4798eb2e4d315f7115783a2a05b3181f9579fddfdee3`，仅保存在忽略目录`.work/wired-adaptive-continuation-20261112/`。
+- 首轮日志之后，TCPM于3377.976秒记录VBUS断开；随后标准供电样本显示有线输入`online=0`，电池58%降至44%。这段是无外部有线输入期间的放电，不计为充电L3。
+- 8330.532秒再次接入有线PPS源，TCPM/PPS记录APDO协商；8332.336秒启泵，状态3连续至9279.031秒，约15分46.7秒；9279.236秒物理VBUS断开，9280.131秒PPS回到WAIT_PLUG并释放所有权。3055条RUN遥测中没有`miseed-pps failure`、BQ fault/latch或热暂停。
+- 本段电池SOC由44%升至56%。RUN请求电流2.05–2.5A（初次3A协商发生在启泵前，不计为泵运行请求）；实测IBUS 0.463–1.379A，输入功率按同条泵VBUS×IBUS计算，中位10.399W、P90 10.629W、峰值11.446W。20W/18W是策略目标，不代表实测功率。读数虚拟温度最高约40.684°C、cooling state始终0；未触及硬热限额，温标准确性仍未验证。
+- TCPM导出3253行、`complete=1`；本段159次APDO请求最大间隔8.339秒。物理断开后主机重连阶段仅协商固定PDO 5V/3A；同一阶段的`begin_pps -EOPNOTSUPP`发生于无APDO输入、泵未运行且BQ fault/latch为0，不归因于刚结束的有线PPS运行。读取时SMB5显示USB SDP约4.47V/2.68A并在充电，BQ泵为Not charging；该主机供电段不计入PPS L3。
+
+**本次有线L3分项通过：** 同boot的自然重新接入、PPS启动与约15分47秒持续运行、SOC44→56%充电、请求限额及物理拔线退出。设备随后继续在同一RAM启动；读取时主机供电下SOC约59%。71–81%档位、自动旁路、81→71%复充、热暂停后重新启泵和实际20W仍待验证；不外推无线RX/TX。
+
+🚦 Audit：日志连续性与本段有线PPS运行证据🟢；未覆盖SOC档位、热暂停/硬件保护、温标及实际20W🟡，归RISK-004/TD-005；整机L3尚未完成。原始真机日志与串口导出留在忽略目录，不入库。
+
+## 2026-11-12：同一RAM启动续读至82%及高SOC有线阶段
+
+维护者报告USB已接回；设备仍保持同一RAM启动。本次通过`tools/collect_charge_log.py`只读导出，没有重启、发控制命令或写存储。导出`device-snapshot-2.log`头部为`boot_id=64707853-ae1b-40d8-bb13-04291c7689f1 first=0 next=count=65271 storage_errors=0 ram_only=1`，SHA-256 `0b1f458369c5d424d904c9f456ec625d2f9053a82afaecc1deb5d4ad1712bc6d`。它与前快照序号0–48129逐条相同（前快照48,130条），并延续最初临时附件序号0–21178；新增17,141条连续记录至序号65270，无覆盖。原始文件仅在忽略目录`.work/wired-adaptive-continuation-20261112/`。
+
+- 新增时间线覆盖SOC约57→82%。SOC57→66%期间有USB 5V固定供电和短暂VBUS掉线/重连，不作为PPS功率证据。SOC66%、电池温度读数40°C、虚拟温度43.341°C、thermal/cooling level 11时，`begin_pps`返回`-EAGAIN`，BQ fault/latch为0；TCPM在该窗口记录VBUS短暂关闭/恢复。约35秒后、SOC约65%时PPS恢复并启泵，恢复点虚拟温度仍约41.7°C、level 11。日志支持“热限制仍在时恢复运行”，但VBUS同时掉线，不能将这次退出/重启单独归因于热暂停，也不据此验收THERMAL暂停恢复。
+- SOC约65→76%期间PPS RUN持续约18分27秒。到SOC71%时策略目标从18W开始逐级下调，7.4秒后到10W；随后10W目标持续约10分25秒、至SOC76%。该10W目标窗口1905条遥测，请求1.1–1.3A、IBUS 0.900–1.082A；同条泵端VBUS×IBUS输入功率中位约8.05W、峰值9.41W。证明了71→76%的有线PPS降档运行，不代表实测达到10W。
+- 11255.193秒TCPM从PPS切到固定PDO并请求5V/3A；11255.938秒PPS正常进入空闲态（reason=0），之后SOC76→81%仍在有线固定5V下充电。USB样本电流约2A，电池充电；但TCPM固定PDO请求3A且SMB5 ICL配置仍为3A，当前证据不能证明策略规定的无PPS 10W/2A输入上限。因此76→81%不记为该上限的L3通过，需单独核验或补测。
+- SOC首次到81%时`full_bypass=1, enabled=0, input=1`，随后保持旁路并到SOC82%；末次快照仍由固定5V USB供系统，电池净电流约−0.003A。约12048秒发生一次真实VBUS断开，12067秒固定5V重新接入，旁路状态随后恢复；这属于输入线断开/重连，未见PPS运行失败。
+
+**分项结论：** 高SOC区71→76%的10W PPS目标与SOC81自动旁路已获得同boot真机证据；0–5%仍按维护者报告已测记载，原始附件不含该段。整个71–80%档的策略限额尚未完成证明：76%后源端退出PPS并请求固定5V/3A，超过待验证的10W/2A无PPS预算配置，尽管实际采样约2A。81→71%放电后再优先PPS复充尚未覆盖；无需重测0–5%。全有线充电L3未完成，不外推无线RX/TX。
+
+🚦 Audit：同boot续读和高SOCPPS/81%旁路观测🟢；71–80%固定PDO输入上限、81→71%复充、热暂停因果/重启、温标与硬件保护🟡，归RISK-004/TD-005；不把阶段证据扩大为整个充电L3通过。

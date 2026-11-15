@@ -11,7 +11,7 @@ git diff --check
 ```
 
 提交检查：`python tools/check_commits.py --base <完整SHA> --head <完整SHA>`。
-workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 定义，命令结果写入归档。
+workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 定义，命令结果写入归档；PR6 源码获取修复见[验证记录](archive/reviews/2026-11-10-kernel-validation-environment.md)。
 
 ## 自动化覆盖与盲区
 
@@ -27,7 +27,7 @@ workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 
 
 | required check 名称 | 执行范围 |
 | --- | --- |
-| Boot L2 (Ubuntu 24.04) | 固定 Linux v6.18.60、MiSeed CSOT DTS/ABL 锚点、只读救援 initramfs 和 Android v2 头模板，构建并校验 `boot.img`；apt 传递包哈希与 runner 镜像 digest 尚未闭合 |
+| Boot L2 (Ubuntu 24.04) | 固定 Linux v6.18.60、CSOT DT/ABL、只读 rescue 与 v2 头，校验 boot.img、定向 DT/schema 和四项 DT 反例；传递包/runner 闭包未完 |
 | Repository (ubuntu-24.04, Python 3.11) | L0/L1，最低 Python |
 | Repository (ubuntu-24.04, Python 3.14) | L0/L1，新版 Python |
 | Repository (windows-2025, Python 3.14) | L0/L1，Windows 路径 |
@@ -38,10 +38,7 @@ workflow 修改后用 actionlint 检查。验证要求由 [QUALITY](QUALITY.md) 
 
 维护者决定将分支保护延期到项目跑通且仓库公开后再配置。届时先在真实 PR 核对检查名，再设置默认分支规则：强制 PR、六项检查、至少一项独立审查、更新后重审，禁止 force push/删除/绕过。workflow 不能自行启用规则；结果须记录 PR HEAD SHA、运行链接和最终状态，不能以本地检查代替远端结果。
 
-2026-11-05 HEAD `69caa92e21892c58fdc800321428513c0d79c9d3` 的 [push run](https://github.com/Ben8368/UmiSeed/actions/runs/41985238351) 与 [workflow_dispatch run](https://github.com/Ben8368/UmiSeed/actions/runs/41985050729) 均 completed/success；Ubuntu 24.04 / Python 3.11、Ubuntu 24.04 / Python 3.14、Windows 2025 / Python 3.14 三个 Repository job 均 success；PR commits 因非 PR 事件 skipped。Branch protection/rulesets API 对当前连接返回 403，Require PR、Required checks、Force Push 与 bypass 均 `UNVERIFIED`。推荐要求 PR、所有相关 CI 成功、禁止 Force Push、禁止未经授权绕过；未修改远端设置。
-
 MiSeed Linux/CSOT Boot L2 固定内核和 Android v2 头模板，重建 kernel、ramdisk、DTB 与 cmdline。CI 校验 rescue ELF、GENI console、overlay 符号及 FG/SMB5/PPS 内建对象、PPS/Type-C 链接符号；Umi sink-only PPS test profile 的 Type-C/I2C15/VBUS 节点启用；验证隔离的 soc/SPMI/TLMM overlay 入口、UART/I2C15/BQ IRQ GPIO allowlist 及两条 Type-C 电源 phandle。L2 环境强制运行 libfdt 叠加正反例，避免普通 runner 缺少 dtc 时跳过全部相关测试。设备真机行为按当前 L3 记录，不由 L2 推断。apt 传递包哈希与 runner 镜像 digest 未闭合；上传产物须审查分发条件并设短保留期。
 
-PR #1 commit `e5186ecb442a72eecaefb5c2c54311e193ba9508` 的 [CI run 4](https://github.com/Ben8368/MiSeed/actions/runs/42046511356) 于 2026-11-05 completed/success，Boot L2、PR commits、Ubuntu 3.11、Ubuntu 3.14、Windows 2025 和 macOS 26 六项 job 全部 success。Hosted Boot L2 编译约 4 分 47 秒；152 个 ABL overlay symbols 检查通过，hosted `boot.img` 为 2,453,504 bytes，SHA-256 `e00640c502647b8e675442198028db426090563943eeb0bd8a520bdbbe1d620c`，与本机 L2 完全一致。该证据闭合首个 PR HEAD 的真实 CI 和独立 hosted 复建；apt 传递包哈希、runner image digest 仍待闭合。CI 通过不代表设备已启动，分支保护仍按维护者决定延期。
-
 L2 另核对固定 PD PHY/TCPM 原始文件哈希，应用接收修正后记录输出哈希、检查 PD PHY 对象/ISR；见[接收修正](archive/research/2026-11-09-pd-receive-guard.md)。
+内核获取以 kernel.org 为首选；连接失败或超时后回退到 stable 维护者镜像，核对锁定 tag object 与 commit。缓存 origin 仅允许已登记的两个来源；构建输入及镜像身份由来源锁校验。

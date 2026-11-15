@@ -10,10 +10,25 @@
 #define UMI_CHARGE_MAX_UV 4450000
 #define UMI_CHARGE_USB_ICL_UA 3000000
 #define UMI_CHARGE_FCC_UA 6000000
-#define UMI_CHARGE_END_SOC 100
-#define UMI_CHARGE_START_SOC 0
+#define UMI_CHARGE_END_SOC 80
+#define UMI_CHARGE_START_SOC 71
+#define UMI_CHARGE_RESUME_SOC UMI_CHARGE_START_SOC
 #define UMI_CHARGE_TEST_SECONDS 60
 #define UMI_CHARGE_EXTENDED_TEST_SECONDS 600
+
+#define UMI_WIRED_LOW_MW 10000
+#define UMI_WIRED_FINISH_MW 10000
+#define UMI_WIRED_PD_FAST_MW 15000
+#define UMI_WIRED_PD_9V_MW 18000
+#define UMI_PPS_ENTRY_SOC 11
+#define UMI_PPS_FINISH_SOC 71
+#define UMI_WIRED_BYPASS_STAGE 3
+
+static inline int umi_pps_soc_stage(int soc)
+{
+	return soc < UMI_PPS_ENTRY_SOC ? 0 : soc < UMI_PPS_FINISH_SOC ? 1 :
+		soc < UMI_CHARGE_END_SOC ? 2 : UMI_WIRED_BYPASS_STAGE;
+}
 
 static inline int umi_charge_policy(int online, int present, int good,
 		int temp, int voltage, int soc, int max_uv,
@@ -24,7 +39,7 @@ static inline int umi_charge_policy(int online, int present, int good,
 	if (!online || !present || !good || temp <= UMI_CHARGE_COOL_DECIC ||
 	    temp > UMI_CHARGE_WARM_DECIC || voltage <= 0 ||
 	    max_uv > UMI_CHARGE_MAX_UV ||
-	    soc < 0 || soc > 100)
+	    soc < 0 || soc >= UMI_CHARGE_END_SOC)
 		return 0;
 	/* SMB5 hardware regulates/terminates at the verified programmed FV.
 	 * Do not turn a transient BMS voltage sample into repeated global stops.

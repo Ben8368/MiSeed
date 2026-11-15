@@ -24,18 +24,24 @@ class OverlayIsolationTests(unittest.TestCase):
   compatible = "simple-bus";
   spmi_bus: spmi { #address-cells = <2>; #size-cells = <0>; PMICS };
   tlmm: pinctrl { status = "okay"; gpio-reserved-ranges = <0 4>, <6 1>, <8 26>, <36 8>, <46 22>, <69 14>, <84 26>, <112 69>; };
-  consumer { link = <&spmi_bus &tlmm>; };
+  mdss_mdp: display { controller { }; };
+  sdhc_2: mmc { status = "disabled"; };
+  consumer { link = <&spmi_bus &tlmm &mdss_mdp &sdhc_2>; };
  };
  abl_ovf {
   status = "disabled";
   miseed_dtbo_soc: isolated-soc { status = "disabled"; };
   miseed_dtbo_spmi_bus: isolated-spmi-bus { status = "disabled"; };
   miseed_dtbo_tlmm: isolated-tlmm { status = "disabled"; };
+  isolated-mdss-mdp { status = "disabled"; miseed_dtbo_mdss_mdp: target { status = "disabled"; }; };
+  isolated-sdhc-2 { status = "disabled"; miseed_dtbo_sdhc_2: target { status = "disabled"; }; };
  };
 };
 """.replace("PMICS", pmics))
         self.overlay = self.compile("overlay", """/dts-v1/; /plugin/;
 &spmi_bus { qcom,pm8150@0 { compatible = "qcom,spmi-pmic"; reg = <0 0>; }; };
+&mdss_mdp { connectors { vendor-panel { }; }; };
+&sdhc_2 { status = "okay"; };
 &soc { injected-consumer { compatible = "gpio-keys"; }; };
 &tlmm { gpio-reserved-ranges = <28 4>; vendor-state { pins = "gpio68"; }; };
 """)
@@ -75,6 +81,8 @@ class OverlayIsolationTests(unittest.TestCase):
                                       "compatible"), "qcom,spmi-pmic")
         live = subprocess.check_output(["fdtget", "-l", str(merged), "/soc"])
         self.assertNotIn(b"injected-consumer", live)
+        self.assertEqual(isolation.get(merged, "/soc/mmc", "status"), "disabled")
+        self.assertNotIn(b"connectors", subprocess.check_output(["fdtget", "-l", str(merged), "/soc/display"]))
 
     def test_refuses_enabled_quarantine_before_mutating(self):
         isolation.put(self.base, "/abl_ovf/isolated-tlmm", "status", "okay")

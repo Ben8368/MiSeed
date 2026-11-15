@@ -32,7 +32,11 @@ class RescueFixture(unittest.TestCase):
         cls.addClassCleanup(cls.build.cleanup)
         root = Path(cls.build.name)
         harness = root / "harness.c"
-        harness.write_text((ROOT / "tests/rescue_harness.c").read_text().replace('#include "@SOURCE@"', rescue_includes()))
+        harness_text = (ROOT / "tests/rescue_harness.c").read_text().replace(
+            '#include "@SOURCE@"', rescue_includes()).replace(
+            '#include "@THERMAL_HELPERS@"', '#include "' +
+            (ROOT / "tests/rescue_thermal_harness.c").as_posix() + '"')
+        harness.write_text(harness_text)
         cls.program = root / "harness"
         result = subprocess.run(["gcc", "-O2", "-Wall", "-Wextra", "-Werror",
                                  str(harness), "-o", str(cls.program)], capture_output=True, text=True)

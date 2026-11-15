@@ -104,6 +104,8 @@ int smb5_get_prop_status(struct smb5_chip *chip, int *val)
 	int rc;
 
 	rc = smb5_get_prop_usb_online(chip, &usb_online);
+	if (rc < 0)
+		return rc;
 	if (!usb_online) {
 		*val = POWER_SUPPLY_STATUS_DISCHARGING;
 		return rc;
@@ -117,7 +119,11 @@ int smb5_get_prop_status(struct smb5_chip *chip, int *val)
 		return rc;
 	}
 
-	if (stat[1] & VBATT_GTET_INHIBIT_BIT) {
+	/* PM8150B STATUS_2 bit 5 is a voltage comparator, not battery OV.
+	 * Unlike PMI8998, its battery-overvoltage error is bit 1 (LOS smb5-reg.h).
+	 * Keep the error override; normal charging follows STATUS_1's phase.
+	 */
+	if (stat[1] & CHARGER_ERROR_STATUS_BAT_OV_BIT) {
 		*val = POWER_SUPPLY_STATUS_NOT_CHARGING;
 		return 0;
 	}

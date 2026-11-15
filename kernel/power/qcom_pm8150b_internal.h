@@ -32,6 +32,7 @@
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
 #include <linux/jiffies.h>
+#include <linux/thermal.h>
 #include "umi_charge_policy.h"
 #include "umi_smb5.h"
 
@@ -84,9 +85,22 @@ struct smb5_chip {
 
 	struct power_supply *chg_psy;
 	struct power_supply *bms;
+	struct power_supply *pd;
 	struct mutex lock;
 	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
 	bool pps_owned;
+	bool full_bypass;
+	bool pd_transition;
+	int pd_limit_uv, pd_voltage_uv, pd_current_ua;
+	unsigned long pd_deadline;
+	unsigned int thermal_drop_ua;
+	unsigned long thermal_recovery_jiffies;
+	int thermal_last_decic;
+	bool thermal_sampled, thermal_recover;
+	int power_stage;
+	bool pps_fault;
+	unsigned int policy_icl_ua, saved_icl_ua;
+	unsigned long cooling_state;
 	unsigned long test_deadline;
 	unsigned int test_seconds;
 	int max_fv_uv;
@@ -97,6 +111,9 @@ int smb5_get_prop_usb_online(struct smb5_chip *chip, int *val);
 int smb5_apsd_get_charger_type(struct smb5_chip *chip, int *val);
 int smb5_get_prop_charging_enabled(struct smb5_chip *chip, int *val);
 int smb5_get_prop_status(struct smb5_chip *chip, int *val);
+int smb5_power_limit(struct smb5_chip *chip, int soc);
+int smb5_fixed_update(struct smb5_chip *chip);
+void smb5_thermal_limit(struct smb5_chip *chip, int temp);
 int smb5_get_current_limit(struct smb5_chip *chip,
 					 unsigned int *val);
 int smb5_set_current_limit(struct smb5_chip *chip, unsigned int val);
@@ -108,6 +125,7 @@ int smb5_get_input_current(struct smb5_chip *chip, int *current_ua);
 int smb5_get_prop_health(struct smb5_chip *chip, int *val);
 int smb5_init_hw(struct smb5_chip *chip);
 void smb5_status_change_work(struct work_struct *work);
+int smb5_register_thermal(struct smb5_chip *chip);
 int smb5_set_property(struct power_supply *psy,
 			     enum power_supply_property psp,
 			     const union power_supply_propval *val);

@@ -49,7 +49,8 @@ class BuildLockTests(unittest.TestCase):
     def test_changed_source_and_host_tool_fail(self):
         paths = ("kernel/power/umi_pps.c", "tools/collect_charge_log.py",
                  "kernel/power/qcom_fg_io.c", "kernel/rescue_internal.h",
-                 "tools/source_layout.py")
+                 "kernel/rescue_nfc_l3.c", "kernel/rescue_nfc_netlink.c",
+                 "kernel/rescue_nfc_netlink.h", "tools/source_layout.py")
         for name in paths:
             (self.root / name).write_bytes(b"changed\n")
         self.assertEqual(sum("SHA-256 mismatch" in e for e in self.errors()), len(paths))
@@ -69,6 +70,12 @@ class BuildLockTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8", newline="\n")
         self.data["build_profiles"][0]["input_sha256"][lock.SCRIPT] = hashlib.sha256(path.read_bytes()).hexdigest()
         self.assertTrue(any("script/lock mismatch" in e for e in self.errors()))
+
+    def test_linux_mirror_identity_is_locked(self):
+        self.data["sources"][0]["mirror_url"] = "https://example.invalid/linux.git"
+        self.assertTrue(any("script/lock mismatch" in error for error in self.errors()))
+        self.data["sources"][0].pop("mirror_url")
+        self.assertTrue(any("build lock invalid" in error for error in self.errors()))
 
     def test_executing_identity_is_checked_separately(self):
         self.assertTrue(any("executing build/lock mismatch" in e

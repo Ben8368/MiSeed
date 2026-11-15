@@ -84,9 +84,12 @@ int umi_pps_parse(struct umi_pps *c)
 	 */
 	c->protection[c->nprotection++] = (struct bq25970_reg){0x14, 0xed, 0xa8};
 	c->protection[c->nprotection++] = (struct bq25970_reg){0x15, 0xff, 0x2f};
-	/* Match fixed LOS init_device: enable_wdt(false). Do not change timing. */
+	/* TI TIDA-01582 disables the watchdog by setting 0x0b[2]. This
+	 * policy instead uses the sibling BQ25968-documented 30 s interval;
+	 * successful control-loop I2C transactions provide the refresh.
+	 */
 	c->protection[c->nprotection++] = (struct bq25970_reg){BQ_WATCHDOG,
-		BQ_WD_DISABLED, BQ_WD_DISABLED};
+		BQ_WD_CONFIG_MASK, BQ_WD_ENABLED_30S};
 	return 0;
 }
 
@@ -97,16 +100,7 @@ int umi_pps_verify(struct umi_pps *c)
 
 int umi_pps_prepare(struct umi_pps *c)
 {
-	unsigned int i;
-	int ret = umi_pps_disable(c);
-
-	for (i = 0; !ret && i < c->nprotection; i++) {
-		struct bq25970_reg *r = &c->protection[i];
-
-		ret = umi_pps_update(c, r->reg, r->mask, r->value);
-	}
-	if (!ret)
-		ret = umi_pps_verify(c);
+	int ret = bq25970_configure(c->map, c->protection, c->nprotection);
 	c->configured = !ret;
 	return ret;
 }
@@ -141,23 +135,35 @@ int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s)
 	if (ret)
 		return ret;
 	/* Validate before the deci-C -> milli-C multiplication. */
-	if (s->temp <= -400 || s->temp >= 1250)
+	if (s->temp <= -400 || s->temp >= 1250) {
+		dev_err(c->dev, "miseed-pps battery temperature out of range temp_decic=%d\n",
+			s->temp);
 		return -ERANGE;
+	}
 	temp_mc[0] = s->temp * 100;
 	for (i = 1; i < UMI_PPS_THERMAL_SENSORS; i++) {
 		ret = iio_read_channel_processed(c->thermal_channels[i - 1], &temp_mc[i]);
-		if (ret < 0)
+		if (ret < 0) {
+			dev_err(c->dev, "miseed-pps thermal sensor read failed index=%d error=%d battery_mc=%d\n",
+				i, ret, temp_mc[0]);
 			return ret;
+		}
 	}
 	if (umi_pps_now() - start > UMI_PPS_PERIOD_MS)
 		return -ETIME;
 	/* Until the diagnostic image has a reviewed display-state provider, use
 	 * the more restrictive of both LOS screen-dependent battery limits.
 	 */
-	if (umi_pps_thermal_update(&c->thermal, temp_mc, -1, c->thermal_comp_mc))
+	if (umi_pps_thermal_update(&c->thermal, temp_mc, -1, c->thermal_comp_mc)) {
+		dev_err(c->dev, "miseed-pps thermal sample rejected mc=%d,%d,%d,%d,%d,%d step=%d board_comp_mc=%d\n",
+			temp_mc[0], temp_mc[1], temp_mc[2], temp_mc[3],
+			temp_mc[4], temp_mc[5], c->thermal.step,
+			c->thermal_comp_mc);
 		return -ERANGE;
+	}
 	s->thermal_bat_ma = min(c->thermal.max_bat_ma,
 			       umi_pps_cooling_current(c->cooling_state));
+	s->control_bat_ma = min(c->thermal.control_bat_ma, s->thermal_bat_ma);
 	return 0;
 }
 
@@ -168,27 +174,38 @@ int umi_pps_adc(struct umi_pps *c, int channel, int *value)
 
 int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s)
 {
+	struct bq25970_status status = {
+		.fault = s->fault_raw, .latched = s->latched_raw,
+		.alarm = s->alarm_raw, .status = s->status_raw,
+		.watchdog = s->watchdog_raw, .control = s->control_raw,
+	};
 	int ret;
 
 	ret = umi_pps_verify(c);
+	/* The watchdog flag is read-to-clear; preserve the value observed by
+	 * verification for the normal fault log and safe-stop path.
+	 */
+	if (ret == -ETIME)
+		status.watchdog |= BQ_WD_TIMEOUT_FLAG;
 	if (!ret)
-		ret = regmap_read(c->map, 0x10, &s->fault_raw);
-	if (!ret)
-		ret = regmap_read(c->map, 0x11, &s->latched_raw);
-	if (!ret)
-		ret = regmap_read(c->map, 0x0d, &s->alarm_raw);
-	if (!ret)
-		ret = regmap_read(c->map, 0x0a, &s->status_raw);
-	if (!ret)
-		ret = regmap_read(c->map, BQ_WATCHDOG, &s->watchdog_raw);
-	if (!ret)
-		ret = regmap_read(c->map, BQ_CONTROL, &s->control_raw);
+		ret = bq25970_fault_snapshot(c->map, &status);
+	/* Preserve partial diagnostics if a later read fails after consuming a
+	 * read-to-clear latch. The error still forces the normal safe stop.
+	 */
+	s->fault_raw = status.fault;
+	s->latched_raw = status.latched;
+	s->alarm_raw = status.alarm;
+	s->status_raw = status.status;
+	s->watchdog_raw = status.watchdog;
+	s->control_raw = status.control;
 	if (ret)
 		return ret;
 	s->fault = s->fault_raw || s->latched_raw || (s->status_raw & 0xcb) ||
-		!(s->watchdog_raw & BQ_WD_DISABLED) || !(s->alarm_raw & BIT(1)) ||
+		(s->watchdog_raw & BQ_WD_CONFIG_MASK) != BQ_WD_ENABLED_30S ||
+		(s->watchdog_raw & BQ_WD_TIMEOUT_FLAG) || !(s->alarm_raw & BIT(1)) ||
 		(c->state == PPS_RUN && !(s->control_raw & BQ_ENABLE)) ||
-		(c->state == PPS_SETTLE && (s->control_raw & BQ_ENABLE));
+		((c->state == PPS_SETTLE || c->state == PPS_THERMAL) &&
+		 (s->control_raw & BQ_ENABLE));
 	s->alarm = !!(s->alarm_raw & 0xf0);
 	s->bus_low = !!(s->status_raw & BIT(5));
 	s->bus_high = !!(s->status_raw & BIT(4));

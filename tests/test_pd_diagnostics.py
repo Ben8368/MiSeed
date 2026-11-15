@@ -104,7 +104,17 @@ class PdDiagnosticsTests(unittest.TestCase):
         (root / ".miseed-source-revision").write_text(applier.REVISION)
         originals={
             applier.PDPHY: 'static void qcom_pmic_typec_pdphy_pd_receive(void) {}\nstatic irqreturn_t stub;\ncase PMIC_PDPHY_SIG_RX_IRQ:\n\t\tschedule_work();\n\tdev_vdbg(dev, "pd_transmit_signal: type %d negotiate_rev %d send %d\\n",\n type, rev, ret);\n',
-            applier.TCPM: "#define LOG_BUFFER_ENTRIES\t1024\n" + "\n".join(old for old, new in applier.TCPM_EDITS),
+            applier.TCPM: "#define LOG_BUFFER_ENTRIES\t1024\n" + "\n".join(old for old, new in applier.TCPM_EDITS) + '\n' + '\n'.join((
+                '\tstruct usb_power_delivery *selected_pd;',
+                'static int tcpm_pd_select_pdo(\n\t\tswitch (type) {\n\t\tcase PDO_TYPE_FIXED:\n\t\tcase PDO_TYPE_VAR:',
+                'static unsigned int tcpm_pd_select_pps_apdo(',
+                '\tu32 pdo, src;\n\n\tfor (i = 1; i < port->nr_source_caps; ++i) {',
+                '\ttarget_mw = (port->current_limit * req_out_volt) / 1000;',
+                'static void tcpm_reset_port(struct tcpm_port *port)\n{',
+                'static enum power_supply_property tcpm_psy_props[] = {',
+                '\tcase POWER_SUPPLY_PROP_USB_TYPE:\n\t\tval->intval = port->usb_type;',
+                '\tcase POWER_SUPPLY_PROP_ONLINE:\n\t\tret = tcpm_psy_set_online(port, val);',
+                '\tcase POWER_SUPPLY_PROP_CURRENT_NOW:\n\t\treturn 1;')),
         }
         for name,text in originals.items():
             path=root / name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text,newline="\n")

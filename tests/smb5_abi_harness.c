@@ -16,6 +16,7 @@
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE 1
 struct smb5_chip {
  bool stopping, pps_owned, test_armed, test_active, inhibit;
+ unsigned int saved_icl_ua;
  int lock, status_change_work; unsigned int base; void *regmap;
 };
 struct power_supply { struct smb5_chip *chip; };
@@ -35,7 +36,7 @@ int main(void) {
  struct smb5_chip c={0};struct power_supply psy={.chip=&c};
  union power_supply_propval v={.intval=1500000};
  assert(!smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v));
- assert(raw_limit==30 && notifications==1);
+ assert(raw_limit==30 && notifications==1 && c.saved_icl_ua==1500000);
  v.intval=-1;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EINVAL);
  v.intval=3000001;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EINVAL);
  assert(writes==1);

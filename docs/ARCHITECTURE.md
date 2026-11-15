@@ -15,7 +15,8 @@
 
 ## Linux 接口准则
 
-- 在 UEFI + Linux 主线内核 + Debian 产品链路中，以下规范约束 Linux 侧；UEFI/BootShim 及 EFI Stub 交接按本文跨层契约实施。移植先对照锁定 mainline 源码的子系统、Documentation/ABI、UAPI 与 DT binding；优先复用/扩展上游驱动，不以搬入下游驱动且可编译作为完成标准。
+- 本准则约束 UEFI + Linux 主线内核 + Debian 产品链路的 Linux 侧；UEFI/BootShim 及 EFI Stub 交接按本文跨层契约实施。设备驱动优先基于 Linux 主线现有标准子系统开发，遵循对应的驱动模型、用户态 ABI 与设备描述规范；移植前核对锁定源码的子系统文档、Documentation/ABI、UAPI 和 DT binding，优先复用或扩展上游驱动，不以搬入下游驱动且可编译作为完成标准。
+- 原则上不引入厂商专有内核框架。标准子系统无法覆盖的硬件特性，应优先设计通用化扩展，并满足 Linux 上游社区及对应子系统的设计与维护要求，包括机制与策略划分、用户态 ABI 稳定性、资源生命周期、代码规范与维护流程；临时例外按下述技术债规则管理。
 - 硬件能力通过所属 Linux 子系统提供：电池/有线充电/无线 RX/TX 分别建模于 power_supply，USB PD/PPS 由 Type-C/TCPM 管理；温度与限流接入 IIO/thermal 的适用接口，硬件安全保护不依赖用户进程存活。
 - NFC 接入 NFC/NCI、generic netlink/AF_NFC；显示以 DRM/KMS、触控以 input/evdev 为产品接口。Debian 消费标准接口；Android HAL/Binder/Bionic/VINTF/私有 ioctl 不作为产品功能前提，eSE 另行评估，不能自动宣称可用。
 - DT 描述已核实硬件并遵守属性含义、单位和拓扑；不能给标准属性重定义语义，也不能冒用近似芯片 compatible。新硬件扩展须补 YAML binding；驱动通过 gpiod/regulator/clock/runtime PM 等适用框架管理资源。

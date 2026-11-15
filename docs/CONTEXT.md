@@ -1,17 +1,19 @@
 # 当前状态
 
-日期：2026-11-10。工作分支 `codex/mainline-followup` 为 PR #5，基线 PR #4。RQ-14 目标为 UEFI + Linux 主线内核 + Debian；UEFI/交接仍按 WP3/WP4，例外归 TD-003–007。
+2026-11-15｜`codex/linux-standard-interfaces`；收尾基线 `f349fec9`。固定PD输入监测/旁路故障锁已修，L1/L2过、L3待验，见[记录](archive/reviews/2026-11-15-fixed-pd-input-monitor.md)。
 
-WP10 已替换为 SN100T Linux NFC/NCI transport、binding 与标准 Netlink 消费者，本地 L2 通过，见[适配](archive/research/2026-11-10-sn100t-linux-nci.md)。新驱动 L3、Debian 读卡、eSE 与独立复核尚缺；旧 NQ probe/node L3 不沿用。
+WP10：SN100T/NCI 镜像L2、reset/init、RF target、close/reopen L3过；QUP1=1MHz，CORE_RESET有界重试。普通卡仅发现target；NDEF/PM/HCE/eSE未验。禁共享VEN；复位/NACK待查，见[记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)。
 
-PR #4 修复本地 L0/L1、ARM64 L2 通过；#5 审核核实见[复核](archive/reviews/2026-11-10-pr5-review-fixes.md)。8 项篇幅黄灯归 TD-008。
+有线PPS快充：精确 HEAD `05c4b744` 的既有 L3，SOC11–65% PPS≤3A 后退出续5V，PPS峰值14.61W，非30W；本轮未重测。最新固定PD L3与限流异常见[本轮记录](archive/hardware/2026-11-15-umi-wired-fixed-pd-l3.md)。80%在线旁路已有本轮固定PD证据；断电回差、硬件保护/温标仍开放；无线RX/TX独立。
 
-镜像 `aa5a4683…bd1b7f7`（HEAD `75e0e38`）：维护者宣告有线**固定 PD**稳定——约 10.3 分钟真机、SOC 81%→89%、中段约 1.9–2.0 A、33–35°C、充电中无故障；源端无 APDO 时 PPS `error=-11` 回落为预期。见[PD 稳定 L3](archive/hardware/2026-11-10-umi-pd-wired-stable-l3.md)。既有镜像 `44854093…e98a89f94c` 的 PD/PPS 各约 10 分钟稳定结论仍有效，见[既有稳定 L3](archive/hardware/2026-11-09-umi-pps-windows-l2.md)。
+有线 SMB5 bit5 误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM启动/Android回退L3通过，见[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
 
-Windows `charge-log` 导出：主机专用读线程 + 8 MiB RX + 救援 pacing；修复镜像 `b4026d67…d44e9` 真机全量导出 **1102** 条、`gap_count=0`、`storage_errors=0`（`boot_id=f4152e76-…`）。继续旧 BQ/`-ENOTCONN`、保护标度与精确 HEAD CI，见 RISK-004。无线 RX/TX 未移植。
+显示：启动白/彩条仍现，维护者补报可能新增中间横条，接受本PR非阻断延期；稳定文字及1500既有通过。三种接管实验均撤回，未上机追踪已移除，手机已回Android16，见[续查](archive/reviews/2026-11-15-native-display-framebuffer.md)。首帧/PM开放。
+
+旧旁路、PD/PPS 恢复及 watchdog/热保护L3见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；温标/保护开放，无线未移植。
 
 ## 近期优先级
 
-1. WP10：新 NCI reset/init、RF/NDEF、失败恢复 L3，再集成 Debian；eSE 独立评估。
-2. 新标准 ABI、simpledrm 和 DT 真机验收；有线温控标度/保护恢复、Debian 消费与独立复核。无线 RX/TX 独立设计。
-3. 继续旧 BQ 故障/间歇 `-ENOTCONN`、专项复核与精确 HEAD CI，见 RISK-004。
+1. WP10：验证只读 NDEF、PM、失败恢复并评估 eSE；Debian 用户态属后续阶段。NACK 时采集控制器阶段；禁共享 VEN 复位。
+2. 显示SMMU交接/独立供电PM；有线温标保护L3；后续Debian及无线RX/TX。
+3. RISK-004：保护/温标、错误诱因、独立复核、精确 HEAD CI；时钟见[记录](archive/reviews/2026-11-10-pd-pps-detach-clock.md)。

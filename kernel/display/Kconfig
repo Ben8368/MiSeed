@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config DRM_PANEL_XIAOMI_UMI_CSOT
+	tristate "Xiaomi Umi CSOT command-mode DSC panel"
+	depends on OF && DRM_MIPI_DSI && BACKLIGHT_CLASS_DEVICE
+	select DRM_DISPLAY_DSC_HELPER
+	help
+	  Fixed CSOT j2_mp_42_02_0b data, standard DRM panel and backlight.
+	  Other Umi panel variants are not supported by this driver.

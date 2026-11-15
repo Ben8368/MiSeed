@@ -6,6 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 
+if __package__:
+    from . import tcpm_fixed_profile
+else:
+    import tcpm_fixed_profile
+
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = "f45ed76d6791cf72ff1265ee93511175bbbc2f18"
 PDPHY = "drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.c"
@@ -46,7 +51,7 @@ def transform(name, text, receive):
                             f"#define LOG_BUFFER_ENTRIES\t{LOG_ENTRIES}")
         for old, new in TCPM_EDITS:
             text = replace_once(text, old, new)
-        return text
+        return tcpm_fixed_profile.transform(text, replace_once)
     start = text.index("static void qcom_pmic_typec_pdphy_pd_receive(")
     end = text.index("\nstatic irqreturn_t", start)
     text = text[:start] + receive.rstrip() + "\n" + text[end:]
@@ -72,6 +77,8 @@ def regular_path(root, relative):
 
 def manifest_for(patches, receive):
     return dict(revision=REVISION, receive_sha256=digest(receive.encode()),
+                profile_sha256=digest(tcpm_fixed_profile.PROFILE.read_bytes()),
+                profile_applier_sha256=digest(Path(tcpm_fixed_profile.__file__).read_bytes()),
                 applier_sha256=digest(Path(__file__).read_bytes()),
                 original=ORIGINAL, outputs={n: digest(b) for n, b in patches.items()},
                 tcpm_log_entries=LOG_ENTRIES)
@@ -93,6 +100,9 @@ def stage(source, receive_path=ROOT / "kernel/power/pmic_pdphy_receive.inc"):
             raise ValueError("diagnostic manifest must be an object")
         if saved.get("revision") != REVISION or saved.get("receive_sha256") != digest(receive.encode()) or saved.get("applier_sha256") != digest(Path(__file__).read_bytes()):
             raise ValueError("diagnostic inputs changed; use a fresh source tree")
+        if (saved.get("profile_sha256") != digest(tcpm_fixed_profile.PROFILE.read_bytes()) or
+                saved.get("profile_applier_sha256") != digest(Path(tcpm_fixed_profile.__file__).read_bytes())):
+            raise ValueError("fixed profile inputs changed; use a fresh source tree")
         if saved.get("original") != ORIGINAL or set(saved.get("outputs", {})) != set(ORIGINAL):
             raise ValueError("diagnostic manifest source set changed")
         for name, expected in saved["outputs"].items():

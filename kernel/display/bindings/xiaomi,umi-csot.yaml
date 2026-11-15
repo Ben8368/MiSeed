@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/display/panel/xiaomi,umi-csot.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+title: Xiaomi Mi 10 CSOT j2_mp_42_02_0b AMOLED panel
+maintainers:
+  - Ben <Ben8368@vip.qq.com>
+description: |
+  Command-mode four-lane 1080x2340 DSC 1.1 panel. Other variants are not
+  supported. Panel supply rails remain firmware-owned in bring-up;
+  independent rail management is pending board qualification.
+allOf:
+  - $ref: panel-common.yaml#
+properties:
+  compatible:
+    const: xiaomi,umi-csot
+  reg:
+    maxItems: 1
+  reset-gpios:
+    maxItems: 1
+  port: true
+required:
+  - compatible
+  - reg
+  - reset-gpios
+  - port
+additionalProperties: false

@@ -11,7 +11,6 @@
 #include <sys/stat.h>
 #define CHARGE_LOG_CAPACITY 8
 #define CHARGE_LOG_MAX_BYTES (sizeof(struct charge_log_header) + 16 * sizeof(struct charge_log_record))
-
 static int test_open(const char *path, int flags, ...);
 static DIR *test_opendir(const char *path);
 static int test_stat(const char *path, struct stat *st);
@@ -39,7 +38,7 @@ static long test_reboot_syscall(long number, ...);
 #undef fopen
 #undef sleep
 #undef syscall
-
+#include "@THERMAL_HELPERS@"
 static int kmsg_fd = -1;
 static int delayed_udc;
 static int retries;
@@ -53,7 +52,6 @@ static long test_reboot_syscall(long number, ...) {
     errno = EPERM;
     return -1;
 }
-
 static const char *pps_prefix = "/sys/class/power_supply";
 static ssize_t test_readlink(const char *path, char *buffer, size_t size) {
     char mapped[1024];
@@ -65,6 +63,7 @@ static ssize_t test_readlink(const char *path, char *buffer, size_t size) {
 }
 static FILE *test_fopen(const char *path, const char *mode) {
     char mapped[1024];
+    if (test_thermal_path(path)) return test_thermal_fopen(path, mode);
     if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
         snprintf(mapped, sizeof(mapped), "%s%s", getenv("TEST_PPS_ROOT"), path + strlen(pps_prefix));
         path = mapped;
@@ -72,6 +71,7 @@ static FILE *test_fopen(const char *path, const char *mode) {
     }
     return fopen(path, mode);
 }
+
 static int test_stat(const char *path, struct stat *st) {
     char mapped[1024];
     if (getenv("TEST_PPS_ROOT") && !strncmp(path, pps_prefix, strlen(pps_prefix))) {
@@ -96,6 +96,7 @@ static int test_open(const char *path, int flags, ...) {
     if (!strcmp(path, "/dev/ttyGS0")) path = getenv("TEST_TTY");
     if (!strcmp(path, "/sys/kernel/config/usb_gadget/miseed/UDC"))
         path = getenv("TEST_UDC_BIND");
+    if (test_thermal_path(path)) return test_thermal_open(path, flags, mode);
     if (!strcmp(path, "/dev/kmsg")) {
         kmsg_fd = open("/dev/null", flags);
         return kmsg_fd;
@@ -130,6 +131,7 @@ static DIR *test_opendir(const char *path) {
     }
     if (!strcmp(path, "/sys/class/udc")) path = getenv("TEST_UDC_DIR");
     if (!path) { errno = ENOENT; return NULL; }
+    if (!strcmp(path, "/sys/class/thermal")) return test_thermal_opendir();
     if (!strcmp(path, "/sys/class/power_supply") && getenv("TEST_POWER_ROOT"))
         path = getenv("TEST_POWER_ROOT");
     if (getenv("TEST_I2C_ROOT") && !strcmp(path, "/sys/bus/i2c/devices"))
@@ -139,7 +141,6 @@ static DIR *test_opendir(const char *path) {
         path = getenv("TEST_TCPM_ROOT");
     return opendir(path);
 }
-
 static ssize_t test_read(int fd, void *buffer, size_t size) {
     static const char *records[] = {
         "6,1,0,-;dwc3 controller ready\n",
@@ -201,6 +202,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[1], "rpmh-overrun")) { kmsg_overrun=1; report_rpmh_kernel_messages(); }
     else if (!strcmp(argv[1], "i2c-report")) report_i2c_devices();
     else if (!strcmp(argv[1], "tcpm-log")) report_tcpm_logs();
+    else if (!strncmp(argv[1], "thermal-", 8)) return run_thermal_case(argv[1]);
     else if (!strcmp(argv[1], "bind")) {
         delayed_udc = 1;
         wait_for_usb_acm();

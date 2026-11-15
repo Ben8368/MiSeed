@@ -14,6 +14,51 @@
  */
 
 #include "qcom_pm8150b_internal.h"
+#include "umi_pps_policy.h"
+
+/* Fixed PD: 10 W / 18 W at 9 V (15 W at 5 V) / 10 W. */
+int smb5_power_limit(struct smb5_chip *chip, int soc)
+{
+	unsigned int icl_ua, target;
+	int input_uv;
+	int target_mw;
+	int rc = smb5_get_current_limit(chip, &icl_ua);
+
+	if (rc)
+		return rc;
+	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
+		chip->saved_icl_ua = icl_ua;
+	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
+	{
+		target_mw = chip->power_stage == 0 ? UMI_WIRED_LOW_MW :
+			chip->power_stage >= 2 ? UMI_WIRED_FINISH_MW :
+			chip->pd_voltage_uv == 9000000 ? UMI_WIRED_PD_9V_MW : UMI_WIRED_PD_FAST_MW;
+		rc = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input_uv);
+		if (rc)
+			return rc;
+		if (input_uv <= 0)
+			return -ERANGE;
+		target = (unsigned int)((long long)target_mw * 1000000000LL /
+				input_uv);
+		target = umi_pps_min(target, chip->power_stage != 1 ||
+			chip->pd_voltage_uv == 9000000 ? 2000000 : UMI_CHARGE_USB_ICL_UA);
+	}
+	if (chip->pd_current_ua > 0)
+		target = umi_pps_min(target, chip->pd_current_ua);
+	if (!chip->full_bypass)
+		target = target > chip->thermal_drop_ua ? target - chip->thermal_drop_ua : 0;
+	target = umi_pps_min(target, chip->saved_icl_ua);
+	/* Match the hardware's 50 mA encoding before comparing our next readback. */
+	target = target / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
+	if (icl_ua < target)
+		target = umi_pps_min(target, icl_ua + 100000);
+	/* Tightening a stage/thermal/contract ceiling takes effect immediately. */
+	if (icl_ua != target)
+		rc = smb5_set_current_limit(chip, target);
+	if (!rc)
+		chip->policy_icl_ua = target;
+	return rc;
+}
 
 static enum power_supply_property smb5_properties[] = {
 	POWER_SUPPLY_PROP_MANUFACTURER,
@@ -110,6 +155,8 @@ int smb5_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		mutex_lock(&chip->lock);
 		rc = chip->pps_owned || chip->stopping ? -EBUSY : smb5_set_current_limit(chip, val->intval);
+		if (!rc)
+			chip->saved_icl_ua = val->intval / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
 		mutex_unlock(&chip->lock);
 		power_supply_changed(psy);
 		return rc;
