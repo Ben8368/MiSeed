@@ -6,6 +6,10 @@
 #include "umi_charge_policy.h"
 static void log_error(const char *fmt, ...) { (void)fmt; }
 #define dev_err(d, ...) log_error(__VA_ARGS__)
+#define dev_info(d, ...) log_error(__VA_ARGS__)
+#define mutex_lock(p) ((void)(p))
+#define mutex_unlock(p) ((void)(p))
+#define mod_delayed_work(q,w,t) ((void)(w))
 #define BIT(n) (1U << (n))
 #define HZ 1000
 #define time_before(a,b) ((long)((a)-(b))<0)
@@ -23,7 +27,8 @@ struct smb5_chip {
  unsigned int base, thermal_drop_ua;
  int thermal_last_decic, power_stage, pd_voltage_uv, pd_current_ua, pd_limit_uv;
  bool thermal_sampled, thermal_recover, full_bypass, inhibit, cooling_state;
- bool pps_fault, pd_transition, enabled;
+ bool pps_fault, pd_transition, enabled, pps_owned, stopping;
+ int lock, status_change_work;
  unsigned long pd_deadline, thermal_recovery_jiffies;
 };
 static unsigned long jiffies;
@@ -132,6 +137,31 @@ int main(void) {
  c=reset();no_9v=1;assert(!smb5_fixed_update(&c));
  icl_ua=measured_ua=3000000;assert(!smb5_fixed_update(&c));
  measured_ua=3000005;assert(smb5_fixed_update(&c)==-EOVERFLOW && c.pps_fault);
+ /* L3 replay: worker saw 1.883 A, next sysfs reader sees 2.425 A.
+  * Return the exact value AND latch/stop before returning. */
+ c=reset();assert(!smb5_fixed_update(&c));
+ measured_ua=1883430;assert(!smb5_fixed_update(&c));
+ stopped=suspended=0;c.enabled=true;icl_ua=1850000;measured_ua=2425170;
+ int sample=0;
+ assert(!smb5_get_input_current_now(&c,&sample) && sample==2425170);
+ assert(c.pps_fault && !c.enabled && stopped && suspended);
+ measured_ua=1882785;assert(!smb5_get_input_current_now(&c,&sample));
+ assert(c.pps_fault && suspended);
+ for(int fail=0;fail<3;fail++) {
+  c=reset();assert(!smb5_fixed_update(&c));stopped=suspended=0;
+  stop_error=fail?-EIO:0;suspend_error=fail==1?0:-EIO;measured_ua=2425170;
+  assert(!smb5_get_input_current_now(&c,&sample) && sample==2425170 && c.pps_fault);
+  assert(fail==0?stopped:fail==1?suspended:(!stopped && !suspended));
+ }
+ c=reset();assert(!smb5_fixed_update(&c));calls=0;fail_at=1;
+ sample=123;assert(smb5_get_input_current_now(&c,&sample)==-EIO && c.pps_fault);
+ c=reset();assert(!smb5_fixed_update(&c));calls=0;fail_at=2;
+ assert(!smb5_get_input_current_now(&c,&sample) && c.pps_fault && sample==1984000);
+ /* PPS and unloaded transitions must not use stale fixed budgets. */
+ c=reset();assert(!smb5_fixed_update(&c));c.pps_owned=true;measured_ua=2425170;
+ assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);
+ c.pps_owned=false;c.pd_transition=true;
+ assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);
  c=reset();smb5_thermal_limit(&c,300);assert(!c.thermal_drop_ua);
  for(int t=310;t<=350;t+=10) { jiffies+=1000;smb5_thermal_limit(&c,t); }
  assert(c.thermal_drop_ua==500000);

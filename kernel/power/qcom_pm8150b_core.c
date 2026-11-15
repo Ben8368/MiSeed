@@ -176,6 +176,10 @@ static int smb5_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, PTR_ERR(chip->usb_in_i_chan),
 				     "Couldn't get usb_in_i_uv IIO channel\n");
 	}
+	chip->mid_chg_chan = devm_iio_channel_get(chip->dev, "mid_chg_div6");
+	if (IS_ERR(chip->mid_chg_chan))
+		return dev_err_probe(chip->dev, PTR_ERR(chip->mid_chg_chan),
+				     "Couldn't get mid_chg_div6 IIO channel\n");
 
 
 	supply_config.drv_data = chip;

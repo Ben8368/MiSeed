@@ -112,6 +112,8 @@ static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 { (void)c; *v = current; return read_error; }
 static int smb5_get_iio_chan(struct smb5_chip *c, void *chan, int *v)
 { (void)c; (void)chan; *v = input_uv; return voltage_error; }
+static int smb5_get_input_voltage(struct smb5_chip *c, int *v)
+{ return smb5_get_iio_chan(c, 0, v); }
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; writes++; if (write_error) return write_error; current = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 ''' + function + r'''

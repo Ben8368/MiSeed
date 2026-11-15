@@ -158,6 +158,8 @@ static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 { (void)c; *v = input_limit; return 0; }
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; input_limit = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
+static int smb5_get_input_voltage(struct smb5_chip *c, int *v)
+{ (void)c; *v=5000000; return adc_error; }
 static int regmap_update_bits(void *map, unsigned int reg, unsigned int mask, unsigned int v)
 { (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; else ++resumes; return 0; }
 static int regmap_write(void *map, unsigned int reg, unsigned int v)

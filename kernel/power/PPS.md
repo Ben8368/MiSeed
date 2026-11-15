@@ -41,7 +41,7 @@ PPS电压基准保留`2×VBAT+400mV`启动值，BMS/泵VBAT取高，运行按20m
 
 固定切档先停电池充电、暂停SMB5输入，设置匹配LOS的高档FSW/连续输入范围，再通过TCPM选择标准DT capability profile。确认SNK_READY、合约电压/电流和无负载电压后，配置对应5/9V输入范围及FSW，限流后才恢复输入/充电。9V≤2A；5V≤3A，低电量/收尾/旁路≤2A；更严格用户限额、源合约和温控优先，降额立即生效，恢复每worker≤100mA。切档10秒超时或读回错误禁止自动充电，保留暂停状态并尝试安全5V恢复；物理拔线才解除故障锁。
 
-固定PD带载时随SMB5 worker核对配置ICL及ADC实测输入电流均不超过已验证合约预算；TCPM的`current_now`是协商预算，SMB5的同名属性才是实测。超限或监测读错触发既有故障锁，分别尝试停电池充电和暂停USB输入；旁路不得绕过故障锁恢复输入。原始电流不滤波、不钳位；不将非同步的ADC与刚收紧的温控ICL直接作瞬态保护判据。标称1秒的软件轮询不能替代硬件瞬态保护，证据与未闭项见[异常修复](../../docs/archive/reviews/2026-11-15-fixed-pd-input-monitor.md)。
+固定PD带载时，SMB5 worker与标准`current_now`读取共用ICL/ADC合约检查及故障锁；读取者发现超限也先停电池充电、暂停USB输入，再返回原始值。旁路不得绕过故障锁；原始电流不滤波/钳位，不将非同步ADC与刚收紧的温控ICL当瞬态判据。TCPM同名属性是协商预算，SMB5才是实测。带载电压用本机LOS指定的MID_CHG/1:6；卸载切档保留USBIN无负载实测，MID低于原1V可信边界时报错、不以合约代替读数。标称1秒轮询不能替代硬件保护，见[再修复](../../docs/archive/reviews/2026-11-15-fixed-pd-sampling-paths.md)。
 
 TCPM本地通用化提案以标准`power_supply/input_voltage_limit`（µV）选择firmware已声明的sink profile，同时限制固定PDO和PPS请求；不新增私有sysfs。capabilities/caps-0为5V+PPS的接入默认，caps-1增加9V/2A；通过该属性选择的profile在断开/协议复位时恢复默认。PPS启用后显式设置9.5V上限，退出确认固定5V后恢复5V上限。该扩展未上游合入，复核/退出路径归TD-004/TD-007。
 

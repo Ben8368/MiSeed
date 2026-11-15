@@ -27,8 +27,15 @@ struct tcpm_port { int lock,state,pwr_role,pd_count,nr_snk_pdo,operating_snk_mw,
  u32 snk_pdo[7];void *port_sink_caps,*typec_port; };
 union power_supply_propval { int intval; };
 static int busy, starts;
+static struct usb_power_delivery *linked, *fail_link;
+static void tcpm_log(struct tcpm_port *p,const char *fmt, ...) { }
 static int tcpm_ams_start(struct tcpm_port *p,int ams) { starts++;return busy?-EAGAIN:0; }
-static void typec_port_set_usb_power_delivery(void *p,void *pd) { }
+static int typec_port_set_usb_power_delivery(void *p,struct usb_power_delivery *pd) {
+ if(linked==pd)return 0;
+ if(pd && linked)return -EEXIST;
+ if(pd && pd==fail_link)return -EIO;
+ linked=pd;return 0;
+}
 /* DRIVER_UNDER_TEST */
 int main(void) {
  struct usb_power_delivery ids[2]={{0},{1}};
@@ -39,12 +46,19 @@ int main(void) {
  struct tcpm_port p={.state=SNK_READY,.pwr_role=TYPEC_SINK,.pd_count=2,
  .pd_capable=true,.pd_list=list,.selected_pd=&ids[0]};
  union power_supply_propval val;
+ linked=&ids[0];
  assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
  assert(tcpm_psy_set_fixed_limit(&p,4999999)==-EINVAL);
  busy=1;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EAGAIN);
  assert(p.selected_pd==&ids[0] && !p.psy_selected_profile && !p.nr_snk_pdo);
+ assert(linked==&ids[0]);
+ busy=0;fail_link=&ids[1];int old_starts=starts;
+ assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EIO && linked==&ids[0]);
+ assert(starts==old_starts && p.selected_pd==&ids[0] && !p.psy_selected_profile);
+ fail_link=NULL;
  busy=0;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EAGAIN);
  assert(p.selected_pd==&ids[1] && p.psy_selected_profile && p.nr_snk_pdo==3);
+ assert(linked==&ids[1]);
  int before=starts;
  assert(tcpm_psy_get_fixed_limit(&p,&val)==-EAGAIN); /* Queued AMS is not READY. */
  p.update_sink_caps=false;
@@ -56,8 +70,13 @@ int main(void) {
  assert(tcpm_psy_set_fixed_limit(&p,5000000)==-EINVAL && starts==before);
  assert(!tcpm_psy_set_fixed_limit(&p,9500000) && p.psy_voltage_limit_mv==9500);
  p.pps_data.active=false;
+ fail_link=&ids[0];tcpm_psy_restore_profile(&p);
+ assert(p.selected_pd==&ids[0] && p.nr_snk_pdo==2 && p.psy_selected_profile);
+ assert(tcpm_psy_get_fixed_limit(&p,&val)==-EIO);
+ fail_link=NULL;
  tcpm_psy_restore_profile(&p);
  assert(p.selected_pd==&ids[0] && p.nr_snk_pdo==2 && !p.psy_selected_profile);
+ assert(linked==&ids[0]);
  assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
  p.pwr_role=TYPEC_SOURCE;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EOPNOTSUPP);
  assert(p.selected_pd==&ids[0]);

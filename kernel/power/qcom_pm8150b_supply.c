@@ -33,7 +33,7 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 		target_mw = chip->power_stage == 0 ? UMI_WIRED_LOW_MW :
 			chip->power_stage >= 2 ? UMI_WIRED_FINISH_MW :
 			chip->pd_voltage_uv == 9000000 ? UMI_WIRED_PD_9V_MW : UMI_WIRED_PD_FAST_MW;
-		rc = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input_uv);
+		rc = smb5_get_input_voltage(chip, &input_uv);
 		if (rc)
 			return rc;
 		if (input_uv <= 0)
@@ -110,10 +110,12 @@ static int smb5_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		return smb5_get_current_limit(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		return smb5_get_input_current(chip, &val->intval);
+		return smb5_get_input_current_now(chip, &val->intval);
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		return smb5_get_iio_chan(chip, chip->usb_in_v_chan,
-					 &val->intval);
+		mutex_lock(&chip->lock);
+		rc = smb5_get_input_voltage(chip, &val->intval);
+		mutex_unlock(&chip->lock);
+		return rc;
 	case POWER_SUPPLY_PROP_ONLINE:
 		return smb5_get_prop_usb_online(chip, &val->intval);
 	case POWER_SUPPLY_PROP_STATUS:

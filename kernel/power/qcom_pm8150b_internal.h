@@ -82,6 +82,7 @@ struct smb5_chip {
 
 	struct iio_channel *usb_in_i_chan;
 	struct iio_channel *usb_in_v_chan;
+	struct iio_channel *mid_chg_chan;
 
 	struct power_supply *chg_psy;
 	struct power_supply *bms;
@@ -113,6 +114,8 @@ int smb5_get_prop_charging_enabled(struct smb5_chip *chip, int *val);
 int smb5_get_prop_status(struct smb5_chip *chip, int *val);
 int smb5_power_limit(struct smb5_chip *chip, int soc);
 int smb5_fixed_update(struct smb5_chip *chip);
+int smb5_get_input_current_now(struct smb5_chip *chip, int *current_ua);
+int smb5_get_input_voltage(struct smb5_chip *chip, int *voltage_uv);
 void smb5_thermal_limit(struct smb5_chip *chip, int temp);
 int smb5_get_current_limit(struct smb5_chip *chip,
 					 unsigned int *val);

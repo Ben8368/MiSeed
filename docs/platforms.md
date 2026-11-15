@@ -56,5 +56,5 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
 | 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线供电 / 旁路 | 最新HEAD固定PD L3无APDO、SOC6→80%，5→9V/2A→5V→旁路；9V单点2.405A超限，RISK-004待复核。PPS为旧证据，本轮未重测 | [固定PD](archive/hardware/2026-11-15-umi-wired-fixed-pd-l3.md) / [PPS](archive/hardware/2026-11-13-umi-wired-charge-l3-log-review.md) |
+| 有线供电 / 旁路 | 二次修复L3捕获2.361A，停充/暂停、保持至拔线通过；TCPM旧重复链接告警未再现；持续充电因输入异常中断，RISK-004开放。旧阶段/旁路/PPS保留原范围 | [本次L3](archive/hardware/2026-11-15-umi-fixed-pd-sampling-l3.md) / [修复](archive/reviews/2026-11-15-fixed-pd-sampling-paths.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |
