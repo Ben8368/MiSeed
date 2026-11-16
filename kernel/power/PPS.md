@@ -13,11 +13,11 @@
 | 入口 | SE15 I2C、0x66 BQ25970、GPIO68；`usbpd_pm` 自动管理 PPS | 主线 TCPM + 本控制器；测试镜像 enabled，RPMh/I2C15/BQ 绑定已 L3 |
 | BQ 配置 | BAT_OVP 4550 mV；battery OVP alarm 禁用；battery OCP/UCP alarm 禁用；BUS_OVP 12000/11000 mV、BUS_OCP 3750/3500 mA、AC OVP 14 V；电池 OCP 与 BQ 三路 TS 比较器禁用，sense 属性留注释；watchdog 30 秒档启用；本地 HEAD 正常运行刷新 L3 已验收 | 限值继续按 LOS；watchdog 刷新方式参考同系列 BQ25968，依靠成功 I²C 事务，不设独立喂狗任务。sense 位沿用本机读到的 0xd0 配置，不推断实物电阻 |
 | 热控与电量 | `mi_thermald` 通过 SMB5 thermal FCC 投票；常规 Umi PPS 上限表为 16 档；PD 策略在 95% SOC 退出 charge pump | 已移植六路虚拟温度及 FCC 表；本地11–70% PPS、71%起固定5V、80/71旁路复充，95%原安全边界保留 |
-| 运行方式 | USB/PD 事件驱动，符合条件即进入持续策略，拔线/故障/高电量时退出 | 驱动 probe 后轮询 PD attach 并自动尝试 PPS；拔线回到等待态，故障回固定 PDO 并恢复 SMB5 策略 |
+| 运行方式 | USB/PD 事件驱动，符合条件即进入持续策略，拔线/故障/高电量时退出 | 驱动 probe 后轮询 PD attach；TCPM 报告 `PD_PPS`（已发现源 APDO）才尝试 PPS，普通 `PD` 保持固定 PDO 与 SMB5；拔线回到等待态，故障回固定 PDO 并恢复 SMB5 策略 |
 
 来源证据为固定 LOS `umi-sm8250.dtsi`、`bq2597x_charger.c`、`pd_policy_manager.c/.h` 与 `smb5-lib.c`。自动 attach、SOC/温控策略、LOS SMB5 限流与 PPS 退出回退已移植；节点绑定已 L3；镜像 `44854093…e98a89f94c` 的 PD/PPS 分别约 10 分钟真机通过并宣告稳定。本地 HEAD `2bdb266` 另完成 watchdog 正常刷新及 PPS thermal cooling state 8 停泵/固定 PDO/SMB5 恢复 L3，见[2026-11-11 记录](../../docs/archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。其余保护故障注入、完整板级温标和发布验收仍开放。
 
-仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。默认固定 PDO 为 5 V / 3 A，另有9V/2A profile；PPS sink APDO 为 3.3–11 V / 3 A，运行限制9.5 V、3 A总线和6 A电池，SMB5 与 LOS 相同设为 3 A USB ICL、6 A FCC、4.45 V FV。这些是 LOS 配置，不是实测充电功率。
+仅接受独立 BQ25970、完整 ID `0x10`；参考驱动兼容的 SC8551/SC8551A/NU2105/BQ25968 不作相同 ADC/寄存器处理。本机 Android 定点读取已确认 `0x10`，不替代 MiSeed probe。默认固定 PDO 为 5 V / 3 A，另有9V/3A profile；PPS sink APDO 为 3.3–11 V / 3 A，运行限制9.5 V、3 A总线和6 A电池，SMB5 与 LOS 相同设为 3 A USB ICL、6 A FCC、4.45 V FV。这些是 LOS 配置，不是实测充电功率。
 
 ## 状态与安全退出
 
@@ -26,7 +26,7 @@
 | SOC / 周期 | PPS 可用 | 仅固定 PD |
 | --- | --- | --- |
 | 0–10% | 固定5V/SMB5，输入≤2A，标称10W | 同左 |
-| 11–70% | 30W期望目标，输入≤3A，电压随2:1工作点调整 | 优先9V/≤2A、18W；无匹配9V档时5V/≤3A、15W |
+| 11–70% | 30W期望目标，输入≤3A，电压随2:1工作点调整 | 优先9V/3A合约，ICL≤2A、18W；无匹配9V档时5V/≤3A、15W |
 | 71–79% | 退出PPS，固定5V/≤2A、10W补电 | 同左 |
 | ≥80%或硬件Full | 停止电池充电，固定5V供系统，输入预算≤10W/2A | 同左 |
 | 旁路后≤71% | 固定5V/≤2A复充至80%；周期锁定10W | 同左 |
@@ -39,13 +39,13 @@ PPS电压基准保留`2×VBAT+400mV`启动值，BMS/泵VBAT取高，运行按20m
 
 固定PD使用独立BMS温度反馈：每次观测升温增加100mA输入降额；温度持平时维持，观测降温后每秒最多解除100mA降额，再升温即停止恢复。不新增温度触发点，不复用PPS六路模型；已有冷端、45°C暖端、cooling停充及读错保护更优先。此控制反馈效果与板级温标需L3，不把趋势反馈当成硬件保护。
 
-固定切档先停电池充电、暂停SMB5输入，设置匹配LOS的高档FSW/连续输入范围，再通过TCPM选择标准DT capability profile。确认SNK_READY、合约电压/电流和无负载电压后，配置对应5/9V输入范围及FSW，限流后才恢复输入/充电。9V≤2A；5V≤3A，低电量/收尾/旁路≤2A；更严格用户限额、源合约和温控优先，降额立即生效，恢复每worker≤100mA。切档10秒超时或读回错误禁止自动充电，保留暂停状态并尝试安全5V恢复；物理拔线才解除故障锁。
+固定切档先停电池充电、暂停SMB5输入，设置匹配LOS的高档FSW/连续输入范围，再通过TCPM选择标准DT capability profile。确认SNK_READY、合约电压/电流和无负载电压后，配置对应5/9V输入范围及FSW，限流后才恢复输入/充电。9V合约能力≤3A，11–70%阶段目标18W且ICL≤2A；5V≤3A，低电量/收尾/旁路≤2A；更严格用户限额、源合约和温控优先，降额立即生效，恢复每worker≤100mA。切档10秒超时或读回错误禁止自动充电，保留暂停状态并尝试安全5V恢复；物理拔线才解除故障锁。
 
 固定PD带载时，SMB5 worker与标准`current_now`读取共用ICL/ADC合约检查及故障锁；读取者发现超限也先停电池充电、暂停USB输入，再返回原始值。旁路不得绕过故障锁；原始电流不滤波/钳位，不将非同步ADC与刚收紧的温控ICL当瞬态判据。TCPM同名属性是协商预算，SMB5才是实测。带载电压用本机LOS指定的MID_CHG/1:6；卸载切档保留USBIN无负载实测，MID低于原1V可信边界时报错、不以合约代替读数。标称1秒轮询不能替代硬件保护，见[再修复](../../docs/archive/reviews/2026-11-15-fixed-pd-sampling-paths.md)。
 
-TCPM本地通用化提案以标准`power_supply/input_voltage_limit`（µV）选择firmware已声明的sink profile，同时限制固定PDO和PPS请求；不新增私有sysfs。capabilities/caps-0为5V+PPS的接入默认，caps-1增加9V/2A；通过该属性选择的profile在断开/协议复位时恢复默认。PPS启用后显式设置9.5V上限，退出确认固定5V后恢复5V上限。该扩展未上游合入，复核/退出路径归TD-004/TD-007。
+TCPM本地通用化提案以标准`power_supply/input_voltage_limit`（µV）选择firmware已声明的sink profile，同时限制固定PDO和PPS请求；不新增私有sysfs。capabilities/caps-0为5V+PPS的接入默认，caps-1增加9V/3A；通过该属性选择的profile在断开/协议复位时恢复默认。PPS启用后显式设置9.5V上限，退出确认固定5V后恢复5V上限。该扩展未上游合入，复核/退出路径归TD-004/TD-007。
 
-`WAIT_PLUG → SETTLE → RUN`只用于11–70%且未锁定复充周期；71%起交回固定PD。`THERMAL`用于已确认的单纯热限额越限：核实停泵、保留SMB5独占与PPS合约刷新，全部非热条件通过后重新SETTLE/启泵。该暂停期间SMB5输入仍暂停，不声称系统正由外部旁路供电。
+`WAIT_PLUG → SETTLE → RUN`只用于11–70%且未锁定复充周期；TCPM 报告 `USB_TYPE_PD_PPS` 表示已发现源 APDO，只有该值才接管 SMB5。普通 `USB_TYPE_PD` 保持 fixed PD，不先暂停输入再试探 PPS。71%起交回固定PD。`THERMAL`用于已确认的单纯热限额越限：核实停泵、保留SMB5独占与PPS合约刷新，全部非热条件通过后重新SETTLE/启泵。该暂停期间SMB5输入仍暂停，不声称系统正由外部旁路供电。
 
 真实错误进入FAULT；停泵和固定合约恢复失败时保留所有权并重试。独立SMB5故障锁不被auto/cooling清除；无APDO的`-EOPNOTSUPP`允许普通PD承接。8秒PPS刷新、5秒SETTLE、10秒操作窗口、传感器新鲜度、watchdog和绝对保护保持原边界。旧PD/PPS及旁路L3保留其原镜像证据范围，新9V、80/71循环与本版3A另验。无线RX/TX未改。
 

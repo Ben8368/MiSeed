@@ -18,6 +18,8 @@ PROFILE = "umi-csot-boot-l2"
 MANIFEST = "manifests/sources.lock.json"
 SCRIPT = "tools/build_kernel_l2.sh"
 REQUIRED_INPUTS = {
+    "tools/apply_adc5_fix.py", "kernel/power/adc5_configure.inc",
+    "tests/test_adc5_config.py", "tests/adc5_config_harness.c",
     "tools/tcpm_fixed_profile.py", "kernel/power/tcpm_fixed_profile.inc",
     SCRIPT, "tools/check_build_lock.py", "tools/verify_kernel_source.py",
     "tools/fetch_kernel_source.py", "tests/test_kernel_source_fetch.py",

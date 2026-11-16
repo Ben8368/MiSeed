@@ -143,6 +143,13 @@ int main(void) {
  assert(!smb5_power_limit(&c, 5) && current == 1950000);
  for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 11));
  assert(current == 2900000 && c.saved_icl_ua == 3000000);
+ /* A 3 A PD contract is permission, not an instruction to consume 27 W.
+  * Keep the 18 W input target/2 A ICL and thermal derating independent. */
+ c = (struct smb5_chip){.pd_voltage_uv=9000000,.pd_current_ua=3000000};
+ current=3000000;input_uv=8600000;
+ assert(!smb5_power_limit(&c,11) && current==2000000);
+ c.thermal_drop_ua=200000;
+ assert(!smb5_power_limit(&c,11) && current==1800000);
  voltage_error = -EIO; int before_voltage = writes;
  assert(smb5_power_limit(&c, 11) == -EIO && writes == before_voltage);
  voltage_error = 0; input_uv = 0;

@@ -11,11 +11,13 @@ import subprocess
 from pathlib import Path
 
 if __package__:
+    from . import apply_adc5_fix as adc5
     from . import apply_pd_diagnostics as pd
     from .apply_power_port import RPMHPD_KCONFIG_RULE
     from .source_layout import POWER_FILES, POWER_RULES
     from .apply_display_port import HOST_TRANSFORMS
 else:
+    import apply_adc5_fix as adc5
     import apply_pd_diagnostics as pd
     from apply_power_port import RPMHPD_KCONFIG_RULE
     from source_layout import POWER_FILES, POWER_RULES
@@ -126,6 +128,10 @@ def verify_source(repository, revision, source):
             actual = digest.hexdigest()
             if name in patched_pd and path.read_bytes() == patched_pd[name]:
                 continue
+            if actual != oid and name == adc5.PATH:
+                original = git(repository, "show", revision + ":" + name)
+                if path.read_bytes() == adc5.transform(original):
+                    continue
             if actual != oid and name in HOST_TRANSFORMS:
                 original = git(repository, "show", revision + ":" + name)
                 if path.read_bytes() == HOST_TRANSFORMS[name](original):

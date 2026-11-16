@@ -36,6 +36,13 @@ static void test_power_policy(void)
  assert(umi_pps_request_current(&s,&caps,&p)==3000);
  assert(umi_pps_current(&caps,1200)==1200);
  assert(umi_pps_current(&caps,999)<0 && umi_pps_current(&caps,3001)<0);
+ /* A fixed-PD source has no PPS APDO: keep SMB5 charging without claiming,
+  * suspending input, or probing ONLINE=PPS_PROGRAMMABLE.
+  */
+ reset();pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD;
+ begin();
+ assert(c.state==PPS_WAIT_PLUG && !claim_owned && !suspended &&
+        !pps_activations && !release_count);
  for(int i=1;i<=12;i++)umi_pps_power_update(&p,&s,38000,100+i*1000);
  assert(p.steady && p.target_mw==18000);
  for(int i=13;i<=25;i++)umi_pps_power_update(&p,&s,35000,100+i*1000);

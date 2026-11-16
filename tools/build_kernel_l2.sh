@@ -120,6 +120,7 @@ readonly anchor_dtsi="${output_root}/umi-csot-abl-anchors.dtsi"
 readonly reference_dtb="${work_root}/reference-boot-v2.dtb"
 readonly dtbo_targets="${repo_root}/kernel/umi-csot-dtbo-targets.txt"
 python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
+python3 "$repo_root/tools/apply_adc5_fix.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_pd_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_nfc_port.py" --source "$source_tree" --project-root "$repo_root"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \

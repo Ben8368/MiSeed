@@ -1,5 +1,7 @@
 # FG / SMB5 来源与归属
 
+`adc5_configure.inc` 适配本机锁定 LOS `71b13e62` 的 `drivers/iio/adc/qcom-spmi-adc5.c` 逐寄存器配置顺序（历史 `ab8da1dd`）；GPL-2.0-only，原作者 The Linux Foundation。应用于固定主线 IIO ADC5，保留上游文件头，未引入下游框架；评估见[记录](../../docs/archive/research/2026-11-16-pd-adc5-sequence.md)。
+
 本目录两份驱动改编自 colorgarden 的 [umi-mainline](https://github.com/colorgarden/umi-mainline/tree/5fa2e0048f89b82355d2a9de89c1d74ab9910959/power)，固定提交 `5fa2e0048f89b82355d2a9de89c1d74ab9910959`；逐文件 SPDX 为 GPL-2.0-only，许可证全文见 [GPL-2.0-only](../../LICENSES/GPL-2.0-only.txt)。MiSeed 顶层 AGPL 不覆盖这些驱动。
 
 原文件头及 MODULE_AUTHOR 保留：

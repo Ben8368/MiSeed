@@ -133,7 +133,8 @@ int smb5_fixed_update(struct smb5_chip *chip)
 		return 0;
 	}
 	/* PPS-capable sources keep the safe profile for pump entry/exit at 5 V.
-	 * Only the no-APDO fixed-PD path selects the 9 V/2 A profile.
+	 * Only the no-APDO fixed-PD path selects the 9 V/3 A contract profile;
+	 * SMB5's 18 W stage and 2 A ICL still limit actual wired input power.
 	 */
 	fast = type == POWER_SUPPLY_USB_TYPE_PD && chip->power_stage == 1 &&
 		!chip->full_bypass && !chip->inhibit && !chip->cooling_state && !chip->pps_fault &&
@@ -178,10 +179,13 @@ verify:
 		ret = smb5_pd_get(chip, POWER_SUPPLY_PROP_CURRENT_NOW, &input_ua);
 	if (!ret && (online != 1 || (voltage != 5000000 && voltage != 9000000) ||
 		voltage > limit.intval || input_ua <= 0 ||
-		input_ua > (voltage == 9000000 ? 2000000 : UMI_CHARGE_USB_ICL_UA)))
+		input_ua > UMI_CHARGE_USB_ICL_UA))
 		ret = -EPROTO;
+	/* Loaded PM8150B USBIN has the same erratum as the public getter.
+	 * The common selector uses MID while loaded, USBIN only when suspended.
+	 */
 	if (!ret)
-		ret = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input);
+		ret = smb5_get_input_voltage(chip, &input);
 	/* Reuse the existing no-load settle tolerance, not a new cable model. */
 	if (!ret && chip->pd_transition && (input <= 0 || abs(input - voltage) > 200000))
 		ret = -ERANGE;

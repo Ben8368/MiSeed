@@ -35,7 +35,7 @@ static unsigned long jiffies;
 static int props[5], input_uv, suspended, stopped, fsw, allowance;
 static int fail_at, calls, pending, transitions, no_9v, sets;
 static unsigned int icl_ua;
-static int measured_ua, stop_error, suspend_error;
+static int measured_ua, stop_error, suspend_error, source_ua;
 static int fault(void) { return ++calls==fail_at ? -EIO : 0; }
 static int power_supply_get_property(void *p, enum power_supply_property prop,
  union power_supply_propval *v) {
@@ -49,7 +49,7 @@ static int power_supply_set_property(void *p, enum power_supply_property prop,
  if(pending)return -EAGAIN;
  props[prop]=v->intval;
  props[POWER_SUPPLY_PROP_VOLTAGE_NOW]=no_9v?5000000:v->intval;
- props[POWER_SUPPLY_PROP_CURRENT_NOW]=props[POWER_SUPPLY_PROP_VOLTAGE_NOW]==9000000?2000000:3000000;
+ props[POWER_SUPPLY_PROP_CURRENT_NOW]=props[POWER_SUPPLY_PROP_VOLTAGE_NOW]==9000000?source_ua:3000000;
  input_uv=props[POWER_SUPPLY_PROP_VOLTAGE_NOW];transitions++;return 0;
 }
 static int smb5_inhibit_with_fallback(struct smb5_chip *c,const char *why) {
@@ -63,7 +63,7 @@ static int regmap_write(void *m,unsigned int reg,unsigned int value) {
  int ret=fault();if(ret)return ret;
  if(reg==0x150)fsw=value;else {assert(reg==0x344);allowance=value;}return 0;
 }
-static int smb5_get_iio_chan(struct smb5_chip *c,void *chan,int *value) {
+static int smb5_get_input_voltage(struct smb5_chip *c,int *value) {
  int ret=fault();*value=input_uv;return ret;
 }
 static int smb5_get_current_limit(struct smb5_chip *c,unsigned int *value) {
@@ -78,7 +78,7 @@ static struct smb5_chip reset(void) {
  props[3]=input_uv=5000000;props[4]=3000000;
  jiffies=0;fail_at=calls=pending=transitions=no_9v=sets=0;
  stopped=suspended=fsw=allowance=0;
- measured_ua=1984000;icl_ua=2000000;stop_error=suspend_error=0;
+ measured_ua=1984000;icl_ua=2000000;stop_error=suspend_error=0;source_ua=2000000;
  return (struct smb5_chip){.power_stage=1,.thermal_last_decic=300,.enabled=true};
 }
 int main(void) {
@@ -105,7 +105,7 @@ int main(void) {
  }
  c=reset();assert(!smb5_fixed_update(&c));props[3]=12000000;
  assert(smb5_fixed_update(&c)==-EPROTO && c.pps_fault);
- c=reset();assert(!smb5_fixed_update(&c));props[4]=3000000;
+ c=reset();assert(!smb5_fixed_update(&c));props[4]=3000001;
  assert(smb5_fixed_update(&c)==-EPROTO && c.pps_fault);
  c=reset();c.inhibit=true;assert(!smb5_fixed_update(&c) && c.pd_voltage_uv==5000000);
  /* Replay the L3 2.404735 A sample without clipping, averaging or retries. */
@@ -145,6 +145,12 @@ int main(void) {
  int sample=0;
  assert(!smb5_get_input_current_now(&c,&sample) && sample==2425170);
  assert(c.pps_fault && !c.enabled && stopped && suspended);
+ /* Nov 16 L3: 1.363105 A worker sample followed by 2.239615 A sysfs. */
+ c=reset();assert(!smb5_fixed_update(&c));
+ measured_ua=1363105;assert(!smb5_fixed_update(&c));
+ stopped=suspended=0;c.enabled=true;icl_ua=1800000;measured_ua=2239615;
+ assert(!smb5_get_input_current_now(&c,&sample) && sample==2239615);
+ assert(c.pps_fault && stopped && suspended && !c.enabled);
  measured_ua=1882785;assert(!smb5_get_input_current_now(&c,&sample));
  assert(c.pps_fault && suspended);
  for(int fail=0;fail<3;fail++) {
@@ -162,6 +168,15 @@ int main(void) {
  assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);
  c.pps_owned=false;c.pd_transition=true;
  assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);
+ /* A real 9 V/3 A contract permits the observed value and the 3 A boundary.
+  * Lower-capability 2 A sources above still fault on the identical sample. */
+ c=reset();source_ua=3000000;assert(!smb5_fixed_update(&c));
+ assert(c.pd_voltage_uv==9000000 && c.pd_current_ua==3000000);
+ measured_ua=2239615;assert(!smb5_get_input_current_now(&c,&sample));
+ assert(sample==2239615 && !c.pps_fault);
+ measured_ua=3000000;assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);
+ stopped=suspended=0;measured_ua=3000005;
+ assert(!smb5_get_input_current_now(&c,&sample) && c.pps_fault && stopped && suspended);
  c=reset();smb5_thermal_limit(&c,300);assert(!c.thermal_drop_ua);
  for(int t=310;t<=350;t+=10) { jiffies+=1000;smb5_thermal_limit(&c,t); }
  assert(c.thermal_drop_ua==500000);

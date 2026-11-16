@@ -1,6 +1,6 @@
 # 经验索引
 
-仅在任务涉及对应问题时读取专题；新增经验须可复发，已有规则不重复收录。厂商 DTO 须核对真实合并器的根属性复制，普通 fdtoverlay 不替代 ABL，见[续修](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。Android 版本用 release/SDK/ROM 字段交叉核实，不能仅看 fingerprint；无 su 不等于 adbd root 不可用。
+DTO 合并须核根属性，见[记录](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。Android 版本核 release/SDK/ROM；无 su 不证无 adbd root。Fastboot 枚举须用主机 USB 权限；沙箱空结果不证断开，见[实测](archive/reviews/2026-11-16-fastboot-host-enumeration.md)、[流程](HOST_TOOLS.md)。
 
 ## 真机已闭合结论的表述
 

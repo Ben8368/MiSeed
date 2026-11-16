@@ -41,7 +41,7 @@ int main(void) {
  struct usb_power_delivery ids[2]={{0},{1}};
  struct pd_data data[2]={
  {.sink_desc={{(5000/50<<10)|300,3U<<30}},.pd=&ids[0],.operating_snk_mw=7000},
- {.sink_desc={{(5000/50<<10)|300,(9000/50<<10)|200,3U<<30}},.pd=&ids[1],.operating_snk_mw=7000}};
+ {.sink_desc={{(5000/50<<10)|300,(9000/50<<10)|300,3U<<30}},.pd=&ids[1],.operating_snk_mw=7000}};
  struct pd_data *list[]={&data[0],&data[1]};
  struct tcpm_port p={.state=SNK_READY,.pwr_role=TYPEC_SINK,.pd_count=2,
  .pd_capable=true,.pd_list=list,.selected_pd=&ids[0]};
@@ -58,6 +58,7 @@ int main(void) {
  fail_link=NULL;
  busy=0;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EAGAIN);
  assert(p.selected_pd==&ids[1] && p.psy_selected_profile && p.nr_snk_pdo==3);
+ assert((p.snk_pdo[1]&1023)==300); /* 9 V contract capability is 3 A. */
  assert(linked==&ids[1]);
  int before=starts;
  assert(tcpm_psy_get_fixed_limit(&p,&val)==-EAGAIN); /* Queued AMS is not READY. */

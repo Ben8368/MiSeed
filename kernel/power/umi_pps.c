@@ -196,11 +196,11 @@ void umi_pps_work(struct work_struct *work)
 		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_USB_TYPE, &usb_type);
 		if (ret)
 			goto fail;
-		/* Fixed-PD is the expected starting state: ONLINE=PPS_PROGRAMMABLE
-		 * asks TCPM to select an advertised APDO. Ordinary USB stays on SMB5.
+		/* TCPM reports PD_PPS only when the source advertised a PPS APDO.
+		 * A fixed-PD source must stay on SMB5; attempting PPS first claims
+		 * and suspends it before TCPM rejects ONLINE=PPS_PROGRAMMABLE.
 		 */
-		if (usb_type != POWER_SUPPLY_USB_TYPE_PD &&
-		    usb_type != POWER_SUPPLY_USB_TYPE_PD_PPS)
+		if (usb_type != POWER_SUPPLY_USB_TYPE_PD_PPS)
 			goto out;
 	}
 	fail_stage = "battery_before_control";

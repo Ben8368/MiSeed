@@ -40,8 +40,8 @@ def check(dtb, schema):
     if prop(safe, "sink-pdos", "u") != prop(connector, "sink-pdos", "u"):
         raise ValueError("attach profile must retain fixed 5 V and PPS")
     fast_pdos = [int(value) for value in prop(fast, "sink-pdos", "u").split()]
-    if (fast_pdos != [pdos[0], (9000 // 50 << 10) | (2000 // 10), pdos[1]]):
-        raise ValueError("fast profile must restrict fixed PD to 9 V/2 A")
+    if (fast_pdos != [pdos[0], (9000 // 50 << 10) | (3000 // 10), pdos[1]]):
+        raise ValueError("fast profile must permit fixed PD 9 V/3 A")
     for profile in (safe, fast):
         if prop(profile, "op-sink-microwatt", "i") != "7000000":
             raise ValueError("PD profiles must retain the operating floor")

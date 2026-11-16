@@ -55,7 +55,7 @@ class WiredDtTests(unittest.TestCase):
         unsafe = subprocess.check_output(
             ["fdtget", "-t", "u", str(self.dtb), profiles + "caps-1", "sink-pdos"],
             text=True).split()
-        unsafe[1] = str((int(unsafe[1]) & ~0x3ff) | 300)  # Reject 9 V/3 A.
+        unsafe[1] = str((int(unsafe[1]) & ~0x3ff) | 310)  # Reject above 9 V/3 A.
         cases = ((zone, "thermal-sensors", "0"),
                  (nodes["umi_charger"], "io-channels", "0 7 0 8"),
                  (nodes["pm8150b_adc"] + "/channel@1e", "qcom,pre-scaling", "1 3"),
