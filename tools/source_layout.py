@@ -6,24 +6,25 @@ POWER_GROUPS = {
     "qcom_fg": ("qcom_fg_core", "qcom_fg_io", "qcom_fg_measure"),
     "qcom_pm8150b_charger": ("qcom_pm8150b_core", "qcom_pm8150b_hw",
                               "qcom_pm8150b_policy", "qcom_pm8150b_supply",
-                              "qcom_pm8150b_thermal", "qcom_pm8150b_pd"),
+                              "qcom_pm8150b_thermal", "qcom_pm8150b_pd", "umi_wired_driver"),
     "umi-bq25970": ("umi_pps", "umi_pps_pd", "umi_pps_hw", "umi_pps_supply",
                     "umi_pps_thermal", "umi_pps_driver"),
     "bq25970_core": ("bq25970", "bq25970_i2c"),
 }
 POWER_HEADERS = (
     "qcom_fg_internal.h", "qcom_pm8150b_internal.h", "qcom_pm8150b_regs.h",
-    "umi_pps_internal.h", "umi_charge_policy.h", "umi_smb5.h",
+    "umi_pps_internal.h", "umi_charge_policy.h", "umi_wired_internal.h",
     "umi_smb5_diagnostics.h", "bq25970.h", "bq25970_device.h", "umi_pps_policy.h",
 )
 POWER_FILES = tuple(stem + ".c" for group in POWER_GROUPS.values() for stem in group) + POWER_HEADERS
 POWER_RULES = (
     "obj-$(CONFIG_BATTERY_MISEED_QCOM_FG) += qcom_fg.o",
     "obj-$(CONFIG_CHARGER_MISEED_PM8150B) += qcom_pm8150b_charger.o",
-    "obj-$(CONFIG_CHARGER_MISEED_UMI_PPS) += umi-bq25970.o",
-    "obj-$(CONFIG_CHARGER_BQ25970_CORE) += bq25970_core.o",
     *(target + "-y := " + " ".join(stem + ".o" for stem in stems)
-      for target, stems in POWER_GROUPS.items()),
+      for target, stems in POWER_GROUPS.items() if target not in ("umi-bq25970", "bq25970_core")),
+    "qcom_pm8150b_charger-$(CONFIG_CHARGER_BQ25970_CORE) += bq25970.o bq25970_i2c.o",
+    "qcom_pm8150b_charger-$(CONFIG_CHARGER_MISEED_UMI_PPS) += " +
+    " ".join(stem + ".o" for stem in POWER_GROUPS["umi-bq25970"]),
 )
 RESCUE_FILES = (
     "rescue_init.c", "rescue_fs.c", "rescue_usb_diag.c", "rescue_devices.c",

@@ -98,9 +98,11 @@ class PpsTests(unittest.TestCase):
         harness = r'''
 #include <assert.h>
 #include <errno.h>
+#include <stdbool.h>
 #include "umi_pps_policy.h"
 #define CURRENT_SCALE_FACTOR 50000
 struct smb5_chip {
+ bool policy_icl_valid;
  int enabled, power_stage, pd_voltage_uv, pd_current_ua, full_bypass;
  unsigned int thermal_drop_ua;
  void *usb_in_v_chan;

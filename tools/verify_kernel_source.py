@@ -49,7 +49,8 @@ GENERATED = {
     "drivers/power/supply/bq25970.c",
     "drivers/power/supply/bq25970.h",
     "drivers/power/supply/umi_pps_policy.h",
-    "drivers/power/supply/umi_smb5.h",
+    "drivers/power/supply/umi_wired_internal.h",
+    "drivers/power/supply/umi_wired_driver.c",
     "drivers/power/supply/umi_smb5_diagnostics.h",
 } | {"drivers/power/supply/" + name for name in POWER_FILES}
 OVERLAY_RULES = {

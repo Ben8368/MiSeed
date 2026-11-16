@@ -146,12 +146,3 @@ int bq25970_fault_snapshot(struct regmap *map, struct bq25970_status *s)
 		ret = regmap_read(map, BQ_CONTROL, &s->control);
 	return ret;
 }
-
-EXPORT_SYMBOL_GPL(bq25970_check_identity);
-EXPORT_SYMBOL_GPL(bq25970_update);
-EXPORT_SYMBOL_GPL(bq25970_disable);
-EXPORT_SYMBOL_GPL(bq25970_verify);
-EXPORT_SYMBOL_GPL(bq25970_adc);
-EXPORT_SYMBOL_GPL(bq25970_configure);
-EXPORT_SYMBOL_GPL(bq25970_live_status);
-EXPORT_SYMBOL_GPL(bq25970_fault_snapshot);

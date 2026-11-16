@@ -23,7 +23,7 @@ misaka-link 的 [umi-linux](https://github.com/misaka-link/umi-linux/tree/cf8307
 
 PM8150B 的 FV/FCC 编码、watchdog 和 Umi 正常充电温区/电压上限，另对照本机 Android 对应的 [LineageOS 内核](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/tree/71b13e62f057a649b77fe4062feb73ee72ad609c)：`qpnp-smb5.c`、`smb5-reg.h`、`umi-sm8250.dtsi`。厂商代码归 The Linux Foundation 及原贡献者；本地代码只移植已核实的定义和控制逻辑，不引入厂商二进制或认证数据。
 
-先前仅模块编译的评估见[历史记录](../../docs/archive/research/2026-11-08-upstream-power-port.md)。当前策略已从人工插入测试改为 LOS Umi 自动充电；仍保留 `charge-test` 作诊断命令。原始来源哈希及当前本地构建输入哈希由来源锁维护，运行状态归 platforms；历史测试授权与运行记录见[专项核查](../../docs/archive/reviews/2026-11-08-fastcharge-ci.md)。
+先前仅模块编译的评估见[历史记录](../../docs/archive/research/2026-11-08-upstream-power-port.md)。当前策略已从人工插入测试改为 LOS Umi 自动充电；2026-11-16 已撤除 `charge-test` 私有入口，控制仅使用标准 power_supply 属性。原始来源哈希及当前本地构建输入哈希由来源锁维护，运行状态归 platforms；历史测试授权与运行记录见[专项核查](../../docs/archive/reviews/2026-11-08-fastcharge-ci.md)。
 
 
 ## LineageOS PPS 移植
@@ -51,3 +51,5 @@ PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 mi
 2026-11-12：TCPM属性访问、协商重试和合约核验从状态机提取为`umi_pps_pd.c`，复合模块名、原作者与许可证不变；未引入外部代码。
 
 2026-11-13 有线分段调整：`qcom_pm8150b_pd.c`依据同一锁定LOS的USBIN_ADAPTER_ALLOW_OVERRIDE（5V/9V/CONTINUOUS）及FSW编码自行实现主线TCPM协调，保留Qualcomm/The Linux Foundation来源；无新外部代码或固件。`tcpm_fixed_profile.inc`为本地GPL-2.0-only通用化提案，通过标准input_voltage_limit选择既有firmware capabilities，并约束固定/PPS请求；不导入Android协议栈。实现与未覆盖项见[审查](../../docs/archive/reviews/2026-11-13-wired-policy.md)。
+
+2026-11-16 标准接口收尾：SMB5、BQ 芯片后端和 PPS 策略合并为一个有线充电模块，platform/I2C/auxiliary 设备职责及原版权不变；撤除全部本地供电跨模块导出，不改变电气保护参数。见[接口审计](../../docs/archive/reviews/2026-11-16-linux-interface-closure.md)。

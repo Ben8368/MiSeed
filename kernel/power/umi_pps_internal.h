@@ -27,7 +27,7 @@
 #include <linux/thermal.h>
 
 #include "umi_pps_policy.h"
-#include "umi_smb5.h"
+#include "umi_wired_internal.h"
 #include "bq25970.h"
 
 #define PPS_FIXED 1

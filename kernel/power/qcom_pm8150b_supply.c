@@ -26,7 +26,7 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 
 	if (rc)
 		return rc;
-	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
+	if (!chip->policy_icl_valid || icl_ua != chip->policy_icl_ua)
 		chip->saved_icl_ua = icl_ua;
 	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
 	{
@@ -55,8 +55,10 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 	/* Tightening a stage/thermal/contract ceiling takes effect immediately. */
 	if (icl_ua != target)
 		rc = smb5_set_current_limit(chip, target);
-	if (!rc)
+	if (!rc) {
 		chip->policy_icl_ua = target;
+		chip->policy_icl_valid = true;
+	}
 	return rc;
 }
 
@@ -154,14 +156,39 @@ int smb5_set_property(struct power_supply *psy,
 	int rc = 0;
 
 	switch (psp) {
-	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT: {
+		unsigned int applied;
+
+		if (val->intval < 0 || val->intval > UMI_CHARGE_USB_ICL_UA)
+			return -EINVAL;
 		mutex_lock(&chip->lock);
-		rc = chip->pps_owned || chip->stopping ? -EBUSY : smb5_set_current_limit(chip, val->intval);
-		if (!rc)
+		if (chip->pps_owned || chip->stopping) {
+			rc = -EBUSY;
+			goto limit_out;
+		}
+		rc = smb5_get_current_limit(chip, &applied);
+		if (rc)
+			goto limit_out;
+		/* A user request is a ceiling, never permission to override the
+		 * live PD/thermal/power policy. Tighten immediately; increases
+		 * require a fresh worker safety sample and its normal ramp.
+		 */
+		if ((unsigned int)val->intval < applied) {
+			applied = val->intval / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
+			rc = smb5_set_current_limit(chip, applied);
+		}
+		if (!rc) {
 			chip->saved_icl_ua = val->intval / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
+			chip->policy_icl_ua = applied;
+			chip->policy_icl_valid = true;
+			mod_delayed_work(system_wq, &chip->status_change_work, 0);
+		}
+limit_out:
 		mutex_unlock(&chip->lock);
-		power_supply_changed(psy);
+		if (!rc)
+			power_supply_changed(psy);
 		return rc;
+	}
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		if (val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
                     val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
@@ -171,13 +198,11 @@ int smb5_set_property(struct power_supply *psy,
                         mutex_unlock(&chip->lock);
                         return -EBUSY;
                 }
-                chip->test_armed = false;
-                chip->test_active = false;
                 chip->inhibit = val->intval == POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
                 if (chip->inhibit)
                         rc = smb5_inhibit_with_fallback(chip, "user-inhibit");
-                mutex_unlock(&chip->lock);
                 mod_delayed_work(system_wq, &chip->status_change_work, 0);
+                mutex_unlock(&chip->lock);
                 power_supply_changed(psy);
                 return rc;
 	default:

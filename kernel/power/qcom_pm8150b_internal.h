@@ -34,7 +34,7 @@
 #include <linux/jiffies.h>
 #include <linux/thermal.h>
 #include "umi_charge_policy.h"
-#include "umi_smb5.h"
+#include "umi_wired_internal.h"
 
 #include "qcom_pm8150b_regs.h"
 
@@ -88,7 +88,7 @@ struct smb5_chip {
 	struct power_supply *bms;
 	struct power_supply *pd;
 	struct mutex lock;
-	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
+	bool enabled, inhibit, stopping, policy_icl_valid;
 	bool pps_owned;
 	bool full_bypass;
 	bool pd_transition;
@@ -102,8 +102,6 @@ struct smb5_chip {
 	bool pps_fault;
 	unsigned int policy_icl_ua, saved_icl_ua;
 	unsigned long cooling_state;
-	unsigned long test_deadline;
-	unsigned int test_seconds;
 	int max_fv_uv;
 };
 
@@ -133,8 +131,5 @@ int smb5_set_property(struct power_supply *psy,
 			     enum power_supply_property psp,
 			     const union power_supply_propval *val);
 extern const struct power_supply_desc smb5_psy_desc;
-#ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
-extern const struct attribute_group smb5_group;
-#endif
 
 #endif

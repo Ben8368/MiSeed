@@ -39,11 +39,11 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, dtb, display, display-frame, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-l3, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-test, charge-test-10min, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("Commands: help, status, dtb, display, display-frame, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-l3, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("display/display-frame/dmesg are read-only; display-on/off set only the identified CSOT backlight to 1500/0.");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("thermal reads thermal sysfs; thermal-stop/thermal-clear set only umi-wired-pd cooling state 1/0.");
-        puts("Wired controls: charge-stop; bounded charge-test commands require a diagnostic kernel.");
+        puts("Wired control: charge-stop uses standard power_supply charge_behaviour.");
         puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
         fputs("miseed> ", stdout);
         if (!fgets(line, sizeof(line), stdin)) {
@@ -74,15 +74,7 @@ static void usb_console(void) {
         else if (!strcmp(line, "mounts")) print_file("/proc/mounts");
         else if (!strcmp(line, "charge")) charge_log_export(32);
         else if (!strcmp(line, "charge-log") || !strcmp(line, "logs")) charge_log_export(0);
-        else if (!strcmp(line, "charge-test") || !strcmp(line, "charge-test-10min")) {
-            int extended = !strcmp(line, "charge-test-10min");
-            int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_test",
-                                 extended ? "arm-10min" : "arm");
-            charge_log_append("CONTROL", "charge_test_arm seconds=%u rc=%d", extended ? 600U : 60U, rc);
-            if (rc) puts("Charge test arm failed; inspect logs.");
-            else printf("Test armed: disconnect computer, attach charger. Ends on unplug or after %u seconds; LOS limits and safety checks stay active.\n",
-                        extended ? 600U : 60U);
-        } else if (!strcmp(line, "pps-status")) {
+        else if (!strcmp(line, "pps-status")) {
             if (pps_control(NULL)) puts("PPS controller unavailable or ambiguous; board qualification may be incomplete.");
         } else if (!strcmp(line, "pps-stop")) {
             puts(pps_control("inhibit-charge") ? "PPS stop unavailable/failed; disconnect charger." : "PPS stopped; SMB5 fallback policy resumed.");
@@ -94,8 +86,8 @@ static void usb_console(void) {
             else if (errno == ENOENT || errno == ENODEV) pps_rc = 0;
             int rc = write_value("/sys/class/power_supply/pm8150b-charger/charge_behaviour", "inhibit-charge");
             if (pps_rc) rc = pps_rc;
-            charge_log_append("CONTROL", "charge_test_stop rc=%d", rc);
-            puts(rc ? "Charge stop failed; disconnect the charger." : "Charging inhibited; test cancelled.");
+            charge_log_append("CONTROL", "charge_stop rc=%d", rc);
+            puts(rc ? "Charge stop failed; disconnect the charger." : "Charging inhibited.");
         } else if (!strcmp(line, "reboot")) {
             puts("Normal reboot requested.");
             sync();
@@ -125,7 +117,7 @@ int main(void) {
     charge_kmsg_fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (charge_kmsg_fd < 0) charge_log_append("ERROR", "kernel_log_unavailable errno=%d", errno);
     charge_screen_fd = open("/dev/tty0", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-    charge_log_append("START", "samples_read_only=1 controls=thermal-stop,thermal-clear,charge-test,charge-test-10min,charge-stop sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
+    charge_log_append("START", "samples_read_only=1 controls=thermal-stop,thermal-clear,charge-stop sample_interval_s=2; USB disconnect does not stop recording; reboot loses RAM log");
     charge_kernel_drain();
     charge_snapshot();
 

@@ -6,7 +6,7 @@
 void report_power_supply_diagnostics(void) {
     static const char *const properties[] = {
         "type", "online", "status", "usb_type", "voltage_now",
-        "current_now", "voltage_max", "current_max", "pd_current_max",
+        "current_now", "voltage_max", "current_max",
         "input_current_limit", "charge_type", "scope"
     };
     const char *root = "/sys/class/power_supply";

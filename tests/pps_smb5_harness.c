@@ -18,7 +18,7 @@
 #define mod_delayed_work(q,w,t) ((void)0)
 struct delayed_work { int unused; };
 struct smb5_chip {
- bool stopping, pps_owned, test_armed, inhibit, enabled, full_bypass, pps_fault;
+ bool stopping, pps_owned, inhibit, enabled, full_bypass, pps_fault;
  bool pd_transition;
  unsigned long cooling_state;
  int power_stage;
@@ -66,8 +66,7 @@ int main(void) {
  assert(umi_smb5_claim(NULL, &stage)==-ENODEV);
  c.inhibit=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY && !c.pps_owned);
  c.inhibit=false;
- c.test_armed=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY && !c.pps_owned);
- c.test_armed=false;c.stopping=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY);
+ c.stopping=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY);
  c.stopping=false;charge=1;assert(!umi_smb5_claim(&p, &stage));
  assert(c.pps_owned && c.inhibit && !c.enabled && charge==0 && input==1);
  assert(umi_smb5_check(&p, 1)==4380000 && c.power_stage==1);

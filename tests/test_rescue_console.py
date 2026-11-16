@@ -68,15 +68,13 @@ class RescueConsoleTests(RescueFixture):
                 os.close(master)
 
 
-    def test_charge_commands_select_explicit_duration_and_stop(self):
+    def test_charge_stop_uses_standard_behaviour_without_private_controls(self):
         import pty
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             supply = root / "pm8150b-charger"
             supply.mkdir()
-            control = supply / "charge_test"
-            control.touch()
             behaviour = supply / "charge_behaviour"
             behaviour.touch()
             master, slave = pty.openpty()
@@ -88,16 +86,14 @@ class RescueConsoleTests(RescueFixture):
             try:
                 banner = self.read_until(master, b"miseed> ")
                 self.assertIn(b"read-only samples", banner)
-                self.assertIn(b"require a diagnostic kernel", banner)
+                self.assertIn(b"standard power_supply charge_behaviour", banner)
+                self.assertNotIn(b"charge-test", banner)
                 for command, value, message in (
-                    (b"charge-test\n", "arm", b"after 60 seconds"),
-                    (b"charge-test-10min\n", "arm-10min", b"after 600 seconds"),
-                    (b"charge-stop\n", "inhibit-charge", b"test cancelled"),
+                    (b"charge-stop\n", "inhibit-charge", b"Charging inhibited."),
                 ):
-                    control.write_text("")
                     os.write(master, command)
                     self.read_until(master, message)
-                    self.assertEqual((behaviour if command == b"charge-stop\n" else control).read_text(), value)
+                    self.assertEqual(behaviour.read_text(), value)
             finally:
                 process.terminate()
                 process.wait(timeout=5)
@@ -153,7 +149,7 @@ class RescueConsoleTests(RescueFixture):
                 for command, value, message in (
                     (b"pps-status\n", "auto\n", b"POWER_SUPPLY_STATUS=Charging"),
                     (b"pps-stop\n", "inhibit-charge", b"PPS stopped; SMB5 fallback policy resumed."),
-                    (b"charge-stop\n", "inhibit-charge", b"test cancelled"),
+                    (b"charge-stop\n", "inhibit-charge", b"Charging inhibited."),
                 ):
                     control.write_text(value if command == b"pps-status\n" else "")
                     os.write(master, command)

@@ -35,7 +35,7 @@ int umi_smb5_claim(struct power_supply *psy, int *stage)
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
-	if (chip->stopping || chip->pps_owned || chip->test_armed || chip->inhibit ||
+	if (chip->stopping || chip->pps_owned || chip->inhibit ||
 	    chip->full_bypass || chip->power_stage >= 2 ||
 	    chip->pd_transition || chip->cooling_state || chip->pps_fault) {
 		rc = -EBUSY;
@@ -71,7 +71,6 @@ out:
 	mutex_unlock(&chip->lock);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(umi_smb5_claim);
 
 int umi_smb5_check(struct power_supply *psy, int stage)
 {
@@ -101,7 +100,6 @@ int umi_smb5_check(struct power_supply *psy, int stage)
 	mutex_unlock(&chip->lock);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(umi_smb5_check);
 
 int umi_smb5_release(struct power_supply *psy, int fault)
 {
@@ -129,12 +127,11 @@ int umi_smb5_release(struct power_supply *psy, int fault)
 		chip->inhibit = false;
 		chip->pps_fault |= !!fault;
 	}
-	mutex_unlock(&chip->lock);
 	if (!rc)
 		mod_delayed_work(system_wq, &chip->status_change_work, 0);
+	mutex_unlock(&chip->lock);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(umi_smb5_release);
 
 int smb5_get_prop_health(struct smb5_chip *chip, int *val);
 
@@ -243,31 +240,11 @@ void smb5_status_change_work(struct work_struct *work)
  if (!rc && health == POWER_SUPPLY_HEALTH_GOOD && online &&
      !chip->pps_owned && !chip->inhibit && !chip->full_bypass && !chip->pps_fault)
   rc = smb5_power_limit(chip, soc);
- if (!usb_rc && !online) {
-  if (chip->test_active) {
-   chip->test_active = false;
-   chip->test_armed = false;
-   chip->inhibit = true;
-  } else if (chip->test_armed) {
-   chip->test_saw_disconnect = true;
-  }
- }
- if (!rc && online && chip->test_armed && chip->test_saw_disconnect && !chip->test_active) {
-  chip->test_active = true;
-  chip->test_deadline = jiffies + chip->test_seconds * HZ;
-  dev_info(chip->dev, "miseed-charge test window started: %u seconds maximum\n", chip->test_seconds);
- }
- if (chip->test_active && time_after_eq(jiffies, chip->test_deadline)) {
-  chip->test_active = false;
-  chip->test_armed = false;
-  chip->inhibit = true;
- }
  if (!rc && !chip->inhibit && !chip->cooling_state && !chip->full_bypass &&
-     !chip->pps_fault &&
-     (!chip->test_armed || chip->test_active))
+     !chip->pps_fault)
   allow = umi_charge_policy(online, present, health == POWER_SUPPLY_HEALTH_GOOD,
                            temp, voltage, soc, chip->max_fv_uv,
-                           chip->enabled, chip->test_active);
+                           chip->enabled, false);
  if (allow) {
   /* Limits are set with charging disabled, before probe registers IRQ/work. */
   rc = regmap_update_bits(chip->regmap, chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, 0);
@@ -278,63 +255,11 @@ void smb5_status_change_work(struct work_struct *work)
   stop_rc = smb5_inhibit_with_fallback(chip, "worker");
   if (!rc) rc = stop_rc;
  }
- if (rc && chip->test_armed) {
-  chip->test_active = false;
-  chip->test_armed = false;
-  chip->inhibit = true;
- }
  chip->enabled = allow && !rc;
- dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_ua=%d soc=%d test_armed=%u test_active=%u rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d full_bypass=%u\n",
-          chip->enabled, online, present, health, temp, voltage, bms_current, soc,
-          chip->test_armed, chip->test_active, rc,
+ dev_info(chip->dev, "miseed-charge enabled=%u input=%d present=%d health=%d temp_decic=%d vbat_uv=%d current_ua=%d soc=%d rc=%d fcc_ua=%u icl_ua=%u fv_uv=%d full_bypass=%u\n",
+          chip->enabled, online, present, health, temp, voltage, bms_current, soc, rc,
 			UMI_CHARGE_FCC_UA, UMI_CHARGE_USB_ICL_UA, chip->max_fv_uv, chip->full_bypass);
  mutex_unlock(&chip->lock);
  power_supply_changed(chip->chg_psy);
  schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(1000));
 }
-
-#ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
-static ssize_t charge_test_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
- struct smb5_chip *chip = power_supply_get_drvdata(dev_get_drvdata(dev));
- ssize_t n;
- mutex_lock(&chip->lock);
- n = sysfs_emit(buf, "armed=%u active=%u seconds_max=%u\n",
-                chip->test_armed, chip->test_active, chip->test_seconds);
- mutex_unlock(&chip->lock);
- return n;
-}
-
-static ssize_t charge_test_store(struct device *dev, struct device_attribute *attr,
-                                 const char *buf, size_t count)
-{
- struct smb5_chip *chip = power_supply_get_drvdata(dev_get_drvdata(dev));
- int rc;
- if (!sysfs_streq(buf, "arm") && !sysfs_streq(buf, "arm-10min") &&
-     !sysfs_streq(buf, "stop")) return -EINVAL;
- mutex_lock(&chip->lock);
- if (chip->pps_owned) {
-  mutex_unlock(&chip->lock);
-  return -EBUSY;
- }
- chip->test_armed = !sysfs_streq(buf, "stop");
- chip->test_seconds = sysfs_streq(buf, "arm-10min") ?
-                      UMI_CHARGE_EXTENDED_TEST_SECONDS : UMI_CHARGE_TEST_SECONDS;
- chip->inhibit = !chip->test_armed;
- chip->test_active = false;
- chip->test_saw_disconnect = false;
- chip->enabled = false;
- rc = smb5_inhibit_with_fallback(chip, "test-arm");
- if (rc) {
-  chip->test_armed = false;
-  chip->inhibit = true;
- }
- mutex_unlock(&chip->lock);
- if (rc) return rc;
- mod_delayed_work(system_wq, &chip->status_change_work, 0);
- return count;
-}
-static DEVICE_ATTR_RW(charge_test);
-static struct attribute *smb5_attrs[] = { &dev_attr_charge_test.attr, NULL };
-const struct attribute_group smb5_group = { .attrs = smb5_attrs };
-#endif

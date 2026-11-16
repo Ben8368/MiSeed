@@ -1,6 +1,8 @@
 # 当前状态
 
-2026-11-16｜有线固定PD L3：9V/3A、ADC过，43,972条无故障；SOC71%降5V、80%止充。无APDO误触PPS短停已修，新镜像Linux全280项L2过，真机待验。见[记录](archive/hardware/2026-11-16-umi-fixed-pd-l3.md)/[修复](archive/research/2026-11-16-pd-adc5-sequence.md)。
+2026-11-16｜[Linux接口收尾](archive/reviews/2026-11-16-linux-interface-closure.md)：撤私有充电控制/跨模块导出，修复限流越权与零值恢复；283项Linux零跳过、双配置L2/schema及模块L2过；新L3待验。
+
+有线固定PD L3：9V/3A、ADC过，43,972条无故障；SOC71%降5V、80%止充。无APDO误触PPS已修，新L3待验。见[记录](archive/hardware/2026-11-16-umi-fixed-pd-l3.md)/[修复](archive/research/2026-11-16-pd-adc5-sequence.md)。
 
 WP10 SN100T/NCI：L2及reset/init、RF target、close/reopen L3过；普通卡仅发现target，NDEF/PM/HCE/eSE未验。禁共享VEN；NACK待查。[L3](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)
 

@@ -57,7 +57,7 @@ int main(void) {
 
 
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
-    def test_worker_extended_window_timeout_unplug_faults_and_explicit_stop(self):
+    def test_worker_safety_unplug_user_inhibit_and_zero_limit_recovery(self):
         source = power_source("qcom_pm8150b_charger")
         functions = []
         for name in ("int smb5_inhibit_with_fallback(",
@@ -65,8 +65,7 @@ int main(void) {
                      "int smb5_power_limit(",
                      "int smb5_get_charge_control_threshold(",
                      "void smb5_status_change_work(",
-                     "irqreturn_t smb5_handle_usb_plugin(",
-                     "static ssize_t charge_test_store("):
+                     "irqreturn_t smb5_handle_usb_plugin("):
             start = source.index(name)
             stop = source.index("\n}\n", start) + 3
             functions.append(source[start:stop])
@@ -105,17 +104,16 @@ struct work_struct { int unused; };
 struct delayed_work { struct work_struct work; };
 struct smb5_chip {
  void *dev, *regmap, *chg_psy;
- unsigned int base, test_seconds;
+ unsigned int base;
  struct delayed_work status_change_work;
  int lock, max_fv_uv;
- bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active, pps_owned;
+ bool enabled, inhibit, stopping, pps_owned, policy_icl_valid;
  bool full_bypass, pps_fault, pd_transition, thermal_sampled, thermal_recover;
  int pd_limit_uv, pd_voltage_uv, pd_current_ua;
  unsigned int thermal_drop_ua;
  int power_stage;
  void *usb_in_v_chan;
  unsigned int policy_icl_ua, saved_icl_ua;
- unsigned long test_deadline;
  unsigned long cooling_state;
 };
 struct device { struct smb5_chip *chip; };
@@ -172,49 +170,13 @@ static int iio_read_channel_processed(struct iio_channel *chan, int *value)
         harness += "\n".join(functions) + r'''
 static void tick(struct smb5_chip *c, unsigned long t, int plugged)
 { jiffies = t; online = plugged; smb5_status_change_work(&c->status_change_work.work); }
-static void arm(struct smb5_chip *c, const char *command)
-{
- struct device d = { c };
- assert(charge_test_store(&d, NULL, command, strlen(command)) == (ssize_t)strlen(command));
- assert(!enabled && !c->enabled);
-}
 #include "smb5_power_cases.h"
 int main(void) {
- struct smb5_chip c = { .inhibit = true, .max_fv_uv = 4400000,
-                       .test_seconds = UMI_CHARGE_TEST_SECONDS,
+ struct smb5_chip c = { .max_fv_uv = 4400000,
                        .usb_in_v_chan = &input_voltage_channel };
- struct device d = { &c };
- assert(UMI_CHARGE_EXTENDED_TEST_SECONDS == 600);
- tick(&c, 0, 1); assert(!enabled && !feeds);
- assert(charge_test_store(&d, NULL, "6000", 4) == -EINVAL);
- assert(c.inhibit && !c.test_armed);
- arm(&c, "arm-10min"); assert(c.test_seconds == 600);
- tick(&c, 1000, 1); assert(!enabled && !c.test_active);
- tick(&c, 2000, 0); assert(!enabled && c.test_saw_disconnect);
- tick(&c, 3000, 1); assert(enabled && c.test_active && c.test_deadline == 603000);
- assert(smb5_get_charge_control_threshold(&c, true) == 80);
- assert(smb5_get_charge_control_threshold(&c, false) == 71);
- tick(&c, 62000, 1); assert(enabled); /* not the default 60-second timeout */
- tick(&c, 602999, 1); assert(enabled && c.test_active);
- tick(&c, 603000, 1); assert(!enabled && !c.test_active && !c.test_armed);
- tick(&c, 604000, 1); assert(!enabled); /* 78% restores normal inhibition */
- assert(smb5_get_charge_control_threshold(&c, true) == UMI_CHARGE_END_SOC);
- assert(smb5_get_charge_control_threshold(&c, false) == UMI_CHARGE_START_SOC);
- arm(&c, "arm"); assert(c.test_seconds == 60);
- tick(&c, 605000, 0); tick(&c, 606000, 1); assert(enabled);
- tick(&c, 666000, 1); assert(!enabled && !c.test_armed);
- /* jiffies wrap must not extend or shorten the window. */
- arm(&c, "arm-10min");
- tick(&c, ULONG_MAX - 2000, 0); tick(&c, ULONG_MAX - 1000, 1);
- tick(&c, c.test_deadline - 1, 1); assert(enabled);
- tick(&c, c.test_deadline, 1); assert(!enabled && !c.test_armed);
- /* Unplug consumes the insertion; the next computer attachment cannot rearm. */
- arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
- tick(&c, 2000, 0); tick(&c, 3000, 1); assert(!enabled && !c.test_armed);
- /* IRQ preserves a disconnect/reconnect that occurs between worker polls. */
- arm(&c, "arm-10min"); online = 0; smb5_handle_usb_plugin(0, &c);
- assert(c.test_saw_disconnect); online = 1; tick(&c, 4000, 1);
- assert(enabled && c.test_active);
+ input_limit = 3000000;
+ values[POWER_SUPPLY_PROP_CAPACITY] = 60;
+ tick(&c, 0, 1); assert(enabled);
  /* Input ADC remains available when USB is present but charging is inhibited. */
  struct iio_channel channel = { 0 };
  int measurement = -1; online = 1; enabled = 0;
@@ -226,52 +188,62 @@ int main(void) {
  online = 1; usb_error = -EIO;
  assert(smb5_get_iio_chan(&c, &channel, &measurement) == -EIO);
  usb_error = 0;
- /* Software stop, sensor/USB/limit failures and overcurrent cancel the test. */
- for (int fault = 0; fault < 5; ++fault) {
-  arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
+ assert(smb5_get_charge_control_threshold(&c, true) == 80);
+ assert(smb5_get_charge_control_threshold(&c, false) == 71);
+ /* All autonomous safety gates remain effective without private commands. */
+ for (int fault = 0; fault < 6; fault++) {
   int old_feeds = feeds;
-  if (fault == 0) arm(&c, "stop");
+  if (fault == 0) c.inhibit = true;
   if (fault == 1) battery_error = -EIO;
   if (fault == 2) usb_error = -EIO;
   if (fault == 3) limit_error = -EPERM;
   if (fault == 4) values[POWER_SUPPLY_PROP_CURRENT_NOW] = 6000001;
-  tick(&c, 2000, 1);
-  assert(!enabled && !c.test_active && !c.test_armed && c.inhibit && feeds == old_feeds);
-  battery_error = usb_error = limit_error = 0; values[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
-  tick(&c, 3000, 1); assert(!enabled);
+  if (fault == 5) c.cooling_state = 1;
+  tick(&c, 1000, 1); assert(!enabled && feeds == old_feeds);
+  c.inhibit = false; c.cooling_state = 0;
+  battery_error = usb_error = limit_error = 0;
+  values[POWER_SUPPLY_PROP_CURRENT_NOW] = 0;
+  tick(&c, 2000, 1); assert(enabled);
  }
- /* Temperature/telemetry/health gates remain effective during auto charging. */
- arm(&c, "arm-10min"); tick(&c, 0, 0); tick(&c, 1000, 1); assert(enabled);
- values[POWER_SUPPLY_PROP_TEMP] = 451; tick(&c, 2000, 1); assert(!enabled);
+ values[POWER_SUPPLY_PROP_TEMP] = 451;
+ tick(&c, 3000, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_TEMP] = 300;
- values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4400000; tick(&c, 3000, 1); assert(enabled);
- values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 0; tick(&c, 3500, 1); assert(!enabled);
+ tick(&c, 4000, 1); assert(enabled);
+ values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4400000;
+ tick(&c, 4100, 1); assert(enabled);
+ values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 0;
+ tick(&c, 4200, 1); assert(!enabled);
  values[POWER_SUPPLY_PROP_VOLTAGE_NOW] = 4100000;
- health = 0; tick(&c, 4000, 1); assert(!enabled); health = 1;
- /* Thermal requests survive user auto, unplug/replug and PPS release.
-  * Clearing cooling removes only that request; all independent gates apply. */
- c.test_armed = c.test_active = false; c.inhibit = false;
- c.cooling_state = 1; tick(&c, 4100, 1); assert(!enabled);
- tick(&c, 4200, 0); tick(&c, 4300, 1); assert(!enabled && c.cooling_state == 1);
- c.cooling_state = 0; c.inhibit = true;
- tick(&c, 4400, 1); assert(!enabled);
- c.inhibit = false; values[POWER_SUPPLY_PROP_TEMP] = 451;
- tick(&c, 4500, 1); assert(!enabled);
- values[POWER_SUPPLY_PROP_TEMP] = 300;
- tick(&c, 4600, 1); assert(enabled);
+ health = 0; tick(&c, 4300, 1); assert(!enabled); health = 1;
+ c.cooling_state = 1; tick(&c, 4400, 0); tick(&c, 4500, 1);
+ assert(!enabled && c.cooling_state == 1); c.cooling_state = 0;
+ c.inhibit = true; tick(&c, 5000, 0); tick(&c, 6000, 1);
+ assert(!enabled && c.inhibit);
+ c.inhibit = false;
  test_smb5_full_and_unplug(&c);
- /* A failed stop uses input suspend and never feeds the watchdog. */
- int old_feeds = feeds;
- stop_error = -EIO;
- assert(charge_test_store(&d, NULL, "stop", 4) == -EIO);
- tick(&c, 5000, 1);
- assert(suspends >= 2 && feeds == old_feeds && c.inhibit && !c.test_armed);
- stop_error = -EIO;
- int old_suspends = suspends;
- assert(smb5_inhibit_with_fallback(&c, "initial") == -EIO);
- assert(suspends == old_suspends + 1);
- stop_error = 0;
  test_smb5_power_and_recharge();
+ /* A thermal zero is recoverable; a user-requested zero stays authoritative. */
+ c = (struct smb5_chip){ .power_stage = 1, .pd_current_ua = 2000000 };
+ input_limit = 3000000;
+ assert(!smb5_power_limit(&c, 40) && input_limit == 2000000);
+ c.thermal_drop_ua = 2000000;
+ assert(!smb5_power_limit(&c, 40) && input_limit == 0);
+ assert(!smb5_power_limit(&c, 40) && c.saved_icl_ua == 3000000);
+ c.thermal_drop_ua = 0;
+ for (int i = 0; i < 50; i++) assert(!smb5_power_limit(&c, 40));
+ assert(input_limit == 2000000 && c.saved_icl_ua == 3000000);
+ c.saved_icl_ua = 0;
+ for (int i = 0; i < 50; i++) assert(!smb5_power_limit(&c, 40));
+ assert(input_limit == 0 && c.saved_icl_ua == 0);
+ /* Read failures do not consume the requested ceiling. */
+ adc_error = -EIO; c.saved_icl_ua = 1000000;
+ assert(smb5_power_limit(&c, 40) == -EIO && c.saved_icl_ua == 1000000);
+ adc_error = 0;
+ /* Failed inhibition also attempts input suspend and never feeds WD. */
+ stop_error = -EIO; c.inhibit = true;
+ int old_feeds = feeds, old_suspends = suspends;
+ tick(&c, 7000, 1);
+ assert(!c.enabled && suspends > old_suspends && feeds == old_feeds);
  return 0;
 }
 '''

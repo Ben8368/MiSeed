@@ -179,15 +179,15 @@ static void umi_pps_shutdown(struct auxiliary_device *aux)
 	umi_pps_cleanup(dev_get_drvdata(&aux->dev));
 }
 static const struct auxiliary_device_id umi_pps_match[] = {
-	{ .name = "bq25970_core.charger" }, { }
+	{ .name = "qcom_pm8150b_charger.charger" }, { }
 };
 MODULE_DEVICE_TABLE(auxiliary, umi_pps_match);
-static struct auxiliary_driver umi_pps_driver = {
+struct auxiliary_driver umi_pps_driver = {
 	.name = "umi-pps-policy", .id_table = umi_pps_match,
 	.probe = umi_pps_probe, .shutdown = umi_pps_shutdown,
 	.driver = { .pm = pm_sleep_ptr(&umi_pps_pm) },
 };
-module_auxiliary_driver(umi_pps_driver);
+
 MODULE_AUTHOR("Texas Instruments; MiSeed contributors");
 MODULE_DESCRIPTION("Umi wired PPS board policy with SMB5 safety ownership");
 MODULE_LICENSE("GPL");

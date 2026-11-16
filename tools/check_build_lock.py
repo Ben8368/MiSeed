@@ -19,6 +19,7 @@ MANIFEST = "manifests/sources.lock.json"
 SCRIPT = "tools/build_kernel_l2.sh"
 REQUIRED_INPUTS = {
     "tools/apply_adc5_fix.py", "kernel/power/adc5_configure.inc",
+    "tests/test_wired_interfaces.py",
     "tests/test_adc5_config.py", "tests/adc5_config_harness.c",
     "tools/tcpm_fixed_profile.py", "kernel/power/tcpm_fixed_profile.inc",
     SCRIPT, "tools/check_build_lock.py", "tools/verify_kernel_source.py",
@@ -38,7 +39,7 @@ REQUIRED_INPUTS = {
     "kernel/power/umi_charge_policy.h", "kernel/power/umi-pm8150b.dtsi",
     "kernel/power/bq25970.c", "kernel/power/bq25970.h",
     "kernel/power/umi_pps.c", "kernel/power/umi_pps_policy.h",
-    "kernel/power/umi_smb5.h", "kernel/power/umi-pps.dtsi",
+    "kernel/power/umi_wired_internal.h", "kernel/power/umi-pps.dtsi",
     "kernel/power/pmic_pdphy_receive.inc",
     "kernel/nfc/sn100x.c", "kernel/nfc/Kconfig",
     "kernel/nfc/bindings/nxp,sn100t.yaml",

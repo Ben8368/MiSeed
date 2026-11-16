@@ -77,7 +77,7 @@ thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cool
 
 有线固定 PD/SMB5 单独提供 `wired-pd-thermal`（电池温度，m°C）与 `umi-wired-pd`（0=允许原策略、1=停充）。DT 以已有 45°C 暖端保守停充，不引入新的温控阈值、滞回或 FCC 表；冷端/读错保护仍由 worker 独立执行。cooling 请求跨拔插和 PPS 所有权释放保持，state=0 不清用户 inhibit、也不直接启充；PPS 占用时不触碰其互锁。此实现与新 DT 的 L3 另验，完整板级热模型未宣称完成，见[完善记录](../../docs/archive/reviews/2026-11-10-linux-standard-interfaces.md)。
 
-`python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。有界 `charge_test` 仅在显式启用 `CONFIG_MISEED_CHARGE_DIAGNOSTICS` 时存在，默认镜像关闭，不作为产品依赖。
+`python3 tools/wired_power.py` 是默认只读的标准接口消费者，输出缺失设备和属性错误；`--action inhibit-charge`/`auto` 分别请求整条有线路径禁止/自动，必须在授权真机操作时使用。Debian/UPower 可消费标准电池设备，但本轮不声称 Debian 实机集成完成。USB 诊断 `pps-status` 读取标准 uevent，`pps-stop`/`charge-stop` 写标准 `charge_behaviour`；不再使用 `fastcharge_test`。`charge_test`/其 Kconfig 已删除，不提供私有充电命令。输入限流写入作为用户上限；降低立即生效，提高需经过新鲜安全采样、PD/功率/温度限额和渐升。实际生效值通过标准 input_current_limit 读回。
 
 ### 有线旁路供电的上层调用
 
@@ -116,3 +116,5 @@ DT 使用 `monitored-battery` 只指向 simple-battery；`qcom,fuel-gauge`/`xiao
 - 本机 L3：PD 与 PPS 分别约 10 分钟稳定运行见[本轮记录](../../docs/archive/hardware/2026-11-09-umi-pps-windows-l2.md)；旧 QUP/RPMh、SMB5 回退和电压样本问题见[续查记录](../../docs/archive/hardware/2026-11-08-umi-pps-quruntime-followup.md)。本版源码须对应镜像哈希的 L3，不沿用更早短时 switching 证据。
 
 来源、PMIC 隔离与接线见[拓扑记录](../../docs/archive/research/2026-11-08-pps-topology-followup.md)。`collect_device.py --power` 可只读补充启动日志中的 ID 与缓存 PDO，不把 standalone 名称当芯片型号。不得把构建通过、短暂合约与已宣告稳定的 PD/PPS L3 混同；也不得用未完成的保护专项回写否定该结论。
+
+2026-11-16：SMB5、BQ 后端与 PPS 同属 `qcom_pm8150b_charger` 模块；互锁仅为模块内部实现，不再导出 `umi_smb5_*`/`bq25970_*`。I2C/auxiliary 设备生命周期和标准 power_supply/thermal ABI 保持，原子交接不拆成无锁属性调用。详见[审计](../../docs/archive/reviews/2026-11-16-linux-interface-closure.md)。

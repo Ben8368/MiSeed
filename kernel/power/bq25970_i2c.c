@@ -28,7 +28,6 @@ int bq25970_subscribe(struct bq25970_device *bq, void (*event)(void *), void *da
 	mutex_unlock(&bq->event_lock);
 	return ret;
 }
-EXPORT_SYMBOL_GPL(bq25970_subscribe);
 void bq25970_unsubscribe(struct bq25970_device *bq)
 {
 	/* Wait for any callback before its consumer can free its state. */
@@ -37,7 +36,6 @@ void bq25970_unsubscribe(struct bq25970_device *bq)
 	bq->event_data = NULL;
 	mutex_unlock(&bq->event_lock);
 }
-EXPORT_SYMBOL_GPL(bq25970_unsubscribe);
 static irqreturn_t bq25970_irq(int irq, void *data)
 {
 	struct bq25970_device *bq = data;
@@ -147,11 +145,10 @@ static const struct of_device_id bq25970_match[] = {
 	{ .compatible = "xiaomi,umi-bq25970" }, { }
 };
 MODULE_DEVICE_TABLE(of, bq25970_match);
-static struct i2c_driver bq25970_driver = {
+struct i2c_driver bq25970_driver = {
 	.probe = bq25970_probe, .shutdown = bq25970_shutdown,
 	.driver = { .name = "bq25970", .of_match_table = bq25970_match },
 };
-module_i2c_driver(bq25970_driver);
 MODULE_DESCRIPTION("BQ25970 standalone chip transport and charge-pump function");
 MODULE_AUTHOR("Texas Instruments; MiSeed contributors");
 MODULE_LICENSE("GPL");
