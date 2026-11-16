@@ -8,7 +8,7 @@ WP10 SN100T/NCI：L2及reset/init、RF target、close/reopen L3过；普通卡�
 
 有线SMB5 bit5误判已修，10组FG/SMB5均Charging，Android回退L3过。[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)
 
-显示：稳定文字/1500既有通过；启动白/彩条与中间横条未解，维护者接受非阻断延期，Android16已恢复。[续查](archive/reviews/2026-11-15-native-display-framebuffer.md)
+显示：[90Hz移植](archive/research/2026-11-16-display-90hz-port.md)已过L2/schema、Linux281项，GPIO50/实际刷新待L3。稳定文字/1500既有通过；启动白/彩条与中线延期，Android16已恢复。[续查](archive/reviews/2026-11-15-native-display-framebuffer.md)
 
 旧旁路、PD/PPS恢复和watchdog/热保护见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
 

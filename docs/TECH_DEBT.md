@@ -1,6 +1,6 @@
 # 技术债
 
-只记有意保留的实现妥协；未知假设归 RISK_REGISTER。关闭后按 GOVERNANCE 归档。
+只记实现妥协；未知归 RISK_REGISTER，关闭后按 GOVERNANCE 归档。
 
 ## TD-001：构建环境闭包不完整（P2，2026-11-05）
 
@@ -12,7 +12,7 @@
 
 ## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：原 GPIO-free RAM 诊断禁用 TLMM。PPS 测试 profile 按 LOS 接线只开放 UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68，其余仍保留；原生 DSI profile 另开放 GPIO12 复位，待 L3；GPIO8 暂未接入。下游 TLMM overlay 继续隔离；来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。本轮掩码 L2、新镜像 L3 待验；旧 Fastboot 证据见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
+取舍：原 GPIO-free RAM 诊断禁用 TLMM。有线PPS按LOS接线开放UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68；NCI另开专用脚。原生DSI另开GPIO12复位；[90Hz移植](archive/research/2026-11-16-display-90hz-port.md)再开GPIO50选择，新增脚L3待验。GPIO8未接入，下游TLMM overlay仍隔离。旧来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 
@@ -40,7 +40,7 @@
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线 BQ IRQ 删除 TLMM 不支持的 input-enable，输入方向由 IRQ 资源申请设置；新增固定 PD thermal binding，并将 TLMM 加入有线检查范围，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。新增 CSOT binding、显示链路定向 schema 与最终 FDT 审计；剩余新 DT/标准消费者 L3、binding 上游评审、整机 schema/实际 DTBO 与专项复核；定向检查不等于整机合规。
+源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线BQ IRQ删除不支持的input-enable，新增固定PD thermal binding及TLMM检查，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。CSOT已有binding/显示链路schema/FDT审计；新增必需disprate-gpios描述GPIO50高=90Hz，WP2按[移植审查](archive/research/2026-11-16-display-90hz-port.md)提交DRM/DT评审。剩余新DT/标准消费者L3、binding上游评审、整机schema/实际DTBO与专项复核；定向检查不等于整机合规。
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 

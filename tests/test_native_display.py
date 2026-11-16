@@ -9,11 +9,45 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from tools import apply_display_port as port
+from tools import isolate_abl_targets as isolation
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class NativePanelTests(unittest.TestCase):
+    @unittest.skipUnless(all(shutil.which(t) for t in ("dtc", "fdtget", "fdtput")), "libfdt tools required")
+    def test_native_panel_rejects_missing_wrong_or_inverted_gpio(self):
+        fixture = '''/dts-v1/;
+/ {
+    miseed_live_tlmm: pinctrl { #gpio-cells = <2>; gpio-controller; };
+    other: other-pinctrl { #gpio-cells = <2>; gpio-controller; };
+    umi_csot: panel {
+        compatible = "xiaomi,umi-csot";
+        reset-gpios = <&miseed_live_tlmm 12 1>;
+        disprate-gpios = <&miseed_live_tlmm 50 0>;
+    };
+};
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dtb = Path(tmp) / "panel.dts", Path(tmp) / "panel.dtb"
+            src.write_text(fixture)
+            subprocess.run(["dtc", "-@", "-I", "dts", "-O", "dtb", "-o", str(dtb), str(src)], check=True)
+            baseline = dtb.read_bytes()
+            isolation.verify_native_panel(dtb)
+            provider = subprocess.check_output(["fdtget", "-t", "x", str(dtb), "/pinctrl", "phandle"], text=True).strip()
+            for args in (["-d", "/panel", "disprate-gpios"],
+                         ["-t", "x", "/panel", "disprate-gpios", provider, "32", "1"],
+                         ["-t", "x", "/panel", "disprate-gpios", provider, "31", "0"],
+                         ["-t", "x", "/panel", "disprate-gpios", "ffff", "32", "0"],
+                         ["-t", "x", "/panel", "reset-gpios", provider, "c", "0"],
+                         ["-t", "s", "/panel", "compatible", "xiaomi,other-panel"]):
+                with self.subTest(args=args):
+                    dtb.write_bytes(baseline)
+                    subprocess.run(["fdtput", *args[:2], str(dtb), *args[2:]] if args[0] == "-t"
+                                   else ["fdtput", "-d", str(dtb), *args[1:]], check=True)
+                    with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                        isolation.verify_native_panel(dtb)
+
     def test_dsi_diagnostics_staging_refuses_modified_and_symlink_sources(self):
         original = "\n".join(port.DSI_INSERTIONS).encode()
         with tempfile.TemporaryDirectory() as tmp, patch.object(
@@ -138,9 +172,9 @@ int main(void) {
     def test_commands_fail_closed_reset_and_zero_brightness(self):
         source = (ROOT / "kernel/display/panel-xiaomi-umi-csot.c").read_text()
         first = source.index("struct umi_csot {")
-        last = source.index("static const struct drm_display_mode")
+        last = source.index("static int umi_csot_prepare(")
         body = source[first:last]
-        for name in ("umi_csot_prepare", "umi_csot_unprepare", "umi_csot_brightness"):
+        for name in ("umi_csot_prepare", "umi_csot_unprepare", "umi_csot_brightness", "umi_csot_modes"):
             start = source.index("static int " + name + "(")
             body += source[start:source.index("\n}\n", start) + 3]
         start = source.index("struct backlight_properties props = {")
@@ -157,7 +191,6 @@ int main(void) {
 
     def test_fixed_mode_and_profile_boundaries(self):
         source = (ROOT / "kernel/display/panel-xiaomi-umi-csot.c").read_text()
-        self.assertEqual(round(1112 * 3532 * 60 / 1000), 235655)
         self.assertNotIn("DEVICE_ATTR", source)
         self.assertNotIn("regulator_set_voltage", source)
         self.assertIn("GPIOD_ASIS", source)

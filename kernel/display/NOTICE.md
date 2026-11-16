@@ -10,6 +10,20 @@ The generic reference panel driver is not copied. MiSeed uses a fixed variant
 DRM panel with standard backlight, without arbitrary DT commands or register sysfs.
 Reference source reports are not MiSeed hardware verification.
 
+90Hz timing/select data: colorgarden/umi-mainline commit
+`531c16b9e50f0351ad0b95051c13a705ad8e223b`, contributors including color.
+`dts/xiaomi-umi-panels.dtsi` (BSD-3-Clause) supplies H 16/8/8, V 4/4/8,
+90Hz and active-high GPIO50. Its unchanged common DTS also leaves GPIO50 usable.
+`patches/panel-xiaomi-umi.c` (GPL-2.0-only) supplies the 20ms post-init wait.
+The fixed native mode now uses these timings (235788kHz, 1112x2356 totals).
+MiSeed requires the GPIO and propagates acquisition/direction errors; it does
+not import the reference private sysfs, arbitrary DT command data interface,
+optional-error fallback or unrelated touch/power changes. This is a single
+90Hz mode, not runtime 60/90 switching. Original 60Hz data attribution above
+still applies to the unchanged command/DSC table. Exact hashes and licenses
+are in sources.lock.json under display_90hz_reference. Local binding review
+and MiSeed 90Hz L3 remain separate from the reference's reported success.
+
 Uncertain physical-dimension units are not imported. Panel rails remain inherited;
 this is not independent cold-power sequencing. Default rescue stays simpledrm;
 native display is opt-in. Variant identity, reset/DSC/brightness, suspend/resume

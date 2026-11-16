@@ -3,12 +3,32 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 #include "umi_csot_commands.h"
 struct drm_panel { bool prepared; };
 struct mipi_dsi_device { int dev; };
 struct drm_dsc_config { int unused; };
 struct drm_dsc_picture_parameter_set { int unused; };
-struct gpio_desc { int value; };
+struct gpio_desc { int value, error; };
+struct drm_display_mode {
+    int clock, hdisplay, hsync_start, hsync_end, htotal;
+    int vdisplay, vsync_start, vsync_end, vtotal, type;
+    char name[32];
+};
+struct drm_connector { void *dev; };
+#define DRM_MODE_TYPE_DRIVER 1
+#define DRM_MODE_TYPE_PREFERRED 2
+static int fail_mode_alloc;
+static struct drm_display_mode *published;
+static struct drm_display_mode *drm_mode_duplicate(void *dev, const struct drm_display_mode *m)
+{
+    struct drm_display_mode *copy = fail_mode_alloc ? NULL : malloc(sizeof(*m));
+    if (copy) *copy = *m;
+    return copy;
+}
+static void drm_mode_set_name(struct drm_display_mode *m) { strcpy(m->name, "1080x2340"); }
+static void drm_mode_probed_add(struct drm_connector *c, struct drm_display_mode *m) { published = m; }
 struct mutex { int unused; };
 struct backlight_device { void *data; int brightness; };
 #define container_of(p, t, m) ((t *)((char *)(p) - offsetof(t, m)))
@@ -20,9 +40,16 @@ struct backlight_device { void *data; int brightness; };
 static int command, fail_command = -1, fail_compression, fail_pps, brightness;
 static int short_write, msm_packet_count;
 static int fail_off, fail_sleep, off_calls, sleep_calls;
-static void msleep(unsigned int n) { (void)n; }
+static unsigned int last_delay;
+static struct gpio_desc *rate_gpio;
+static void msleep(unsigned int n) { last_delay = n; }
 static void usleep_range(unsigned int a, unsigned int b) { (void)a; (void)b; }
-static int gpiod_direction_output(struct gpio_desc *g, int value) { g->value = value; return 0; }
+static int gpiod_direction_output(struct gpio_desc *g, int value) {
+    if (g == rate_gpio) assert(command == 59 && last_delay == 20 && value == 1);
+    if (g->error) return g->error;
+    g->value = value;
+    return 0;
+}
 static void gpiod_set_value_cansleep(struct gpio_desc *g, int value) { g->value = value; }
 static int mipi_dsi_compression_mode(struct mipi_dsi_device *d, bool enable) { return fail_compression ? -EIO : 0; }
 static void drm_dsc_pps_payload_pack(void *a, void *b) { }
@@ -53,13 +80,34 @@ static void core_unprepare(struct drm_panel *panel) {
 int main(void)
 {
     struct mipi_dsi_device d = {0};
-    struct gpio_desc reset = {0};
-    struct umi_csot c = {.dsi = &d, .reset = &reset};
+    struct gpio_desc reset = {0}, disprate = {0};
+    struct umi_csot c = {.dsi = &d, .reset = &reset, .disprate = &disprate};
     struct backlight_device bl = {.data = &c, .brightness = panel_defaults.brightness};
+    rate_gpio = &disprate;
+    struct drm_connector connector = {0};
+    fail_mode_alloc = 1;
+    assert(umi_csot_modes(&c.panel, &connector) == -ENOMEM && !published);
+    fail_mode_alloc = 0;
+    assert(umi_csot_modes(&c.panel, &connector) == 1 && published);
+    assert(published->hdisplay == 1080 && published->vdisplay == 2340);
+    assert(published->hsync_start - published->hdisplay == 16);
+    assert(published->hsync_end - published->hsync_start == 8);
+    assert(published->htotal - published->hsync_end == 8);
+    assert(published->vsync_start - published->vdisplay == 4);
+    assert(published->vsync_end - published->vsync_start == 4);
+    assert(published->vtotal - published->vsync_end == 8);
+    double hz = published->clock * 1000.0 / published->htotal / published->vtotal;
+    assert(hz > 89.999 && hz < 90.001);
+    assert(published->type == (DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED));
+    free(published);
+    reset.error = -EBUSY;
+    assert(umi_csot_prepare(&c.panel) == -EBUSY && command == 0 && !c.prepared);
+    reset.error = 0;
     for (int i = 0; i < 59; i++) {
         command = 0; fail_command = i;
         assert(umi_csot_prepare(&c.panel) == -EIO);
         assert(reset.value == 1 && !c.prepared && command == i + 1);
+        assert(disprate.value == 0);
     }
     fail_command = -1; command = 0; fail_compression = 1;
     assert(umi_csot_prepare(&c.panel) == -EIO && command == 0);
@@ -67,8 +115,18 @@ int main(void)
     assert(umi_csot_prepare(&c.panel) == -EIO && command == 0);
     fail_pps = 0; short_write = 1;
     assert(umi_csot_prepare(&c.panel) == -EIO && !c.prepared);
+    short_write = 0;
+    for (int error = 0; error < 3; error++) {
+        const int errors[] = {-EIO, -EBUSY, -517};
+        command = 0; disprate.error = errors[error];
+        assert(umi_csot_prepare(&c.panel) == errors[error]);
+        assert(reset.value == 1 && !c.prepared && command == 59);
+        assert(disprate.value == 0);
+    }
+    disprate.error = 0;
     short_write = 0; command = 0;
     assert(umi_csot_prepare(&c.panel) == 0 && c.prepared && command == 59);
+    assert(disprate.value == 1);
     assert(umi_csot_unprepare(&c.panel) == 0 && !c.prepared);
     msm_packet_count = 1; command = 0;
     assert(umi_csot_prepare(&c.panel) == 0 && c.prepared && command == 59);
