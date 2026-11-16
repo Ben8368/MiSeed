@@ -51,10 +51,10 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | --- | --- | --- |
 | Linux RAM bring-up / UEFI | `b53705e` / `9f4713db…69e32014` 启动、Fastboot→Android 往返 L3；UEFI 未测 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)；[PON](archive/hardware/2026-11-08-upstream-power-ramboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；触控未实现 | [本轮](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
+| CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；HEAD `cb59fc8` 活动 KMS `1080x2340@90` 且目视正常；独立 vblank/page-flip 测量待验；触控未实现 | [本轮](archive/hardware/2026-11-17-umi-pps-90hz-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
 | 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线供电 / 旁路 | 二次修复L3捕获2.361A，停充/暂停、保持至拔线通过；TCPM旧重复链接告警未再现；持续充电因输入异常中断，RISK-004开放。旧阶段/旁路/PPS保留原范围 | [本次L3](archive/hardware/2026-11-15-umi-fixed-pd-sampling-l3.md) / [修复](archive/reviews/2026-11-15-fixed-pd-sampling-paths.md) |
+| 有线供电 / 旁路 | 固定 PD 新 HEAD L3 待验；本轮 HEAD `cb59fc8` PPS 实际运行累计10分42秒、三段，用户插拔相关 detach/错误已记录；固定 PD、保护温标等原范围不变 | [本轮 PPS / 显示](archive/hardware/2026-11-17-umi-pps-90hz-l3.md) / [固定 PD L3](archive/hardware/2026-11-15-umi-fixed-pd-sampling-l3.md) / [修复](archive/reviews/2026-11-15-fixed-pd-sampling-paths.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |
