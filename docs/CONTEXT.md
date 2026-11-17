@@ -1,6 +1,6 @@
 # 当前状态
 
-2026-11-16｜[Linux接口收尾](archive/reviews/2026-11-16-linux-interface-closure.md)：撤私有控制并修限流；283项Linux零跳过，双配置schema/L2过。
+2026-11-17｜[接口审计](archive/reviews/2026-11-17-linux-interface-audit.md)
 
 2026-11-17｜[PPS+90Hz](archive/hardware/2026-11-17-umi-pps-90hz-l3.md)：HEAD `cb59fc8`；PPS累计10:42、三段/两次拔插，非连续无故障。KMS 1080×2340@90、目视正常，vblank未测；已回Android16。
 
