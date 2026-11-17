@@ -163,6 +163,22 @@ int main(void) {
  sample=123;assert(smb5_get_input_current_now(&c,&sample)==-EIO && c.pps_fault);
  c=reset();assert(!smb5_fixed_update(&c));calls=0;fail_at=2;
  assert(!smb5_get_input_current_now(&c,&sample) && c.pps_fault && sample==1984000);
+ /* Read a source-initiated 3 A -> 2 A renegotiation before the next worker. */
+ c=reset();source_ua=3000000;assert(!smb5_fixed_update(&c));
+ props[POWER_SUPPLY_PROP_CURRENT_NOW]=2000000;
+ icl_ua=2000000;measured_ua=2400000;stopped=suspended=0;c.enabled=true;
+ assert(!smb5_get_input_current_now(&c,&sample) && sample==2400000);
+ assert(c.pd_current_ua==3000000 && c.pps_fault && stopped && suspended && !c.enabled);
+ /* An increased budget must likewise supersede an old 2 A cache. */
+ c=reset();assert(!smb5_fixed_update(&c));
+ props[POWER_SUPPLY_PROP_CURRENT_NOW]=3000000;icl_ua=measured_ua=2500000;
+ assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);
+ for(int contract=0;contract<=4000000;contract+=4000000) {
+  c=reset();assert(!smb5_fixed_update(&c));props[POWER_SUPPLY_PROP_CURRENT_NOW]=contract;
+  assert(!smb5_get_input_current_now(&c,&sample) && c.pps_fault);
+ }
+ c=reset();assert(!smb5_fixed_update(&c));calls=0;fail_at=3;
+ assert(!smb5_get_input_current_now(&c,&sample) && c.pps_fault);
  /* PPS and unloaded transitions must not use stale fixed budgets. */
  c=reset();assert(!smb5_fixed_update(&c));c.pps_owned=true;measured_ua=2425170;
  assert(!smb5_get_input_current_now(&c,&sample) && !c.pps_fault);

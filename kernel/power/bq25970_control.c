@@ -128,8 +128,10 @@ int bq25970_check_configuration(struct bq25970_device *bq)
 		bq->cached.watchdog |= BQ_WD_TIMEOUT_FLAG;
 		bq->cached.hardware_fault = true;
 	}
-	if (ret)
+	if (ret) {
 		bq->sample_error = ret;
+		bq->sample_valid = false;
+	}
 	mutex_unlock(&bq->lock);
 	return ret;
 }

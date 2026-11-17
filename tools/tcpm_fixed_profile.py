@@ -9,6 +9,7 @@ PROFILE = ROOT / "kernel/power/tcpm_fixed_profile.inc"
 def transform(text, replace):
     text = replace(text, "\tstruct usb_power_delivery *selected_pd;",
                    "\tstruct usb_power_delivery *selected_pd;\n\tbool psy_selected_profile;\n"
+                   "\tbool psy_pd_link_dirty;\n"
                    "\tunsigned int psy_voltage_limit_mv;")
     # Apply the voltage ceiling to both fixed selection and PPS output.
     check = ("\n\t\tif (port->psy_voltage_limit_mv && "

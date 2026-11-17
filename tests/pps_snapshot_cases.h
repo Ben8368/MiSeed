@@ -139,6 +139,32 @@ static void test_chip_boundary(void)
 	assert(!sample.hardware_fault);
 	assert(!bq25970_get_property(&sw, POWER_SUPPLY_PROP_HEALTH, &value));
 	assert(value.intval == POWER_SUPPLY_HEALTH_GOOD);
+	/* Verification failures invalidate a previously successful sample. */
+	assert(!bq25970_check_configuration(&chip) && chip.sample_valid);
+	for (int fault = 0; fault < 3; fault++) {
+		assert(!bq25970_read_sample(&chip, &sample));
+		if (fault == 0)
+			fail_at = io_count + 1;
+		else if (fault == 1)
+			regs[0x00] ^= 1; /* Readback mismatch. */
+		else
+			regs[0x0b] |= BQ_WD_TIMEOUT_FLAG;
+		int error = bq25970_check_configuration(&chip);
+		assert(error == (fault == 0 ? -EIO : fault == 1 ? -EPERM : -ETIME));
+		assert(!chip.sample_valid && chip.sample_error == error);
+		assert(bq25970_get_property(&sw, POWER_SUPPLY_PROP_VOLTAGE_NOW, &value) == error);
+		assert(bq25970_get_property(&sw, POWER_SUPPLY_PROP_CURRENT_NOW, &value) == error);
+		assert(!bq25970_get_property(&sw, POWER_SUPPLY_PROP_HEALTH, &value));
+		assert(value.intval == (fault == 2 ? POWER_SUPPLY_HEALTH_UNSPEC_FAILURE :
+			POWER_SUPPLY_HEALTH_UNKNOWN));
+		fail_at = 0;
+		if (fault == 1)
+			regs[0x00] ^= 1;
+		regs[0x0b] &= ~BQ_WD_TIMEOUT_FLAG;
+	}
+	assert(!bq25970_prepare(&chip));
+	assert(!bq25970_read_sample(&chip, &sample));
+	assert(!bq25970_get_property(&sw, POWER_SUPPLY_PROP_CURRENT_NOW, &value));
 	chip.psy = &sw;before = changed;
 	assert(!bq25970_stop(&chip));
 	assert(changed == before + 1);

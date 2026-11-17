@@ -4,19 +4,6 @@
  * No raw PDO or board register ABI.
  * The first firmware profile is the attach/reset default. All calls hold lock.
  */
-/* Serialize the standard Type-C profile selector with a power_supply
- * voltage-limit request. Changing capabilities behind that request would
- * make its readback stale and could remove the current PPS APDO. An identical
- * selection remains a no-op; reset releases the power_supply selection.
- * Caller holds port->lock, before any capabilities or links are changed.
- */
-static int tcpm_psy_check_pd(struct tcpm_port *port, struct usb_power_delivery *pd)
-{
-	if (port->psy_selected_profile && port->selected_pd != pd)
-		return -EBUSY;
-	return 0;
-}
-
 static int tcpm_profile_fixed_mv(const struct pd_data *data)
 {
 	int i, mv = 0;
@@ -45,13 +32,32 @@ static int tcpm_psy_link_pd(struct tcpm_port *port, struct usb_power_delivery *p
 	ret = typec_port_set_usb_power_delivery(port->typec_port, NULL);
 	if (ret)
 		return ret;
+	port->psy_pd_link_dirty = true;
 	ret = typec_port_set_usb_power_delivery(port->typec_port, pd);
 	if (ret) {
 		restore = typec_port_set_usb_power_delivery(port->typec_port, port->selected_pd);
+		port->psy_pd_link_dirty = !!restore;
 		if (restore)
 			tcpm_log(port, "PD profile link restore failed: %d", restore);
+	} else {
+		port->psy_pd_link_dirty = false;
 	}
 	return ret;
+}
+
+/* Serialize the standard Type-C profile selector with a power_supply
+ * voltage-limit request. Changing capabilities behind that request would
+ * make its readback stale and could remove the current PPS APDO. An identical
+ * selection repairs a failed link; reset releases the power_supply selection.
+ * Caller holds port->lock, before any capabilities or links are changed.
+ */
+static int tcpm_psy_check_pd(struct tcpm_port *port, struct usb_power_delivery *pd)
+{
+	if (port->psy_selected_profile && port->selected_pd != pd)
+		return -EBUSY;
+	if (port->psy_pd_link_dirty)
+		return tcpm_psy_link_pd(port, port->selected_pd);
+	return 0;
 }
 
 static void tcpm_psy_restore_profile(struct tcpm_port *port)
@@ -59,7 +65,7 @@ static void tcpm_psy_restore_profile(struct tcpm_port *port)
 	struct pd_data *data;
 	int i, ret;
 
-	if (!port->psy_selected_profile)
+	if (!port->psy_selected_profile && !port->psy_pd_link_dirty)
 		return;
 	data = port->pd_list[0];
 	ret = tcpm_psy_link_pd(port, data->pd);
@@ -75,6 +81,7 @@ static void tcpm_psy_restore_profile(struct tcpm_port *port)
 	 * failed. Keep a retry marker; getters must not report that as success.
 	 */
 	port->psy_selected_profile = !!ret;
+	port->psy_pd_link_dirty = !!ret;
 	port->psy_voltage_limit_mv = 0;
 }
 
@@ -84,7 +91,8 @@ static int tcpm_psy_get_fixed_limit(struct tcpm_port *port,
 	int i, ret = -ENODATA;
 
 	mutex_lock(&port->lock);
-	if (port->psy_selected_profile && !port->psy_voltage_limit_mv) {
+	if (port->psy_pd_link_dirty ||
+	    (port->psy_selected_profile && !port->psy_voltage_limit_mv)) {
 		ret = -EIO;
 		goto out;
 	}
@@ -127,6 +135,11 @@ static int tcpm_psy_set_fixed_limit(struct tcpm_port *port, int uv)
 	if (port->state != SNK_READY || port->update_sink_caps) {
 		ret = -EAGAIN;
 		goto out;
+	}
+	if (port->psy_pd_link_dirty) {
+		ret = tcpm_psy_link_pd(port, port->selected_pd);
+		if (ret)
+			goto out;
 	}
 	if (port->pps_data.active) {
 		/* Lower the live PPS contract before lowering its ceiling. */

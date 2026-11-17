@@ -21,19 +21,19 @@ struct pd_data { struct { u32 pdo[7]; } source_desc,sink_desc;
  int operating_snk_mw;void *sink_cap;struct usb_power_delivery *pd; };
 struct tcpm_port { int lock,state,pwr_role,pd_count,nr_snk_pdo,operating_snk_mw,upcoming_state;
  unsigned int psy_voltage_limit_mv; int supply_voltage;
- bool pd_capable,psy_selected_profile,update_sink_caps;
+ bool pd_capable,psy_selected_profile,psy_pd_link_dirty,update_sink_caps;
  struct { bool active; } pps_data;
  struct pd_data **pd_list;struct usb_power_delivery *selected_pd;
  u32 snk_pdo[7];void *port_sink_caps,*typec_port; };
 union power_supply_propval { int intval; };
-static int busy, starts;
+static int busy, starts, fail_all_links;
 static struct usb_power_delivery *linked, *fail_link;
 static void tcpm_log(struct tcpm_port *p,const char *fmt, ...) { }
 static int tcpm_ams_start(struct tcpm_port *p,int ams) { starts++;return busy?-EAGAIN:0; }
 static int typec_port_set_usb_power_delivery(void *p,struct usb_power_delivery *pd) {
  if(linked==pd)return 0;
  if(pd && linked)return -EEXIST;
- if(pd && pd==fail_link)return -EIO;
+ if(pd && (fail_all_links || pd==fail_link))return -EIO;
  linked=pd;return 0;
 }
 /* DRIVER_UNDER_TEST */
@@ -84,6 +84,43 @@ int main(void) {
  assert(linked==&ids[0]);
  assert(!tcpm_psy_check_pd(&p,&ids[1]));
  assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
+ /* Both publication and restoration fail with a nonzero previous limit. */
+ assert(!tcpm_psy_set_fixed_limit(&p,5000000));
+ before=starts;fail_all_links=1;
+ assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EIO);
+ assert(!linked && p.psy_pd_link_dirty && p.psy_voltage_limit_mv==5000);
+ assert(p.selected_pd==&ids[0] && starts==before);
+ assert(tcpm_psy_get_fixed_limit(&p,&val)==-EIO);
+ assert(tcpm_psy_set_fixed_limit(&p,5000000)==-EIO && !linked);
+ assert(tcpm_psy_check_pd(&p,&ids[0])==-EIO);
+ assert(tcpm_psy_check_pd(&p,&ids[1])==-EBUSY);
+ fail_all_links=0;
+ assert(!tcpm_psy_set_fixed_limit(&p,5000000));
+ assert(linked==&ids[0] && !p.psy_pd_link_dirty && starts==before);
+ assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
+ /* AMS rejection followed by two failed rollback publications. */
+ busy=1;fail_link=&ids[0];
+ assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EAGAIN);
+ assert(!linked && p.psy_pd_link_dirty && p.psy_voltage_limit_mv==5000);
+ assert(p.selected_pd==&ids[0] && p.upcoming_state==INVALID_STATE);
+ assert(tcpm_psy_get_fixed_limit(&p,&val)==-EIO);
+ fail_link=NULL;busy=0;
+ assert(!tcpm_psy_check_pd(&p,&ids[0]));
+ assert(linked==&ids[0] && !p.psy_pd_link_dirty);
+ assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
+ /* Reset must also repair a failed initial selection with no owner yet. */
+ tcpm_psy_restore_profile(&p);fail_all_links=1;
+ assert(!p.psy_selected_profile && !p.psy_voltage_limit_mv);
+ assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EIO && p.psy_pd_link_dirty);
+ fail_all_links=0;tcpm_psy_restore_profile(&p);
+ assert(linked==&ids[0] && !p.psy_pd_link_dirty && !p.psy_selected_profile);
+ /* PPS cannot report a new ceiling while its publication is broken. */
+ p.pps_data.active=true;p.supply_voltage=5000;fail_all_links=1;
+ assert(tcpm_psy_link_pd(&p,&ids[1])==-EIO && p.psy_pd_link_dirty);
+ assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EIO && !p.psy_voltage_limit_mv);
+ fail_all_links=0;assert(!tcpm_psy_set_fixed_limit(&p,9000000));
+ assert(linked==&ids[0] && !p.psy_pd_link_dirty && p.psy_voltage_limit_mv==9000);
+ tcpm_psy_restore_profile(&p);p.pps_data.active=false;
  p.pwr_role=TYPEC_SOURCE;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EOPNOTSUPP);
  assert(p.selected_pd==&ids[0]);
  return 0;

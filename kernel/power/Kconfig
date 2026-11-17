@@ -27,7 +27,7 @@ config CHARGER_BQ25970_CORE
 
 config CHARGER_MISEED_UMI_PPS
 	bool "MiSeed Umi guarded BQ25970 PPS controller"
-	depends on I2C && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
+	depends on I2C=y && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
 	depends on THERMAL && THERMAL_OF
 	depends on CHARGER_MISEED_PM8150B && BATTERY_MISEED_QCOM_FG
 	select AUXILIARY_BUS

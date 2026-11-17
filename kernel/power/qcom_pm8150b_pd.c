@@ -88,14 +88,20 @@ static int smb5_fixed_check_current(struct smb5_chip *chip, int contract_ua,
 
 int smb5_get_input_current_now(struct smb5_chip *chip, int *current_ua)
 {
-	int ret, check_ret = 0;
+	int contract_ua, ret, check_ret = 0;
 
 	mutex_lock(&chip->lock);
 	ret = smb5_get_input_current(chip, current_ua);
 	if (!chip->pps_owned && !chip->pd_transition && !chip->pps_fault &&
-	    !chip->stopping && chip->pd_limit_uv && chip->pd_current_ua > 0) {
-		check_ret = ret ? ret : smb5_fixed_check_current(chip,
-			chip->pd_current_ua, *current_ua, "power_supply");
+	    !chip->stopping && chip->pd_limit_uv) {
+		/* The source may renegotiate between worker polls. */
+		check_ret = ret ? ret : smb5_pd_get(chip,
+			POWER_SUPPLY_PROP_CURRENT_NOW, &contract_ua);
+		if (!check_ret && (contract_ua <= 0 || contract_ua > UMI_CHARGE_USB_ICL_UA))
+			check_ret = -EPROTO;
+		if (!check_ret)
+			check_ret = smb5_fixed_check_current(chip, contract_ua,
+				*current_ua, "power_supply");
 		if (check_ret)
 			smb5_fixed_fault(chip, check_ret);
 	}
