@@ -53,3 +53,5 @@ PD PHY 的 `vreg_l2a_3p1` 与 VBUS regulator 的 0.5–3 A 描述交叉核对 mi
 2026-11-13 有线分段调整：`qcom_pm8150b_pd.c`依据同一锁定LOS的USBIN_ADAPTER_ALLOW_OVERRIDE（5V/9V/CONTINUOUS）及FSW编码自行实现主线TCPM协调，保留Qualcomm/The Linux Foundation来源；无新外部代码或固件。`tcpm_fixed_profile.inc`为本地GPL-2.0-only通用化提案，通过标准input_voltage_limit选择既有firmware capabilities，并约束固定/PPS请求；不导入Android协议栈。实现与未覆盖项见[审查](../../docs/archive/reviews/2026-11-13-wired-policy.md)。
 
 2026-11-16 标准接口收尾：SMB5、BQ 芯片后端和 PPS 策略合并为一个有线充电模块，platform/I2C/auxiliary 设备职责及原版权不变；撤除全部本地供电跨模块导出，不改变电气保护参数。见[接口审计](../../docs/archive/reviews/2026-11-16-linux-interface-closure.md)。
+
+2026-11-17 BQ 解耦：寄存器运行时、故障缓存和芯片 power_supply 归独立 `bq25970_charger`；`umi_bq25970.c/.h` 与 `umi_bq25970_profile.c` 保留 Umi 旧 DT 及原有 LOS 配置迁移。新增封装为本地 GPL-2.0-only 实现，迁移配置继续保留 TI/Fei Jiang/a0220433 归属；未复制 BQ25980 代码，未扩大其他芯片兼容。

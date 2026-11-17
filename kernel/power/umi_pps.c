@@ -10,15 +10,9 @@
  */
 #include "umi_pps_internal.h"
 
-int umi_pps_update(struct umi_pps *c, unsigned int reg,
-		unsigned int mask, unsigned int value)
-{
-	return bq25970_update(c->map, reg, mask, value);
-}
-
 int umi_pps_disable(struct umi_pps *c)
 {
-	return bq25970_disable(c->map);
+	return bq25970_stop(c->chip);
 }
 
 /* Always attempt both stop mechanisms; preserve ownership if either fails. */
@@ -134,7 +128,7 @@ static int umi_pps_validate_cycle(struct umi_pps *c)
 
 	/* Each successful watchdog-register read refreshes the 30 s window. */
 	if (!ret)
-		ret = umi_pps_verify(c);
+		ret = bq25970_check_configuration(c->chip);
 	if (!ret)
 		ret = umi_pps_check_deadline(c);
 	return ret;
@@ -147,10 +141,7 @@ static bool umi_pps_pump_lost(struct umi_pps *c, struct umi_pps_sample *s)
 {
 	struct umi_pps_sample live = *s;
 
-	if (c->state != PPS_RUN || !s->fault || s->fault_raw || s->latched_raw ||
-	    s->status_raw || s->alarm_raw != BIT(1) ||
-	    (s->watchdog_raw & BQ_WD_CONFIG_MASK) != BQ_WD_ENABLED_30S ||
-	    (s->watchdog_raw & BQ_WD_TIMEOUT_FLAG) || (s->control_raw & BQ_ENABLE))
+	if (c->state != PPS_RUN || !s->fault || !s->clean_disabled)
 		return false;
 	live.online = 1;
 	live.fault = 0;
@@ -344,7 +335,7 @@ void umi_pps_work(struct work_struct *work)
 			if (!ret)
 				ret = umi_pps_check_deadline(c);
 			if (!ret)
-				ret = umi_pps_update(c, BQ_CONTROL, BQ_ENABLE, BQ_ENABLE);
+				ret = bq25970_start(c->chip);
 			if (!ret)
 				ret = umi_pps_check_deadline(c);
 			if (ret)

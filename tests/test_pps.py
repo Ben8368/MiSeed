@@ -18,9 +18,11 @@ class PpsTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
     def test_real_controller_success_faults_deadlines_and_cleanup(self):
         # Compile the real worker and hardware helpers with synthetic transports.
-        source = (ROOT / "kernel/power/umi_pps_internal.h").read_text()
-        for name in ("bq25970.c", "umi_pps_hw.c", "umi_pps_pd.c", "umi_pps.c"):
-            source += "\n" + (ROOT / "kernel/power" / name).read_text()
+        source = "\n".join((ROOT / "kernel/power" / name).read_text() for name in (
+            "bq25970_device.h", "bq25970_internal.h", "bq25970_board.h",
+            "umi_pps_internal.h", "bq25970.c", "bq25970_control.c",
+            "bq25970_sample.c", "umi_bq25970_profile.c",
+            "umi_pps_hw.c", "umi_pps_pd.c", "umi_pps.c"))
         full = "\n".join((ROOT / "kernel/power" / name).read_text() for name in
                          ("umi_pps_driver.c", "umi_pps_supply.c", "umi_pps_thermal.c"))
         start = full.index("static int umi_pps_health(")
@@ -31,9 +33,14 @@ class PpsTests(unittest.TestCase):
                      "umi_pps_get_cur_state", "umi_pps_set_cur_state"):
             start = full.index("static int " + name + "(")
             source += full[start:full.index("\n}\n", start) + 3]
+        chip_supply = (ROOT / "kernel/power/bq25970_supply.c").read_text()
+        start = chip_supply.index("static int bq25970_get_property(")
+        source += chip_supply[start:chip_supply.index("\n}\n", start) + 3]
         source = "\n".join(line for line in source.splitlines()
                            if not line.startswith("#include <linux/")
-                           and line != '#include "umi_pps_internal.h"'
+                           and line not in {'#include "umi_pps_internal.h"',
+                               '#include "bq25970_internal.h"', '#include "bq25970_device.h"',
+                               '#include "bq25970_board.h"', '#include "umi_bq25970.h"'}
                            and not line.startswith("extern const struct")
                            and not line.startswith("EXPORT_SYMBOL_GPL"))
         source = source.replace("dev_err(", "dev_info(")

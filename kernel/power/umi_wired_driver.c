@@ -8,10 +8,8 @@
 #include <linux/platform_device.h>
 
 extern struct platform_driver qcom_spmi_smb5;
-#if IS_ENABLED(CONFIG_CHARGER_BQ25970_CORE)
-extern struct i2c_driver bq25970_driver;
-#endif
 #if IS_ENABLED(CONFIG_CHARGER_MISEED_UMI_PPS)
+extern struct i2c_driver umi_bq25970_driver;
 extern struct auxiliary_driver umi_pps_driver;
 #endif
 
@@ -25,18 +23,14 @@ static int __init umi_wired_init(void)
 	ret = auxiliary_driver_register(&umi_pps_driver);
 	if (ret)
 		goto unregister_switch;
-#endif
-#if IS_ENABLED(CONFIG_CHARGER_BQ25970_CORE)
-	ret = i2c_add_driver(&bq25970_driver);
+	ret = i2c_add_driver(&umi_bq25970_driver);
 	if (ret) {
-#if IS_ENABLED(CONFIG_CHARGER_MISEED_UMI_PPS)
 		auxiliary_driver_unregister(&umi_pps_driver);
-#endif
 		goto unregister_switch;
 	}
 #endif
 	return 0;
-#if IS_ENABLED(CONFIG_CHARGER_MISEED_UMI_PPS) || IS_ENABLED(CONFIG_CHARGER_BQ25970_CORE)
+#if IS_ENABLED(CONFIG_CHARGER_MISEED_UMI_PPS)
 unregister_switch:
 	platform_driver_unregister(&qcom_spmi_smb5);
 	return ret;
@@ -49,9 +43,7 @@ static void __exit umi_wired_exit(void)
 #if IS_ENABLED(CONFIG_CHARGER_MISEED_UMI_PPS)
 	/* Stop/recover while the chip IRQ/regmap and SMB5 supplier still live. */
 	auxiliary_driver_unregister(&umi_pps_driver);
-#endif
-#if IS_ENABLED(CONFIG_CHARGER_BQ25970_CORE)
-	i2c_del_driver(&bq25970_driver);
+	i2c_del_driver(&umi_bq25970_driver);
 #endif
 	platform_driver_unregister(&qcom_spmi_smb5);
 }

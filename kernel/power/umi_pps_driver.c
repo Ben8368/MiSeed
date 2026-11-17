@@ -9,7 +9,7 @@
  * No vendor power_supply ABI, pmic-voter, charger authentication or QC writes.
  */
 #include "umi_pps_internal.h"
-#include "bq25970_device.h"
+#include "umi_bq25970.h"
 
 static void umi_pps_event(void *data)
 {
@@ -35,7 +35,7 @@ static void umi_pps_cleanup(void *data)
 	mutex_unlock(&c->lock);
 	cancel_delayed_work_sync(&c->work);
 	/* remove/shutdown cannot return an error to veto teardown. Keep policy,
-	 * suppliers, IRQ and regmap alive until the full stop transaction succeeds.
+	 * suppliers, IRQ and chip alive until the full stop transaction succeeds.
 	 * Persistent I/O failure deliberately blocks teardown; never free the last
 	 * owner of a running pump or a pending PD/SMB5 recovery.
 	 */
@@ -106,8 +106,7 @@ static int umi_pps_probe(struct auxiliary_device *aux,
 	mutex_init(&c->lock);
 	INIT_DELAYED_WORK(&c->work, umi_pps_work);
 	dev_set_drvdata(dev, c);
-	c->chip = to_bq25970_device(aux);
-	c->map = c->chip->map;
+	c->chip = umi_bq25970_chip(aux);
 	ret = umi_pps_disable(c);
 	if (ret)
 		return ret;

@@ -71,7 +71,11 @@ TCPM本地通用化提案以标准`power_supply/input_voltage_limit`（µV）选
 
 ## Linux 标准接口与诊断
 
-BQ25970 注册 `/sys/class/power_supply/bq25970-charger`，提供 `online/status/health/usb_type/voltage_now/current_now/charge_behaviour`，电压/电流为 µV/µA；ADC 尚未配置时返回 `ENODATA`，读取不消费锁存故障。`charge_behaviour=auto` 允许原有自动策略，`inhibit-charge` 停泵并回固定 PD，禁用请求跨拔插保持；故障停机未完成时不允许 auto。单独禁止泵会恢复 SMB5；禁止整个有线路径须按泵→SMB5 顺序禁止两者。SMB5 的 `input_current_limit` 为可写配置（µA），`current_max` 为只读 AICL 结果。标准通知经供电关系传到 FG，电池仍由 `qcom-battery` 提供，FG 的标准 current_now 已修正为充电正、放电负，内部原始解码不变；两个有线消费者同步迁移。SMB5 输入电流按已锁定 PM8150B buck 的 0.2 V/A 将 ADC µV 换算为 µA，OTG/boost 返回 ENODATA；见[接口续修](../../docs/archive/reviews/2026-11-10-mainline-interface-followup.md)。
+BQ 硬件驱动独立注册 `/sys/class/power_supply/bq25970-<设备名>`，提供芯片 `model_name/manufacturer/status/health/voltage_now/current_now`，电压/电流为 µV/µA；未配置或停泵后无有效样本返回 `ENODATA`，采样错误返回原错误。故障由芯片串行采集并缓存，sysfs 查询不消费锁存；新会话在停泵且配置成功后确认旧故障。纯 `ti,bq25970` 实例保持停泵，尚未配置 ADC 时不伪造测量值；当前只接受经 Umi 兼容适配层传入的既有活动充电配置，不宣称其他板型可充电。
+
+Umi 有线协调层注册 `umi-wired-pps`，`model_name` 为 `Umi wired PPS coordinator`；其 `online/usb_type` 表示上游 PD，`status/health` 表示协调结果，`charge_behaviour` 控制完整停泵/合约/SMB5 交接。`auto` 允许原自动策略，`inhibit-charge` 停泵并回固定 PD，请求跨拔插保持；停机未完成不允许 auto。芯片对象不提供这些策略控制。旧 `bq25970-charger` 聚合对象已拆分，救援控制与 `wired_power.py` 同步按协调层身份发现，芯片独立报告为 `pump_chip`。
+
+SMB5 的 `input_current_limit` 为可写配置（µA），`current_max` 为只读 AICL 结果；按 PM8150B buck 的 0.2 V/A 换算输入 ADC，OTG/boost 返回 `ENODATA`。电池仍由 `qcom-battery` 提供，标准 `current_now` 为充电正、放电负；协调层通知经供电关系传到 FG。见[接口续修](../../docs/archive/reviews/2026-11-10-mainline-interface-followup.md)。
 
 thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cooling device `umi-wired-pps` 提供 0–15 档。DT trip/滞回与既有表一致；最终限流取 cooling 请求与独立保护的严格值，用户写 cooling state=0 不解除保护。该 zone 只管理有线 PPS，不能当作固定 PD、无线 RX/TX 的完整热模型。
 
@@ -87,9 +91,9 @@ thermal zone `wired-pps-thermal` 提供同一六路虚拟温度（m°C），cool
 
 | 上层操作 | 现有接口与顺序 |
 | --- | --- |
-| 开启有线旁路 | 先向 BQ25970 泵的 `charge_behaviour` 写 `inhibit-charge`，再向 SMB5 写同值；保留外部输入供系统，不把 `input_current_limit=0` 当作旁路开关 |
-| 退出旁路 / 恢复自动充电 | 先向 SMB5 写 `auto`，成功后再向泵写 `auto`；恢复原有保护策略，故障/停机未完成时保留 `EBUSY`，不强制清除故障 |
-| 查询请求与实际效果 | 读取两路 `charge_behaviour/status/health/online` 和 `qcom-battery` 的 `status/current_now/voltage_now`；外部在线、两路停充及电池净电流共同判断效果，µA/µV 分别换算，不将读错或缺失填 0 |
+| 开启有线旁路 | 先向 Umi 有线协调层的 `charge_behaviour` 写 `inhibit-charge`，再向 SMB5 写同值；保留外部输入供系统，不把 `input_current_limit=0` 当作旁路开关 |
+| 退出旁路 / 恢复自动充电 | 先向 SMB5 写 `auto`，成功后再向协调层写 `auto`；恢复原有保护策略，故障/停机未完成时保留 `EBUSY`，不强制清除故障 |
+| 查询请求与实际效果 | 读取协调层与 SMB5 的 `charge_behaviour/status/health/online` 和 `qcom-battery` 的 `status/current_now/voltage_now`；外部在线、两路停充及电池净电流共同判断效果，µA/µV 分别换算，不将读错或缺失填 0 |
 
 现有协调消费者可直接供上层调用（以下命令在目标 Linux 上执行）：
 

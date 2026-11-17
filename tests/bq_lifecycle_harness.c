@@ -11,18 +11,27 @@ typedef int irqreturn_t;
 #define mutex_lock pthread_mutex_lock
 #define mutex_unlock pthread_mutex_unlock
 struct bq25970_device {
-    pthread_mutex_t event_lock;
+    pthread_mutex_t event_lock, lock;
+    bool owner;
+    void *psy;
     void (*event)(void *);
     void *event_data;
     int *map;
     struct { struct { void *parent; } dev; } aux;
 };
+struct bq25970_sample { int unused; };
+static int bq25970_read_sample(struct bq25970_device *bq, struct bq25970_sample *s) { return 0; }
 static int stops, fail_stop, pump_on;
 static int bq25970_disable(int *map) {
     stops++;
     if (fail_stop) return -EIO;
     pump_on = 0;
     return 0;
+}
+static int bq25970_stop(struct bq25970_device *bq) { return bq25970_disable(bq->map); }
+static void bq25970_shutdown_device(struct bq25970_device *bq) {
+    assert(!bq->psy); /* devres already freed the supply before final stop */
+    assert(!bq25970_stop(bq));
 }
 enum umi_pps_state { PPS_OFF, PPS_FAULT };
 enum { POWER_SUPPLY_PROP_ONLINE, POWER_SUPPLY_PROP_VOLTAGE_NOW,
@@ -144,7 +153,7 @@ static void test_cleanup_retains_live_resources(struct bq25970_device *bq)
 }
 int main(void)
 {
-    struct bq25970_device bq = {.event_lock = PTHREAD_MUTEX_INITIALIZER};
+    struct bq25970_device bq = {.lock = PTHREAD_MUTEX_INITIALIZER, .event_lock = PTHREAD_MUTEX_INITIALIZER};
     pthread_t irq, detach;
     assert(bq25970_subscribe(&bq, NULL, NULL) == -EINVAL);
     assert(bq25970_irq(0, &bq) == IRQ_HANDLED && stops == 1);
@@ -166,5 +175,8 @@ int main(void)
     assert(bq25970_irq(0, &bq) == IRQ_HANDLED && stops == 2 && callbacks == 1);
     bq25970_unsubscribe(&bq);
     test_cleanup_retains_live_resources(&bq);
+    bq.psy = &stops;
+    bq25970_remove(&bq);
+    assert(!bq.psy && !pump_on);
     return 0;
 }

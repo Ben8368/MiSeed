@@ -17,19 +17,20 @@ config CHARGER_MISEED_PM8150B
 	  charging through the standard power_supply properties.
 
 config CHARGER_BQ25970_CORE
-	bool "BQ25970 silicon transport in the wired charger"
-	depends on I2C && OF && CHARGER_MISEED_PM8150B
+	tristate "Texas Instruments BQ25970 charge pump"
+	depends on I2C && OF && POWER_SUPPLY
 	select REGMAP_I2C
-	select AUXILIARY_BUS
 	help
-	  Owns the I2C device, register backend and IRQ. The pump starts
-	  disabled. A separate kernel consumer owns charging policy.
+	  Independent chip transport, IRQ, fault cache and power_supply.
+	  Starts disabled. Generic DT devices expose monitoring only; active
+	  charging requires a qualified board adapter and exclusive owner.
 
 config CHARGER_MISEED_UMI_PPS
 	bool "MiSeed Umi guarded BQ25970 PPS controller"
 	depends on I2C && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
 	depends on THERMAL && THERMAL_OF
 	depends on CHARGER_MISEED_PM8150B && BATTERY_MISEED_QCOM_FG
+	select AUXILIARY_BUS
 	select CHARGER_BQ25970_CORE
 	help
 	  Automatic LOS-style PPS policy using mainline TCPM and a standalone

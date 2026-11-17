@@ -105,10 +105,16 @@ class RescueConsoleTests(RescueFixture):
             root = Path(directory)
             env = dict(os.environ, TEST_PPS_ROOT=str(root))
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            chip = root / "bq25970-15-0066"
+            chip.mkdir()
+            (chip / "model_name").write_text("BQ25970\n")
+            (chip / "charge_behaviour").write_text("do-not-write")
+            self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            self.assertEqual((chip / "charge_behaviour").read_text(), "do-not-write")
             first = root / "15-0066"
             first.mkdir()
             control = first / "charge_behaviour"
-            (first / "model_name").write_text("BQ25970\n")
+            (first / "model_name").write_text("Umi wired PPS coordinator\n")
             (first / "uevent").write_text("POWER_SUPPLY_STATUS=Charging\n")
             control.touch()
             self.assertIn("discovery=0", self.run_log("pps-discovery", env))
@@ -116,7 +122,7 @@ class RescueConsoleTests(RescueFixture):
             second = root / "16-0066"
             second.mkdir()
             (second / "charge_behaviour").touch()
-            (second / "model_name").write_text("BQ25970\n")
+            (second / "model_name").write_text("Umi wired PPS coordinator\n")
             control.write_text("keep")
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
             self.assertEqual(control.read_text(), "keep")
@@ -130,7 +136,7 @@ class RescueConsoleTests(RescueFixture):
             pump = root / "pump0"
             pump.mkdir(parents=True)
             control = pump / "charge_behaviour"
-            (pump / "model_name").write_text("BQ25970\n")
+            (pump / "model_name").write_text("Umi wired PPS coordinator\n")
             (pump / "uevent").write_text("POWER_SUPPLY_STATUS=Charging\n")
             control.touch()
             supply = root / "pm8150b-charger"
@@ -167,7 +173,7 @@ class RescueConsoleTests(RescueFixture):
             root = Path(directory)
             (root / "15-0066").mkdir()
             (root / "15-0066/charge_behaviour").write_text("auto\n")
-            (root / "15-0066/model_name").write_text("BQ25970\n")
+            (root / "15-0066/model_name").write_text("Umi wired PPS coordinator\n")
             env = dict(os.environ, TEST_PPS_ROOT=str(root), TEST_PPS_READ_FAIL="1")
             result = subprocess.run([self.program, "pps-discovery"], env=env, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 23)

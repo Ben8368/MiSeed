@@ -24,9 +24,9 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-源码偿还：撤charge_test及跨模块私有导出，互锁内聚同模块。修正有线USB类型及Type-C入口冲突；TCPM标准限压属性仍为本地实现，BQ持续I²C失败仍阻塞退出。见[复核](archive/reviews/2026-11-17-linux-interface-followup.md)。
+偿还：[BQ解耦](archive/reviews/2026-11-17-bq25970-decouple.md)独立模块/电源属性，SMB5/PPS互锁保留；板级旧DT/auxiliary与寄存器镜像暂留。TCPM限压仍本地，持续I²C失败仍阻塞退出。
 
-偿还：WP9闭合有界失败回退、watchdog到期/恢复L3、切档/热暂停/复充生命周期专项复核；TCPM提案需子系统评审，Debian及其他板型待验。
+退出：WP9核实0x2b/watchdog，迁移语义配置并撤旧DT桥；有界退出、watchdog/生命周期L3及独立复核通过；芯片API/binding与TCPM提案经子系统评审。Debian/其他板型待验。
 
 ## TD-005：有线温控模型与验收（P1，2026-11-10；WP9/WP6）
 
@@ -44,6 +44,6 @@
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（360）、`umi_pps.c`（480）、`umi_pps_policy.h`（325）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（487）为传输/生命周期桩。WP10 `kernel/nfc/sn100x.c`（381）保留传输/PM及分阶段诊断重试；WP0 `tests/test_boot_l2.py`（355）保留缓存回归；`tools/build_kernel_l2.sh`（301）保留构建/打包顺序，下次按配置/打包拆分。WP2 `kernel/umi-csot.dts`（318）集中板级节点与 ABL 锚点审计，下次扩展拆为可编译功能组。
+责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（360）、`umi_pps.c`（471）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（492）为传输/生命周期桩。WP10 `kernel/nfc/sn100x.c`（381）保留传输/PM及分阶段诊断重试；WP0 `tests/test_boot_l2.py`（355）保留缓存回归；`tools/build_kernel_l2.sh`（302）保留构建/打包顺序，下次按配置/打包拆分。WP2 `kernel/umi-csot.dts`（318）集中板级节点与 ABL 锚点审计，下次扩展拆为可编译功能组。
 
 偿还：各WP下次修改时拆分接口、代际后端或测试职责；全部≤300行且回归通过后关闭。见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，不豁免红灯和供电安全。

@@ -13,7 +13,8 @@ class BqLifecycleTests(unittest.TestCase):
     def test_exclusive_subscription_irq_and_detach(self):
         source = (ROOT / "kernel/power/bq25970_i2c.c").read_text()
         parts = []
-        for prefix in ("int bq25970_subscribe", "void bq25970_unsubscribe", "static irqreturn_t bq25970_irq"):
+        for prefix in ("int bq25970_subscribe", "void bq25970_unsubscribe", "static irqreturn_t bq25970_irq",
+                       "static void bq25970_remove"):
             begin = source.index(prefix + "(")
             parts.append(source[begin:source.index("\n}\n", begin) + 3])
         for name, prefix in (("umi_pps.c", "int umi_pps_stop"),

@@ -185,7 +185,8 @@ install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 # Check both built-in constituents here and their linked symbols below.
 readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
     qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply qcom_pm8150b_thermal qcom_pm8150b_pd umi_wired_driver
-    umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver bq25970 bq25970_i2c)
+    umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver umi_bq25970 umi_bq25970_profile
+    bq25970 bq25970_i2c bq25970_control bq25970_sample bq25970_supply)
 power_objects=()
 for driver in "${power_drivers[@]}"; do
     [[ -s "$build_tree/drivers/power/supply/${driver}.o" ]] || fail "runtime power object missing: ${driver}"

@@ -134,7 +134,7 @@ int pps_control_path(char *path, size_t size) {
         identity = fopen(candidate, "r");
         if (!identity) continue;
         int matches = fgets(model, sizeof(model), identity) &&
-                      !strcmp(model, "BQ25970\n");
+                      !strcmp(model, "Umi wired PPS coordinator\n");
         fclose(identity);
         if (!matches) continue;
         n = snprintf(candidate, sizeof(candidate), "%s/%s/charge_behaviour", base, entry->d_name);

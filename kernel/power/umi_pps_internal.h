@@ -22,13 +22,12 @@
 #include <linux/pm.h>
 #include <linux/power_supply.h>
 #include <linux/property.h>
-#include <linux/regmap.h>
 #include <linux/workqueue.h>
 #include <linux/thermal.h>
 
 #include "umi_pps_policy.h"
 #include "umi_wired_internal.h"
-#include "bq25970.h"
+#include "bq25970_device.h"
 
 #define PPS_FIXED 1
 #define PPS_PROGRAMMABLE 2
@@ -43,10 +42,9 @@ struct umi_pps_report {
 	bool manual_stop, configured, stop_pending;
 };
 
-/* Expected writable protection image, checked during every control cycle. */
+/* Umi wired policy state; no silicon register access. */
 struct umi_pps {
 	struct device *dev;
-	struct regmap *map;
 	struct bq25970_device *chip;
 	struct power_supply *pd, *bms, *sw, *psy;
 	struct thermal_zone_device *tzd;
@@ -60,8 +58,6 @@ struct umi_pps {
 	struct umi_pps_thermal thermal;
 	struct umi_pps_power power;
 	int thermal_comp_mc;
-	struct bq25970_reg protection[20];
-	unsigned int nprotection;
 	enum umi_pps_state state;
 	bool claimed, configured, pps, removing, stop_pending, manual_stop;
 	bool suspended, resume_pps;
@@ -81,17 +77,13 @@ int umi_pps_caps(struct umi_pps *c);
 int umi_pps_contract(struct umi_pps *c);
 int umi_pps_request(struct umi_pps *c, int mv);
 int umi_pps_get(struct power_supply *psy, enum power_supply_property p, int *v);
-int umi_pps_update(struct umi_pps *c, unsigned int reg,
-		unsigned int mask, unsigned int value);
 int umi_pps_disable(struct umi_pps *c);
 int umi_pps_stop(struct umi_pps *c, enum umi_pps_state state, int reason);
 void umi_pps_work(struct work_struct *work);
 bool umi_pps_changed(struct umi_pps *c);
 int umi_pps_parse(struct umi_pps *c);
-int umi_pps_verify(struct umi_pps *c);
 int umi_pps_prepare(struct umi_pps *c);
 int umi_pps_battery(struct umi_pps *c, struct umi_pps_sample *s);
-int umi_pps_adc(struct umi_pps *c, int channel, int *value);
 int umi_pps_sample(struct umi_pps *c, struct umi_pps_sample *s);
 extern const struct power_supply_desc umi_pps_desc;
 extern const struct thermal_zone_device_ops umi_pps_thermal_ops;
