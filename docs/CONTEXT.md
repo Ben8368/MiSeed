@@ -1,10 +1,10 @@
 # 当前状态
 
-2026-11-17｜[PR7复核](archive/reviews/2026-11-17-pr7-coderabbit.md)：4项修复、L0–L2过；本次源码L3/独立复核待验。
+2026-11-17｜[PR7](archive/reviews/2026-11-17-pr7-coderabbit.md)：L0–L2过；固定PD L3部分过，BQ遥测/独立复核未闭。
 
 2026-11-17｜[PPS+90Hz](archive/hardware/2026-11-17-umi-pps-90hz-l3.md)：HEAD `cb59fc8`；PPS累计10:42、三段/两次拔插，非连续无故障。KMS 1080×2340@90、目视正常，vblank未测；已回Android16。
 
-有线固定PD：9V/3A ADC与43,972条样本无故障；SOC71%降5V、80%止充。无APDO误触PPS已修。[记录](archive/hardware/2026-11-16-umi-fixed-pd-l3.md)
+固定PD `61c495d`：无APDO、9V/3A；71%转5V、80%旁路，输入峰1.986A/ICL≤2A。BQ ADC未读，热恢复/保护/回差待验。[L3](archive/hardware/2026-11-17-umi-fixed-pd-bq25970-l3.md)
 
 WP10 SN100T/NCI：reset/init、RF target、close/reopen L3过；NDEF/PM/HCE/eSE未验。禁共享VEN，NACK待查。[L3](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)
 
@@ -18,6 +18,6 @@ SMB5 bit5误判修复，FG/SMB5 10组Charging，Android回退过。[记录](arch
 
 ## 近期优先级
 
-1. 有线固定PD新镜像L3、跳功率闭环；保护/温标、独立复核、精确HEAD CI见RISK-004。
+1. 有线固定PD/BQ ADC遥测、热态回差、保护/温标、独立复核及精确HEAD CI见RISK-004。
 2. WP10 NDEF、PM、恢复及eSE；NACK查控制器阶段，禁共享VEN复位。
 3. 显示SMMU交接/独立供电PM；Debian与无线RX/TX。

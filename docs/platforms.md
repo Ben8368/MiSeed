@@ -56,5 +56,5 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
 | 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线供电 / 旁路 | 固定 PD 新 HEAD L3 待验；本轮 HEAD `cb59fc8` PPS 实际运行累计10分42秒、三段，用户插拔相关 detach/错误已记录；固定 PD、保护温标等原范围不变 | [本轮 PPS / 显示](archive/hardware/2026-11-17-umi-pps-90hz-l3.md) / [固定 PD L3](archive/hardware/2026-11-15-umi-fixed-pd-sampling-l3.md) / [修复](archive/reviews/2026-11-15-fixed-pd-sampling-paths.md) |
+| 有线供电 / 旁路 | `61c495d` 固定PDO/no-APDO L3部分过：9V/3A、峰17.19W/输入1.986A、ICL≤2A；SOC71降5V、80%旁路。BQ ADC不可读；热恢复、保护与回差待验 | [本轮 L3](archive/hardware/2026-11-17-umi-fixed-pd-bq25970-l3.md) / [旧 PPS / 显示](archive/hardware/2026-11-17-umi-pps-90hz-l3.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |
