@@ -51,7 +51,7 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | --- | --- | --- |
 | Linux RAM bring-up / UEFI | `b53705e` / `9f4713db…69e32014` 启动、Fastboot→Android 往返 L3；UEFI 未测 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)；[PON](archive/hardware/2026-11-08-upstream-power-ramboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；HEAD `cb59fc8` 活动 KMS `1080x2340@90` 且目视正常；独立 vblank/page-flip 测量待验；触控未实现 | [本轮](archive/hardware/2026-11-17-umi-pps-90hz-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
+| CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；`61c495d` 活动KMS `1080x2340@约90Hz`，用户现场目视滚动流畅；同次USB CDC回收日志并返回Android；独立vblank/交接待验；触控未实现 | [本轮](archive/hardware/2026-11-17-umi-fixed-pd-bq25970-l3.md) / [旧90Hz](archive/hardware/2026-11-17-umi-pps-90hz-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
 | NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
 | 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |

@@ -12,7 +12,7 @@ WP10 SN100T/NCI：reset/init、RF target、close/reopen L3过；NDEF/PM/HCE/eSE�
 
 SMB5 bit5误判修复，FG/SMB5 10组Charging，Android回退过。[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)
 
-显示：[90Hz移植](archive/research/2026-11-16-display-90hz-port.md)过L2/schema；新HEAD KMS/目视正常，vblank待测；SMMU/PM与启动条纹续查。[L3](archive/hardware/2026-11-17-umi-pps-90hz-l3.md)
+显示：90Hz移植过L2；`61c495d` KMS约90Hz且目视流畅；vblank/交接、SMMU/PM与启动条纹续查。[L3](archive/hardware/2026-11-17-umi-fixed-pd-bq25970-l3.md)
 
 旧旁路、PD/PPS恢复和watchdog/热保护见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
 
