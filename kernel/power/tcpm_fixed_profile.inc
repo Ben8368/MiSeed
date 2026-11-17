@@ -4,6 +4,19 @@
  * No raw PDO or board register ABI.
  * The first firmware profile is the attach/reset default. All calls hold lock.
  */
+/* Serialize the standard Type-C profile selector with a power_supply
+ * voltage-limit request. Changing capabilities behind that request would
+ * make its readback stale and could remove the current PPS APDO. An identical
+ * selection remains a no-op; reset releases the power_supply selection.
+ * Caller holds port->lock, before any capabilities or links are changed.
+ */
+static int tcpm_psy_check_pd(struct tcpm_port *port, struct usb_power_delivery *pd)
+{
+	if (port->psy_selected_profile && port->selected_pd != pd)
+		return -EBUSY;
+	return 0;
+}
+
 static int tcpm_profile_fixed_mv(const struct pd_data *data)
 {
 	int i, mv = 0;

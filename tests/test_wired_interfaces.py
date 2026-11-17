@@ -27,6 +27,66 @@ class WiredInterfaceTests(unittest.TestCase):
         self.assertIn("charge_behaviour", console)
 
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
+    def test_usb_type_tracks_pd_and_bc12_without_hiding_read_errors(self):
+        source = (ROOT / "kernel/power/qcom_pm8150b_supply.c").read_text()
+        start = source.index("static int smb5_get_usb_type(")
+        function = source[start:source.index("\n}\n", start) + 3]
+        harness = r'''
+#include <assert.h>
+#include <errno.h>
+#include <stddef.h>
+enum { POWER_SUPPLY_USB_TYPE_UNKNOWN, POWER_SUPPLY_USB_TYPE_SDP,
+ POWER_SUPPLY_USB_TYPE_CDP, POWER_SUPPLY_USB_TYPE_DCP, POWER_SUPPLY_USB_TYPE_C,
+ POWER_SUPPLY_USB_TYPE_PD, POWER_SUPPLY_USB_TYPE_PD_PPS, POWER_SUPPLY_USB_TYPE_PD_DRP,
+ POWER_SUPPLY_PROP_USB_TYPE };
+union power_supply_propval {int intval;};
+struct smb5_chip {void *pd;};
+static int online, online_error, pd_error, pd_type, apsd_error, apsd_type;
+static int apsd_reads, pd_reads;
+static int smb5_get_prop_usb_online(struct smb5_chip *c, int *v)
+{*v=online;return online_error;}
+static int power_supply_get_property(void *pd, int prop, union power_supply_propval *v)
+{assert(pd && prop==POWER_SUPPLY_PROP_USB_TYPE);pd_reads++;v->intval=pd_type;return pd_error;}
+static int smb5_apsd_get_charger_type(struct smb5_chip *c, int *v)
+{apsd_reads++;*v=apsd_type;return apsd_error;}
+''' + function + r'''
+int main(void) {
+ struct smb5_chip chip={.pd=&chip};int type=-1;
+ /* Detach must ignore stale TCPM capability and APSD state. */
+ pd_type=POWER_SUPPLY_USB_TYPE_PD_PPS;
+ assert(!smb5_get_usb_type(&chip,&type) && type==POWER_SUPPLY_USB_TYPE_UNKNOWN);
+ assert(!pd_reads && !apsd_reads);
+ online_error=-EIO;assert(smb5_get_usb_type(&chip,&type)==-EIO);
+ assert(!pd_reads && !apsd_reads);online_error=0;online=1;
+ for(int t=POWER_SUPPLY_USB_TYPE_PD;t<=POWER_SUPPLY_USB_TYPE_PD_DRP;t++) {
+  pd_type=t;apsd_error=-EAGAIN;
+  assert(!smb5_get_usb_type(&chip,&type) && type==t && !apsd_reads);
+ }
+ pd_error=-EIO;assert(smb5_get_usb_type(&chip,&type)==-EIO && !apsd_reads);
+ pd_error=-EAGAIN;assert(smb5_get_usb_type(&chip,&type)==-EAGAIN && !apsd_reads);
+ pd_error=0;pd_type=POWER_SUPPLY_USB_TYPE_C;apsd_error=0;
+ for(int t=POWER_SUPPLY_USB_TYPE_SDP;t<=POWER_SUPPLY_USB_TYPE_DCP;t++) {
+  apsd_type=t;assert(!smb5_get_usb_type(&chip,&type) && type==t);
+ }
+ apsd_error=-EAGAIN;assert(smb5_get_usb_type(&chip,&type)==-EAGAIN);
+ apsd_error=-EIO;assert(smb5_get_usb_type(&chip,&type)==-EIO);
+ chip.pd=NULL;apsd_error=0;apsd_type=POWER_SUPPLY_USB_TYPE_DCP;
+ int before=pd_reads;
+ assert(!smb5_get_usb_type(&chip,&type) && type==apsd_type && pd_reads==before);
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            src, exe = Path(tmp) / "usb_type.c", Path(tmp) / "usb_type"
+            src.write_text(harness)
+            result = subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-Wno-unused-parameter", str(src), "-o", str(exe)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(shutil.which("cc"), "C compiler required")
     def test_real_registration_rollback_and_reverse_teardown(self):
         source = (ROOT / "kernel/power/umi_wired_driver.c").read_text()
         source = "\n".join(line for line in source.splitlines()

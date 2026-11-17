@@ -62,6 +62,36 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 	return rc;
 }
 
+/* The wired input is shared with TCPM. APSD only describes BC1.2 and
+ * must not hide an attached PD/PPS source from standard power_supply users.
+ * Keep supplier reads outside chip->lock (TCPM has its own port lock).
+ */
+static int smb5_get_usb_type(struct smb5_chip *chip, int *type)
+{
+	union power_supply_propval val;
+	int online, ret;
+
+	ret = smb5_get_prop_usb_online(chip, &online);
+	if (ret)
+		return ret;
+	if (!online) {
+		*type = POWER_SUPPLY_USB_TYPE_UNKNOWN;
+		return 0;
+	}
+	if (chip->pd) {
+		ret = power_supply_get_property(chip->pd, POWER_SUPPLY_PROP_USB_TYPE, &val);
+		if (ret)
+			return ret;
+		if (val.intval == POWER_SUPPLY_USB_TYPE_PD ||
+		    val.intval == POWER_SUPPLY_USB_TYPE_PD_PPS ||
+		    val.intval == POWER_SUPPLY_USB_TYPE_PD_DRP) {
+			*type = val.intval;
+			return 0;
+		}
+	}
+	return smb5_apsd_get_charger_type(chip, type);
+}
+
 static enum power_supply_property smb5_properties[] = {
 	POWER_SUPPLY_PROP_MANUFACTURER,
 	POWER_SUPPLY_PROP_MODEL_NAME,
@@ -125,7 +155,7 @@ static int smb5_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		return smb5_get_prop_health(chip, &val->intval);
 	case POWER_SUPPLY_PROP_USB_TYPE:
-		return smb5_apsd_get_charger_type(chip, &val->intval);
+		return smb5_get_usb_type(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
 		val->intval = smb5_get_charge_control_threshold(chip, true);
 		return 0;
@@ -228,7 +258,10 @@ const struct power_supply_desc smb5_psy_desc = {
 	.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO) |
 			     BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE),
 	.type = POWER_SUPPLY_TYPE_USB,
-	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_SDP) |
+	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_PD) |
+		     BIT(POWER_SUPPLY_USB_TYPE_PD_PPS) |
+		     BIT(POWER_SUPPLY_USB_TYPE_PD_DRP) |
+		     BIT(POWER_SUPPLY_USB_TYPE_SDP) |
 		     BIT(POWER_SUPPLY_USB_TYPE_CDP) |
 		     BIT(POWER_SUPPLY_USB_TYPE_DCP) |
 		     BIT(POWER_SUPPLY_USB_TYPE_UNKNOWN),

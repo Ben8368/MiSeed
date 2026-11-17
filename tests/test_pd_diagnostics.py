@@ -111,6 +111,7 @@ class PdDiagnosticsTests(unittest.TestCase):
                 '\tu32 pdo, src;\n\n\tfor (i = 1; i < port->nr_source_caps; ++i) {',
                 '\ttarget_mw = (port->current_limit * req_out_volt) / 1000;',
                 'static void tcpm_reset_port(struct tcpm_port *port)\n{',
+                '\tif (port->selected_pd == pd)\n\t\tgoto unlock;',
                 'static enum power_supply_property tcpm_psy_props[] = {',
                 '\tcase POWER_SUPPLY_PROP_USB_TYPE:\n\t\tval->intval = port->usb_type;',
                 '\tcase POWER_SUPPLY_PROP_ONLINE:\n\t\tret = tcpm_psy_set_online(port, val);',
@@ -128,6 +129,10 @@ class PdDiagnosticsTests(unittest.TestCase):
                 self.assertEqual(first,second)
                 self.assertIn("262144",(root/applier.TCPM).read_text())
                 self.assertIn("kvcalloc",(root/applier.TCPM).read_text())
+                tcpm = (root/applier.TCPM).read_text()
+                self.assertIn("ret = tcpm_psy_check_pd(port, pd);\n"
+                              "\tif (ret)\n\t\tgoto unlock;\n\n"
+                              "\tif (port->selected_pd == pd)", tcpm)
                 self.assertNotIn("*logbuffer[",(root/applier.TCPM).read_text())
                 self.assertIn("miseed-pdphy rx_irq_signal",(root/applier.PDPHY).read_text())
                 (root/applier.PDPHY).write_text("changed")

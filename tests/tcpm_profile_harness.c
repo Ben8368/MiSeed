@@ -47,6 +47,7 @@ int main(void) {
  .pd_capable=true,.pd_list=list,.selected_pd=&ids[0]};
  union power_supply_propval val;
  linked=&ids[0];
+ assert(!tcpm_psy_check_pd(&p,&ids[1]));
  assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
  assert(tcpm_psy_set_fixed_limit(&p,4999999)==-EINVAL);
  busy=1;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EAGAIN);
@@ -60,6 +61,8 @@ int main(void) {
  assert(p.selected_pd==&ids[1] && p.psy_selected_profile && p.nr_snk_pdo==3);
  assert((p.snk_pdo[1]&1023)==300); /* 9 V contract capability is 3 A. */
  assert(linked==&ids[1]);
+ assert(tcpm_psy_check_pd(&p,&ids[0])==-EBUSY);
+ assert(!tcpm_psy_check_pd(&p,&ids[1]));
  int before=starts;
  assert(tcpm_psy_get_fixed_limit(&p,&val)==-EAGAIN); /* Queued AMS is not READY. */
  p.update_sink_caps=false;
@@ -70,6 +73,7 @@ int main(void) {
  p.supply_voltage=8400;
  assert(tcpm_psy_set_fixed_limit(&p,5000000)==-EINVAL && starts==before);
  assert(!tcpm_psy_set_fixed_limit(&p,9500000) && p.psy_voltage_limit_mv==9500);
+ assert(tcpm_psy_check_pd(&p,&ids[0])==-EBUSY);
  p.pps_data.active=false;
  fail_link=&ids[0];tcpm_psy_restore_profile(&p);
  assert(p.selected_pd==&ids[0] && p.nr_snk_pdo==2 && p.psy_selected_profile);
@@ -78,6 +82,7 @@ int main(void) {
  tcpm_psy_restore_profile(&p);
  assert(p.selected_pd==&ids[0] && p.nr_snk_pdo==2 && !p.psy_selected_profile);
  assert(linked==&ids[0]);
+ assert(!tcpm_psy_check_pd(&p,&ids[1]));
  assert(!tcpm_psy_get_fixed_limit(&p,&val) && val.intval==5000000);
  p.pwr_role=TYPEC_SOURCE;assert(tcpm_psy_set_fixed_limit(&p,9000000)==-EOPNOTSUPP);
  assert(p.selected_pd==&ids[0]);

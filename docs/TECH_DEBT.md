@@ -24,7 +24,7 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-源码偿还：撤charge_test及跨模块私有导出，互锁内聚同模块，外部power_supply/thermal。TCPM限压仍为本地扩展；BQ持续I²C失败仍阻塞退出。见[审计](archive/reviews/2026-11-16-linux-interface-closure.md)。
+源码偿还：撤charge_test及跨模块私有导出，互锁内聚同模块。修正有线USB类型及Type-C入口冲突；TCPM标准限压属性仍为本地实现，BQ持续I²C失败仍阻塞退出。见[复核](archive/reviews/2026-11-17-linux-interface-followup.md)。
 
 偿还：WP9闭合有界失败回退、watchdog到期/恢复L3、切档/热暂停/复充生命周期专项复核；TCPM提案需子系统评审，Debian及其他板型待验。
 

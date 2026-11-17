@@ -30,6 +30,11 @@ def transform(text, replace):
     anchor = "static void tcpm_reset_port(struct tcpm_port *port)\n{"
     text = replace(text, anchor, PROFILE.read_text(encoding="utf-8") + "\n" + anchor +
                    "\n\ttcpm_psy_restore_profile(port);")
+    # Both standard selectors share port->lock; reject a conflicting Type-C
+    # write before the upstream setter changes capabilities or queues an AMS.
+    anchor = "\tif (port->selected_pd == pd)\n\t\tgoto unlock;"
+    text = replace(text, anchor, "\tret = tcpm_psy_check_pd(port, pd);\n"
+                   "\tif (ret)\n\t\tgoto unlock;\n\n" + anchor)
     text = replace(text, "static enum power_supply_property tcpm_psy_props[] = {",
                    "static enum power_supply_property tcpm_psy_props[] = {\n"
                    "\tPOWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT,")
