@@ -34,6 +34,7 @@ struct nci_dev { void *data; };
 struct gpio_desc { int value; int failure; int writes; int read_error; int stuck; };
 struct sk_buff { unsigned int len; u8 *data; };
 static int held, depth=1, syncs, sends, received, live, oom;
+static struct gpio_desc *shared_ven, *mode_select;
 static int send_result=999, read_result[2], read_count;
 static u8 packet[258];
 static void mutex_lock(struct mutex *m) { assert(!m->held); m->held=1; held++; }
@@ -51,6 +52,7 @@ static void usleep_range(int a,int b) { (void)a;(void)b; }
 static void *nci_get_drvdata(struct nci_dev *n) { return n->data; }
 static int gpiod_get_value_cansleep(struct gpio_desc *g) { return g->read_error ? g->read_error : g->value; }
 static int gpiod_direction_output(struct gpio_desc *g,int value) {
+ if(g==shared_ven) assert(value==1 && mode_select->value==0 && !mode_select->read_error);
  g->writes++; if(g->failure) return g->failure; if(!g->stuck) g->value=value; return 0;
 }
 static struct sk_buff *alloc_skb(int length,int flags) {
@@ -83,6 +85,7 @@ int main(int argc,char **argv) {
  struct i2c_client client={.irq=5};struct nci_dev ndev={0};
  struct gpio_desc ven={.value=1}, firm={0};
  struct sn100x p={.client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
+ shared_ven=&ven;mode_select=&firm;
  ndev.data=&p;client.dev.phy=&p;
  struct sk_buff *s=NULL;
  if(test==0) { /* Exact header, zero and maximum payload; no phantom body read. */
@@ -149,6 +152,12 @@ int main(int argc,char **argv) {
   assert(sn100x_open(&ndev)==-EREMOTEIO && !p.opened && depth==1);
   ven.read_error=0;
   assert(!sn100x_open(&ndev) && p.opened && depth==0);
+ } else if(test==11) { /* Host ordering only; GPIO readback does not prove chip readiness. */
+  ven.value=0;firm.value=1;firm.read_error=-EIO;
+  assert(sn100x_open(&ndev)==-EIO && ven.value==0 && !ven.writes && depth==1 && !sends);
+  firm.read_error=0;firm.value=1;
+  assert(!sn100x_open(&ndev) && firm.value==0 && ven.value==1 && ven.writes==1);
+  sn100x_close(&ndev);assert(p.fault==-ETIMEDOUT && ven.writes==1 && depth==1);
  } else {assert(0);}
  assert(!live && !held && ven.value==1);return 0;
 }
@@ -175,7 +184,7 @@ class TransportTests(unittest.TestCase):
             raise AssertionError(result.stderr)
 
     def test_production_transport_failure_and_lifecycle_paths(self):
-        for case in range(11):
+        for case in range(12):
             with self.subTest(case=case):
                 subprocess.run([self.binary, str(case)], check=True, capture_output=True, timeout=5)
 

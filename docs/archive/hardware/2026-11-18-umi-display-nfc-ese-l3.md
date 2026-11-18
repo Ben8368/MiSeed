@@ -62,3 +62,24 @@ GPIO诊断文件哈希：`display-before.txt` `bd0640a5cf37722f78be0582501e98e48
 - NFC：被动枚举 `1-0028 / sn100x / nfc0` 通过；唯一主动探针在 `DEV_UP` 的首发 `CORE_RESET` 失败。GPIO 读回 `FIRM=0 VEN=1`，随后 `984000.i2c` 日志 `bus=1 addr=0x28 dir=write phase=address gp_length=0 irq=0x409`；SN100T 记录 `opcode=0x0000 len=4 ret=-6`，锁存且保留 VEN。上层 `-110` 是等待响应超时；没有重发、进入 RF 阶段或执行 reopen。地址阶段未应答不等于芯片收到并拒绝 opcode，也不能倒推上一镜像的失败阶段。下步查首发时 NFCC 就绪条件和 SCL/SDA 波形，不做盲重试或 VEN 复位。NDEF、PM、HCE、eSE 未验。
 - 采集：两套传输帧及日志均完整。FDT 单独仍 `root_identity=FAIL`：打包 `xiaomi,umi / qcom,sm8250`，运行时 `qcom,kona-mtp / qcom,kona / qcom,mtp`，`model` 也变化；`live_hardware`、`ram`、`display_vblank` 均 PASS。按 TD-006 跟进 EFI DT 交接，不降低检查要求。
 - 从救援控制台返回 Bootloader 后执行一次 `fastboot reboot`，Android ADB 恢复，`sys.boot_completed=1` 且产品仍为 `umi`。未刷写持久分区。
+
+## CLKREQ 输入配置与 probe 交接采样（被动 L3）
+
+- 工作树基线 `fe9c0ba`。锁定 NQ 驱动在 probe 对 CLKREQ 调用 `gpio_direction_input`；旧打包 DTB 的 GPIO7 组仅有 mux、drive-strength 和 bias。新 DT 增加 TLMM 支持的 `output-disable`，不更改 SCL 频率、VEN、FIRM 或发送策略。probe 在默认 pinctrl 后、设 FIRM 前采两路 GPIO；未将读值作为 ready 门槛。
+- Windows x64 / PowerShell 7.6.9 + Ubuntu 24.04 WSL2。`tools/test_host.ps1` 退出 0，Windows/WSL 各 299 项、分别跳过 74/4 项。`MISEED_NATIVE_DSI=1 bash tools/build_kernel_l2.sh`、`tools/validate_kernel_dt.py --source … --build … --dtb <打包 DTB>` 均退出 0，定向 schema 的四项反例无跳过；本地以旧/新 DTB 对 GPIO7 配置作负/正对照。Linux 6.18.60、AArch64 GCC 13.3.0。boot.img SHA-256 `debca46e825c6d8f8586b7039c93bdf32534b3cc0521a80536737d1dc4625a68`，DTB `b4c82ce6324f497111a13d3dcd1b7ae9afe3d824fe7fa6516450a16663d8d9b5`。
+- 核验唯一 Umi、已解锁、非 userspace Fastboot，仅 RAM 启动一次。`nfc-status` 确认 `1-0028 / sn100x / nfc0`；运行时 NFC 默认 pinctrl 指向含 `gpio7 / output-disable` 的配置。dmesg 在 2.044963 s 采得 FIRM/VEN=1/1，2.055267 s 驱动报告已设 FIRM 低且未改 VEN。这不是复位沿或 NFCC 内部模式的测量，不能证明下载模式或 NACK 根因。未就绪外部同步波形，本轮未发 `DEV_UP`、CORE_RESET、RF 或 eSE 命令，主动通信未验。
+- FDT：`live_hardware`、`ram` 通过，`root_identity` 仍因 `compatible`、`model` 失败。采集及回退记录在忽略目录 `.work/sn100-clkreq-20261118/`。正常重启回 Android，产品 `umi`、ADB `sys.boot_completed=1`；未刷写。
+
+## Type 4 探针镜像：被动 L3 复验
+
+- `boot.img` SHA-256 `2c77622af2e80c7b861dbe708ce5b8c373dbe4a4df18370689af156b25abd991`，随包来源锁与仓库一致，DTB 与上一节相同。核对唯一 Umi 和 bootloader 身份后执行一次 `fastboot boot`；内核为 ARM64 Linux 6.18.60。
+- `nfc-status` 确认 `1-0028 / sn100x / nfc0`；运行时 GPIO7 默认组含 `output-disable`。内核在 2.046627 s 采得 FIRM/VEN=1/1，2.056592 s 报告 FIRM 已设低、VEN 未动。这是软件采样，不是 NFCC 就绪或首发应答证据。
+- 控制台列出 `nfc-ndef`，未执行。未确认同步波形与测试标签就绪，故未发 `CORE_RESET`，首发 ACK/NACK 未测；空协议负例、RF、Type 4 NDEF 读取、关闭重开、休眠恢复、HCE、eSE 均未验。前次地址 NACK 不是本镜像的测量结果。
+- NFC 状态、运行时 DTB、dmesg 三帧采集完整；FDT `live_hardware`、`ram` 通过，`root_identity` 因 `compatible`、`model` 不符仍为 `FAIL`。已恢复 Android，ADB 确认 `umi` 且 `sys.boot_completed=1`，未刷写。原始证据与回退记录在 `.work/sn100-probe-stop-20261118/`。
+
+## 双手机 MIFARE 发现：初始化前置复验
+
+- Android 对照由用户提供：Umi 上 NFC Tools 发现另一部手机卡包的空白卡，显示 ISO 14443-3A / MIFARE Classic 1K。不收录截图或卡序列号。项目侧仅验初始化与发现，无外部分析仪，不测 NDEF、扇区或 eSE。
+- `fe9c0ba` 加本地变更，Windows x64 / PowerShell 7.6.9、Ubuntu 24.04 WSL2、ARM64 GCC 13.3.0。新增救援 `nfc-discover`，一次 DEV_UP，成功后才用 MIFARE 掩码轮询，结束清理但不重开。`MISEED_NATIVE_DSI=1 bash tools/build_kernel_l2.sh`、WSL `python3 -m unittest discover -s tests`（305 项、4 跳过）、离线哈希预检均退出 0。boot SHA-256 `d7c023f7086e95877aee1356811a89646695285076b1c355f624d673586b06e4`，DTB 与上节相同，未改 NFC transport 或供电配置。
+- 用户授权一次临时启动，已确认唯一 Umi、已解锁、非 userspace Fastboot。`1-0028 / sn100x / nfc0` 注册通过。7.050637 s open 回读 FIRM=0、VEN=1；7.071015 s GENI 报 `0x28/W phase=address gp_length=0 irq=0x409`；CORE_RESET 写入 `ret=-6`，首错锁存、保留 VEN。`stage=dev_up up=0 polling=0 rc=-110`。**初始化失败，未执行目标发现**，不是轮询后无卡。GPIO7 已修正的镜像仍复现同类首发失败；第九拍和芯片内部就绪状态未测。不重试、不写卡。
+- 完整记录在 `.work/umi-nfc-two-phone-20261118/evidence/`，运行时 FDT 硬件子树与 RAM 通过，既知根 compatible/model 差异仍 FAIL。`run.py --ram-boot-once` 按探针失败退出 1，回退成功：Android `umi`、ADB 在线、`sys.boot_completed=1`；未刷写。

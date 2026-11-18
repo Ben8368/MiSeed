@@ -32,7 +32,7 @@ POWER_RULES = (
 )
 RESCUE_FILES = (
     "rescue_init.c", "rescue_fs.c", "rescue_usb_diag.c", "rescue_devices.c",
-    "rescue_power.c", "rescue_nfc.c", "rescue_nfc_l3.c",
+    "rescue_power.c", "rescue_nfc.c", "rescue_nfc_l3.c", "rescue_type4.c",
     "rescue_nfc_netlink.c", "rescue_usb.c", "rescue_dt.c",
     "rescue_display.c", "rescue_framebuffer.c", "rescue_thermal.c", "charge_log.c",
 )

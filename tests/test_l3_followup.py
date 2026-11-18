@@ -10,6 +10,41 @@ from tools.report_dpu_fps import report_fps
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_first_address_needs_waveform_and_never_runs_rf(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(nfc, 'capture') as capture:
+            out = Path(tmp)
+            for rf, armed in ((False, False), (True, True)):
+                with self.assertRaises(display.ExportError):
+                    nfc.collect(None, out, {}, run_rf=rf, first=True, waveform_armed=armed)
+            capture.assert_not_called()
+            (out/'nfc-status.txt').write_bytes(b'NFC_STATUS_BEGIN\nNFC I2C device=1-0028 driver=sn100x\n'
+                b'NFC DT matches=1 scan=finished\nNFC class devices=1 (all)\nNFC_STATUS_END\n')
+            for rc in (0, -110):
+                capture.reset_mock()
+                (out/'nfc-first.txt').write_text(f'NFC_FIRST_BEGIN\nNFC_FIRST_RESULT stage=dev_up rc={rc}\nNFC_FIRST_END\n')
+                report = {'issues': []}
+                nfc.collect(None, out, report, run_rf=False, first=True, waveform_armed=True)
+                self.assertEqual([c.args[2] for c in capture.call_args_list], ['nfc-status','nfc-first','dmesg'])
+                self.assertEqual(report['probe_rc'], rc)
+                self.assertEqual(bool(report['issues']), bool(rc))
+                self.assertEqual(report['ninth_clock'], 'NOT_MEASURED_BY_HOST')
+
+    def test_fixture_read_before_close_failure_remains_evidence(self):
+        lines = [b'NFC DEV_UP/reset-init passed.',
+                 b'NFC empty-protocol request rejected: Invalid argument (-22).',
+                 b'NFC RF discovery passed: targets=1 protocol=16; UID omitted.',
+                 b'NFC NDEF Type 4 fixture verified; no UID or payload logged.',
+                 b'NFC final DEV_DOWN failed: Connection timed out (-110); inspect dmesg before retry.']
+        def frame(body):
+            return b'\n'.join([b'NFC_L3_BEGIN', *body, b'NFC_L3_RESULT rc=-110', b'NFC_L3_END'])
+        checks = nfc.probe_steps(frame(lines), True)
+        self.assertEqual(checks, dict(reset_init='PASS', empty_protocol='PASS', rf_discovery='PASS',
+                                      ndef_fixture='PASS', close_reopen='FAIL'))
+        for broken in ([*lines[:4], *lines[3:]], [lines[1], lines[0], *lines[2:]],
+                       [lines[0], lines[1].replace(b'-22', b'-110'), *lines[2:]]):
+            with self.assertRaises(display.ExportError):
+                nfc.probe_steps(frame(broken), True)
+
     def test_dpu_counts_only_selected_engine_inside_window(self):
         sample = """# entries-in-buffer/entries-written: 8/8   #P:8
 a [001] ... 10.00001: dpu_enc_phys_cmd_pp_tx_done: id=35, pp=0, new_count=0, event=1
@@ -47,15 +82,18 @@ a [001] ... 12.21000: dpu_enc_phys_cmd_pp_tx_done: id=35, pp=0, new_count=0, eve
         def capture(port, out, command, kind, **kwargs):
             calls.append(command)
             if command == "nfc-status":
-                out.write_bytes(b"NFC I2C device=1-0028 driver=sn100x\n"
-                                b"NFC DT matches=1 scan=finished\nNFC class devices=1 (all)\n")
+                out.write_bytes(b"NFC_STATUS_BEGIN\nNFC I2C device=1-0028 driver=sn100x\n"
+                                b"NFC DT matches=1 scan=finished\nNFC class devices=1 (all)\nNFC_STATUS_END\n")
             if command == "nfc-l3":
                 self.assertEqual(kwargs["timeout"], 120)
                 out.write_bytes(b"NFC_L3_BEGIN\nNFC_L3_RESULT rc=-6\nNFC_L3_END\n")
 
         with tempfile.TemporaryDirectory() as tmp, patch.object(nfc, "capture", capture):
             report = {"issues": []}
-            nfc.collect(None, Path(tmp), report)
+            nfc.collect(None, Path(tmp), report, run_rf=False)
+            self.assertEqual(calls, ["nfc-status", "dmesg"])
+            calls.clear()
+            nfc.collect(None, Path(tmp), report, run_rf=True)
         self.assertEqual(calls, ["nfc-status", "nfc-l3", "dmesg"])
         self.assertEqual(report["probe_rc"], -6)
         self.assertEqual(report["issues"][0]["section"], "nfc_l3")

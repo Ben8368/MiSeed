@@ -279,6 +279,10 @@ static int sn100x_probe(struct i2c_client *client)
 	phy->firmware = devm_gpiod_get(dev, "firmware", GPIOD_ASIS);
 	if (IS_ERR(phy->firmware))
 		return dev_err_probe(dev, PTR_ERR(phy->firmware), "FIRM GPIO\n");
+	/* Sample after default pinctrl, before this driver drives FIRM. */
+	dev_info(dev, "probe GPIO sample: FIRM=%d VEN=%d (negative = unavailable)\n",
+		 gpiod_get_value_cansleep(phy->firmware),
+		 gpiod_get_value_cansleep(phy->enable));
 	/* Hold normal-mode selection from probe; shared VEN is left untouched. */
 	ret = gpiod_direction_output(phy->firmware, 0);
 	if (ret)

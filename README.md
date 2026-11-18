@@ -3,13 +3,30 @@
 面向小米 10（umi / SM8250）的独立 UEFI、Linux 主线适配与 Recovery 平台。
 按功能移植多个来源，维护板级配置、补丁和构建配方；完整上游源码及发行版软件包使用外部固定输入。
 
-## 开发者从这里开始
+## 用户进度一览（2026-11-18）
 
-1. [产品范围与需求追溯](docs/PRODUCT.md)：区分用户要求、项目设计和待验证事项。
-2. [当前状态](docs/CONTEXT.md)：确认已做、未做和近期优先级。
-3. [实施计划](docs/implementation-plan.md)：确认里程碑、工作包和开工输入；接口与语言分工查 [架构](docs/ARCHITECTURE.md)，救援行为查 [Recovery 契约](docs/RECOVERY.md)，本机核实与只读采集查 [设备契约](docs/platforms.md)。
-4. 修改前查 [协作规则](docs/AI_RULES.md) 和 [验收要求](docs/QUALITY.md)；引入外部实现时查 [来源规范](docs/PROVENANCE.md)。
-5. macOS L2 构建、ADB/Fastboot RAM 验证步骤查 [主机工具](docs/HOST_TOOLS.md)。
+**这台 Umi 已能从 RAM 启动 Linux、使用 USB 救援控制台并返回 Android；还不是可安装的 Debian 手机系统。** L1 是离线测试，L2 是目标构建，L3 是指定镜像的真机实测。不同镜像的结果分开记录，详见[当前状态与证据](docs/CONTEXT.md)。
+
+| 模块 | 已实现或验证 | 还差什么 |
+| --- | --- | --- |
+| 工程、CI、设备与输入锁 | 有回归门禁、只读设备采集、固定内核源与工具链校验 | 板卡变体、固件及依赖闭包；具体提交的 CI 与复核 |
+| Linux、USB、Recovery | Linux 6.18.60、独立 initramfs、USB CDC 控制台、Fastboot 往返 Android 已过 L3 | 产品救援入口、触摸 UI；安装、更新、备份恢复未验 |
+| 第二阶段 UEFI、设备树交接 | Linux 直启已验证硬件子树和 RAM | UEFI → Linux → Recovery 未验；运行时 FDT 根身份仍 FAIL |
+| Debian 13 ARM64 | 已定义最小用户空间与启动契约 | 未生成验收 rootfs，登录、系统选择与故障救援未验 |
+| CSOT 显示 | 原生 DSI 点屏、亮度、90 Hz 模式；DRM 回调实测 89.846 Hz | 面板物理扫描率、SMMU 交接、休眠恢复 |
+| 输入与振动 | 电源键和音量键已过 L2 | 按键事件与唤醒待 L3；触控 IC 未定，AW8697 马达待适配 |
+| GPU、Wi-Fi、UFS | 设计阶段 | 加速、联网、持久存储及桌面未验 |
+| 电池、电量计、有线固定 PD | FG/SMB5 充电读数、固定 PDO 协商、降至 5 V、80% 旁路有 L3 | BQ25970 ADC、温标、保护、回差与独立复核 |
+| 有线 PPS、温控与日志 | 历史镜像完成 PPS 调压充电；可读热区、记录并导出 RAM 日志 | 当前镜像的泵与故障恢复专项；TCPM 电池/身份应答为 MVP 后计划 |
+| 无线接收 RX、无线反充 TX | 两条路径均未移植 | 各自的驱动、保护和 NFC 共存须分别验收 |
+| SN100T NFC、eSE | Type 4 探针过 L2；该镜像在 Umi 上注册 `nfc0`，CLKREQ 输入配置过被动 L3；仅历史镜像曾发现标签并重开 | 此镜像未发首条命令、未读真卡；前次首发地址 NACK 待同步波形。PM、HCE、eSE、Debian 集成未验，详见 [NFC](docs/NFC.md) |
+| 安装与发行 | Fastboot **临时启动**可用，非持久安装 | Fastboot 发行包、持久化与多系统后置；EDL/9008 仅研究，须有授权且兼容的 Programmer |
+
+里程碑与完成条件见[工作包 WP0–WP11](docs/implementation-plan.md)，硬件证据见[本机记录](docs/platforms.md)。
+
+## 开发入口
+
+[产品范围](docs/PRODUCT.md) · [架构](docs/ARCHITECTURE.md) · [Recovery 契约](docs/RECOVERY.md) · [主机工具](docs/HOST_TOOLS.md) · [协作规则](docs/AI_RULES.md) · [验收要求](docs/QUALITY.md) · [来源规范](docs/PROVENANCE.md)
 
 ## 本地检查
 
