@@ -10,7 +10,7 @@ struct drm_panel { bool prepared; };
 struct mipi_dsi_device { int dev; };
 struct drm_dsc_config { int unused; };
 struct drm_dsc_picture_parameter_set { int unused; };
-struct gpio_desc { int value, error; };
+struct gpio_desc { int value, error; bool stuck_low; };
 struct drm_display_mode {
     int clock, hdisplay, hsync_start, hsync_end, htotal;
     int vdisplay, vsync_start, vsync_end, vtotal, type;
@@ -36,7 +36,12 @@ struct backlight_device { void *data; int brightness; };
 #define mutex_lock(x) ((void)(x))
 #define mutex_unlock(x) ((void)(x))
 #define dev_err(...) ((void)0)
-#define dev_info(...) ((void)0)
+static void dev_info(int *dev, const char *fmt, ...) { (void)dev; (void)fmt; }
+static int drm_mode_vrefresh(const struct drm_display_mode *m) {
+    int pixels = m->htotal * m->vtotal;
+    return (1000 * m->clock + pixels / 2) / pixels;
+}
+static int gpiod_get_value_cansleep(struct gpio_desc *g) { return g->stuck_low ? 0 : g->value; }
 static int command, fail_command = -1, fail_compression, fail_pps, brightness;
 static int short_write, msm_packet_count;
 static int fail_off, fail_sleep, off_calls, sleep_calls;
@@ -59,6 +64,17 @@ static int mipi_dsi_dcs_write_buffer(struct mipi_dsi_device *d, const void *p, s
     int index = command++;
     assert(n == umi_csot_init[index].len);
     assert(n > 0 && n <= 32);
+    const unsigned char *bytes = p;
+    static const unsigned char rate_b4[] = {
+        0xb4, 0x98, 0x88, 0x88, 0x77, 0x66, 0x55, 0x44, 0, 0, 0,
+        0x60, 0xb8, 0xb8, 0xb8, 0xb8, 0xb8, 0xc8, 0xc8, 0xd8, 0xd8,
+        0xe8, 0xe8, 0xf8, 0xf8, 0x48, 0x48, 0x48, 0x48, 0x0a
+    };
+    if (index == 51) assert(n == 6 && bytes[0] == 0xf0 && bytes[5] == 0);
+    if (index == 52) assert(n == sizeof(rate_b4) && !memcmp(p, rate_b4, n));
+    if (index == 53) assert(n == 2 && bytes[0] == 0x2f && bytes[1] == 4);
+    if (index == 54) assert(n == 2 && bytes[0] == 0x26 && bytes[1] == 2);
+    if (index == 55) assert(n == 1 && bytes[0] == 0x11);
     if (index == fail_command) return -EIO;
     /* Mainline MSM counts the 4-byte header and aligns the packet to 4. */
     if (msm_packet_count) return n <= 2 ? 4 : ((int)n + 7) & ~3;
@@ -125,6 +141,10 @@ int main(void)
     }
     disprate.error = 0;
     short_write = 0; command = 0;
+    disprate.stuck_low = true;
+    assert(umi_csot_prepare(&c.panel) == -EIO && !c.prepared && reset.value == 1);
+    disprate.stuck_low = false;
+    command = 0;
     assert(umi_csot_prepare(&c.panel) == 0 && c.prepared && command == 59);
     assert(disprate.value == 1);
     assert(umi_csot_unprepare(&c.panel) == 0 && !c.prepared);

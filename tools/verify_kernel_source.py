@@ -16,18 +16,21 @@ if __package__:
     from .apply_power_port import RPMHPD_KCONFIG_RULE
     from .source_layout import POWER_FILES, POWER_RULES
     from .apply_display_port import HOST_TRANSFORMS
+    from .apply_geni_nack_diagnostics import PATH as GENI_NACK_PATH, transform as transform_geni_nack
 else:
     import apply_adc5_fix as adc5
     import apply_pd_diagnostics as pd
     from apply_power_port import RPMHPD_KCONFIG_RULE
     from source_layout import POWER_FILES, POWER_RULES
     from apply_display_port import HOST_TRANSFORMS
+    from apply_geni_nack_diagnostics import PATH as GENI_NACK_PATH, transform as transform_geni_nack
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
     "drivers/soc/qcom/umi_abl_ubwc.h",
     "drivers/gpu/drm/panel/panel-xiaomi-umi-csot.c",
     "drivers/gpu/drm/panel/umi_csot_commands.h",
+    "drivers/gpu/drm/panel/umi_csot_rate_90.h",
     "drivers/gpu/drm/panel/umi-csot.Kconfig",
     "arch/arm64/boot/dts/qcom/umi-native-dsi.dtsi",
     "Documentation/devicetree/bindings/display/panel/xiaomi,umi-csot.yaml",
@@ -137,6 +140,10 @@ def verify_source(repository, revision, source):
             if actual != oid and name in HOST_TRANSFORMS:
                 original = git(repository, "show", revision + ":" + name)
                 if path.read_bytes() == HOST_TRANSFORMS[name](original):
+                    continue
+            if actual != oid and name == GENI_NACK_PATH:
+                original = git(repository, "show", revision + ":" + name)
+                if path.read_bytes() == transform_geni_nack(original):
                     continue
             if actual != oid and name == "drivers/pmdomain/qcom/Kconfig":
                 original = git(repository, "show", revision + ":" + name).decode("utf-8")

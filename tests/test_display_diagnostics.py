@@ -148,7 +148,9 @@ class DisplayDiagnosticsTests(unittest.TestCase):
     def test_vblank_probe_reports_rate_and_sequence_gaps(self):
         output = self.invoke("vblank")
         self.assertIn("events=91 sequence_gaps=0", output)
-        self.assertIn("avg_hz=90.000", output)
+        self.assertIn("event_avg_hz=90.000", output)
+        self.assertNotIn(" avg_hz=", output)
+        self.assertIn("not an optical panel-scan measurement", output)
         self.assertIn("rc=0", output)
 
     def test_vblank_probe_stops_on_ioctl_error(self):

@@ -21,10 +21,18 @@ The fixed native mode now uses these timings (235788kHz, 1112x2356 totals).
 MiSeed requires the GPIO and propagates acquisition/direction errors; it does
 not import the reference private sysfs, arbitrary DT command data interface,
 optional-error fallback or unrelated touch/power changes. This is a single
-90Hz mode, not runtime 60/90 switching. Original 60Hz data attribution above
-still applies to the unchanged command/DSC table. Exact hashes and licenses
-are in sources.lock.json under display_90hz_reference. Local binding review
-and MiSeed 90Hz L3 remain separate from the reference's reported success.
+90Hz mode, not runtime 60/90 switching. GPIO50 high is not a measurement.
+Original attribution above still applies to common commands and DSC data.
+
+The panel-side 90Hz B4/2F/26 tuples come from the Xiaomi/LineageOS
+`android_kernel_xiaomi_sm8250` commit `71b13e62f057a649b77fe4062feb73ee72ad609c`,
+`arch/arm64/boot/dts/vendor/qcom/dsi-panel-j2-mp-42-02-0b-dsc-cmd.dtsi`,
+`timing@1` on-command. The source has no file license override; kernel COPYING
+states GPL v2 only (syscall note does not apply to this kernel-internal data).
+The tuples live in a separate GPL-2.0-only header. The preceding page selection
+and subsequent sleep-out retain their order. No LOS driver, private binding,
+dynamic modes, DSI clock overrides or unverified DCS readbacks imported.
+Exact hashes and attribution are in sources.lock.json. L3 remains separate.
 
 Uncertain physical-dimension units are not imported. Panel rails remain inherited;
 this is not independent cold-power sequencing. Default rescue stays simpledrm;

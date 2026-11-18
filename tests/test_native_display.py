@@ -200,4 +200,6 @@ int main(void) {
         self.assertIn("GPIOD_ASIS", source)
         self.assertNotIn("CONFIG_DRM_MSM=y", (ROOT / "kernel/umi-l2.config").read_text())
         table = (ROOT / "kernel/display/umi_csot_commands.h").read_text()
-        self.assertEqual(len(re.findall(r"\{ \d+, \d+, \{", table)), 59)
+        self.assertIn('#include "umi_csot_rate_90.h"', table)
+        rates = (ROOT / "kernel/display/umi_csot_rate_90.h").read_text()
+        self.assertEqual(len(re.findall(r"\{ \d+, \d+, \{", table + rates)), 59)

@@ -56,6 +56,7 @@ void measure_display_vblank(void) {
     display_vblank_timeout = 0;
     puts("DISPLAY_VBLANK_BEGIN");
     puts("DISPLAY_VBLANK device=/dev/dri/card1 crtc=0 source=DRM_IOCTL_WAIT_VBLANK");
+    puts("DISPLAY_VBLANK_METRIC=DRM command-mode callback cadence; may follow TE/read-pointer and is not an optical panel-scan measurement.");
     puts("Read-only DRM_IOCTL_WAIT_VBLANK; no modeset, framebuffer or brightness writes.");
     fd = open("/dev/dri/card1", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) {
@@ -108,13 +109,13 @@ done:
     if (events > 1)
         span = display_timespec_ns(&previous) - display_timespec_ns(&first);
     if (span && min_interval != UINT64_MAX && max_interval) {
-        double avg_hz = (double)(events - 1) * 1000000000.0 / (double)span;
-        double min_hz = 1000000000.0 / (double)max_interval;
-        double max_hz = 1000000000.0 / (double)min_interval;
+        double event_avg_hz = (double)(events - 1) * 1000000000.0 / (double)span;
+        double event_min_hz = 1000000000.0 / (double)max_interval;
+        double event_max_hz = 1000000000.0 / (double)min_interval;
         printf("DISPLAY_VBLANK_RESULT events=%u sequence_gaps=%u span_ms=%.3f "
-               "avg_hz=%.3f min_hz=%.3f max_hz=%.3f errno=%d rc=%d\n",
+               "event_avg_hz=%.3f event_min_hz=%.3f event_max_hz=%.3f errno=%d rc=%d\n",
                events, sequence_gaps, (double)span / 1000000.0,
-               avg_hz, min_hz, max_hz, saved_errno, rc);
+               event_avg_hz, event_min_hz, event_max_hz, saved_errno, rc);
     } else {
         printf("DISPLAY_VBLANK_RESULT events=%u sequence_gaps=%u "
                "timed_out=%d errno=%d rc=%d\n", events, sequence_gaps,

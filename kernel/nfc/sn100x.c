@@ -21,7 +21,6 @@
 #include <net/nfc/nci_core.h>
 
 #define SN100X_FRAME_MAX (NCI_CTRL_HDR_SIZE + U8_MAX)
-#define SN100X_RESET_WRITE_ATTEMPTS 3
 #define SN100X_PROTOCOLS (NFC_PROTO_JEWEL_MASK | NFC_PROTO_MIFARE_MASK | \
 			 NFC_PROTO_FELICA_MASK | NFC_PROTO_ISO14443_MASK | \
 			 NFC_PROTO_ISO14443_B_MASK)
@@ -132,7 +131,6 @@ out:
 static int sn100x_open(struct nci_dev *ndev)
 {
 	struct sn100x *phy = nci_get_drvdata(ndev);
-	int firm_before, ven_before, firm_after, ven_after;
 	int ret;
 
 	mutex_lock(&phy->lock);
@@ -149,30 +147,29 @@ static int sn100x_open(struct nci_dev *ndev)
 				    ret);
 		goto out;
 	}
-	firm_before = gpiod_get_value_cansleep(phy->firmware);
-	ven_before = gpiod_get_value_cansleep(phy->enable);
-	dev_info(&phy->client->dev,
-		 "open GPIO readback before setup: FIRM=%d VEN=%d\n",
-		 firm_before, ven_before);
-	/* Normal NCI mode is FIRM low; never issue firmware-download commands. */
+	/* Require logical normal mode before enabling the shared NFCC/eSE. */
 	ret = gpiod_direction_output(phy->firmware, 0);
+	if (!ret) {
+		ret = gpiod_get_value_cansleep(phy->firmware);
+		if (ret > 0)
+			ret = -EIO;
+	}
 	if (ret) {
 		dev_err_ratelimited(&phy->client->dev,
-				    "failed to set FIRM low: %d\n", ret);
+				    "FIRM low not confirmed: %d\n", ret);
 		goto out;
 	}
-	firm_after = gpiod_get_value_cansleep(phy->firmware);
-	dev_info(&phy->client->dev, "open GPIO readback after FIRM low: %d\n",
-		 firm_after);
 	ret = gpiod_direction_output(phy->enable, 1);
+	if (!ret) {
+		ret = gpiod_get_value_cansleep(phy->enable);
+		ret = ret == 1 ? 0 : ret < 0 ? ret : -EIO;
+	}
 	if (ret) {
 		dev_err_ratelimited(&phy->client->dev,
-				    "failed to raise shared VEN: %d\n", ret);
+				    "shared VEN high not confirmed: %d\n", ret);
 		goto out;
 	}
-	ven_after = gpiod_get_value_cansleep(phy->enable);
-	dev_info(&phy->client->dev, "open GPIO readback after VEN high: %d\n",
-		 ven_after);
+	dev_info(&phy->client->dev, "open GPIO confirmed: FIRM=0 VEN=1\n");
 	/* Existing SN100 downstream power-on settling time; no VEN reset. */
 	usleep_range(10000, 15000);
 	phy->opened = true;
@@ -208,7 +205,6 @@ static int sn100x_close(struct nci_dev *ndev)
 static int sn100x_send(struct nci_dev *ndev, struct sk_buff *skb)
 {
 	struct sn100x *phy = nci_get_drvdata(ndev);
-	unsigned int attempts = 1;
 	int ret;
 
 	mutex_lock(&phy->lock);
@@ -226,34 +222,23 @@ static int sn100x_send(struct nci_dev *ndev, struct sk_buff *skb)
 		phy->reset_acked = false;
 		phy->reset_confirmed = false;
 		ret = i2c_master_send(phy->client, skb->data, skb->len);
-		/*
-		 * The Umi NQ transport retries CORE_RESET NACKs while the NFCC
-		 * leaves standby. Keep this bounded and reset-only: VEN is shared
-		 * with eSE, and arbitrary NCI commands must not be replayed.
-		 */
-		while (phy->reset_pending && ret == -ENXIO &&
-		       attempts < SN100X_RESET_WRITE_ATTEMPTS) {
-			dev_dbg(&phy->client->dev,
-				"CORE_RESET NACK; standby retry %u/%u\n",
-				attempts, SN100X_RESET_WRITE_ATTEMPTS - 1);
-			usleep_range(1000, 1100);
-			attempts++;
-			ret = i2c_master_send(phy->client, skb->data, skb->len);
-		}
+		/* Do not replay a failed frame: the bus may have accepted a prefix. */
 		if (ret == skb->len) {
-			if (phy->reset_pending && attempts > 1)
-				dev_info(&phy->client->dev,
-					 "CORE_RESET accepted after %u standby retries\n",
-					 attempts - 1);
-			else if (phy->reset_pending)
+			if (phy->reset_pending)
 				dev_info(&phy->client->dev,
 					 "NCI CORE_RESET I2C write accepted (%u bytes)\n",
 					 skb->len);
 			ret = 0;
 		} else {
-			dev_err_ratelimited(&phy->client->dev,
-					    "I2C NCI write failed (%u bytes, %u attempts): %d\n",
-					    skb->len, attempts, ret);
+			/* Identify the failing command without logging tag/APDU data. */
+			if (nci_mt(skb->data) == NCI_MT_CMD_PKT)
+				dev_err_ratelimited(&phy->client->dev,
+					"I2C NCI command write failed: opcode=%#06x len=%u ret=%d\n",
+					nci_opcode(skb->data), skb->len, ret);
+			else
+				dev_err_ratelimited(&phy->client->dev,
+					"I2C NCI non-command write failed: mt=%u len=%u ret=%d\n",
+					nci_mt(skb->data), skb->len, ret);
 			if (ret >= 0)
 				ret = -EREMOTEIO;
 			sn100x_fault(phy, ret);

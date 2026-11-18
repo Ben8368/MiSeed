@@ -113,8 +113,10 @@ int run_nfc_l3_probe(void) {
     int rc, close_rc;
     bool up = false, polling = false;
 
+    puts("NFC_L3_BEGIN");
     puts("NFC L3 base: standard NCI reset/init, RF target discovery and clean reopen.");
-    puts("No firmware download, VEN low pulse, eSE, HCE, write APDU or UID logging.");
+    puts("Scope is NCI/RF discovery/reopen only; NDEF, PM, HCE and eSE are not tested.");
+    puts("No firmware download, VEN low pulse, APDU or UID logging.");
     rc = nfc_nl_open(&client);
     if (!rc) rc = get_nfc_device(&client, &device);
     if (rc) goto done;
@@ -183,6 +185,7 @@ cleanup:
         if (!result) result = close_rc;
         goto cleanup_done;
     }
+    if (result) goto cleanup_done; /* No fresh session after a failed RF run. */
     rc = nfc_simple(&client, NFC_CMD_DEV_UP, device.index);
     if (rc) {
         report_nfc_error("clean reopen", rc);
@@ -205,5 +208,7 @@ done:
     nfc_nl_close(&client);
     if (rc) printf("NFC L3 base incomplete: %s (%d). Run dmesg and preserve the session.\n",
                    strerror(-rc), rc);
+    printf("NFC_L3_RESULT rc=%d\n", rc);
+    puts("NFC_L3_END");
     return rc;
 }

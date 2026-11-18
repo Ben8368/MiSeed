@@ -33,6 +33,8 @@ REQUIRED_INPUTS = {
     "tools/apply_power_port.py",
     "tools/apply_pd_diagnostics.py", "tools/make_initramfs.py",
     "tools/apply_nfc_port.py",
+    "tools/apply_geni_nack_diagnostics.py",
+    "tests/test_nfc_transport.py",
     "tools/pack_android_boot_v2.py", "tests/test_abl_isolation.py",
     "kernel/umi-csot.dts", "kernel/umi-csot-dtbo-targets.txt",
     "kernel/umi-l2.config", "kernel/rescue_init.c", "kernel/charge_log.h",

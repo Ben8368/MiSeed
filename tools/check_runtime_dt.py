@@ -156,14 +156,28 @@ def validate_ram(actual):
         raise ValueError("runtime RAM range absent/zero/overflow")
 
 
+def root_value(prop, value):
+    if value is None:
+        return None
+    if prop in {"compatible", "model"} and value.endswith(b"\x00"):
+        try:
+            return value[:-1].decode("ascii").split("\x00")
+        except UnicodeDecodeError:
+            pass
+    return value.hex()
+
+
 def audit_report(reference, runtime):
     expected, actual = parse(reference), parse(runtime)
     issues = []
     for prop in ("compatible", "model", "#address-cells", "#size-cells",
                  "qcom,board-id", "qcom,msm-id", "interrupt-parent"):
-        if expected["/"].get(prop) != actual["/"].get(prop):
-            issues.append({"section": "root_identity",
-                           "message": "root hardware identity changed: " + prop})
+        before, after = expected["/"].get(prop), actual["/"].get(prop)
+        if before != after:
+            issues.append({"section": "root_identity", "property": prop,
+                           "message": "root hardware identity changed: " + prop,
+                           "reference": root_value(prop, before),
+                           "runtime": root_value(prop, after)})
     # A root failure must not hide a second, independent hardware-tree failure.
     for section, validate in (("live_hardware", lambda: validate_live(expected, actual)),
                               ("ram", lambda: validate_ram(actual))):
@@ -171,7 +185,10 @@ def audit_report(reference, runtime):
             validate()
         except ValueError as exc:
             issues.append({"section": section, "message": str(exc)})
-    return {"reference_sha256": hashlib.sha256(reference).hexdigest(),
+    failed = {issue["section"] for issue in issues}
+    return {"checks": {section: "FAIL" if section in failed else "PASS"
+                       for section in ("root_identity", "live_hardware", "ram")},
+            "reference_sha256": hashlib.sha256(reference).hexdigest(),
             "runtime_sha256": hashlib.sha256(runtime).hexdigest(),
             "nodes": len(actual), "issues": issues,
             "result": "FAIL" if issues else "PASS scoped boot-FDT audit; L3 bindings separate"}

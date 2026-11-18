@@ -15,6 +15,8 @@
 
 不能把该ioctl cadence单独等同于面板物理刷新率：固定Linux 6.18.60的Umi DSI panel未启用video mode，SM8250 DPU使用command encoder；dpu_encoder_phys_cmd_te_rd_ptr_irq()在read-pointer/TE路径调用vblank callback（[锁定源码](https://github.com/torvalds/linux/blob/f45ed76d6791cf72ff1265ee93511175bbbc2f18/drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_cmd.c#L114-L123)）。KMS仍报1080x2340@90Hz，GPIO50为高，维护者此前也已目视确认滚动流畅。因此该ioctl是command-mode vblank/TE cadence证据，不是面板自刷新光学测量；当前显示模式、rate-select GPIO和目视验收通过，物理90Hz精确值仍需独立光学测量才能量化，不能据59.9Hz单项判为面板实际只有60Hz。
 
+诊断改进：`display-vblank` 现在将数值标为 `event_*_hz`，并注明这是DRM command-mode callback cadence，可能来自TE/read-pointer路径，不是光学面板扫描测量；避免将约59.9Hz日志误报为面板刷新率。该诊断仍不替代外部光学测量。
+
 证据目录（仅本地忽略，不提交长原始日志）：`.work/pr7-display-nfc-l3-20261118/evidence/`、`.work/pr7-90hz-fix-l3-20261118/evidence/`及`.work/pr7-90hz-gpio-l3-20261118/evidence/`。
 
 | 文件 | SHA-256 |
@@ -30,13 +32,33 @@ GPIO诊断文件哈希：`display-before.txt` `bd0640a5cf37722f78be0582501e98e48
 
 ## NFC / SN100T
 
-本次没有对当前镜像发 `DEV_UP`、CORE_RESET、RF discovery 或读卡命令；只采集显示证据。复核后发现当前 `kernel/nfc/sn100x.c` 与成功 L3 提交 `05c4b7448de5686450c3b22bdd462958bd63476e` 完全一致（`git diff 05c4b74..当前HEAD -- kernel/nfc/sn100x.c` 为空）。因此 2026-11-13 记录中的 NCI reset/init、普通卡 target discovery、close/reopen 可复用为当前驱动版本的 NFC/NCI RF L3 证据；前文将其判为更早版而不适用是错误，现予更正。当前 L3 仍不包括 NDEF、PM、HCE 或 eSE。
+2026-11-18 首轮显示专测没有对镜像发 `DEV_UP`、CORE_RESET、RF discovery 或读卡命令。源码复核发现当时 `kernel/nfc/sn100x.c` 与成功 L3 提交 `05c4b7448de5686450c3b22bdd462958bd63476e` 完全一致；因此 2026-11-13 记录中的 reset/init、target discovery、close/reopen 曾可复用为该驱动版本的历史 L3 证据。前文将其判为更早版而不适用是错误，现予更正。但 2026-11-18 本记录后续的本镜像复验出现 NCI 写 NACK，当前版本的重复性尚未通过，历史成功不能覆盖本次失败。
+
+2026-11-13 的完整记录保留了前几次 `-EIO`、`-ETIMEDOUT` 与 `-ENXIO` 失败，以及 QUP1 改为1MHz并加入有界 CORE_RESET 重试后的最终通过。最终组合下 reset/init、RF target、close/reopen 已通过，但成功日志未采集 dmesg，无法确认重试是否触发，也未隔离频率与重试各自的作用；所以记录为“最终 L3 通过、早期传输故障根因未单独归因”，不把早期失败隐藏，也不将其推成当前必现故障。
 
 当前驱动也没有 SE/eSE discover、enable/disable、APDU 回调；SN100T NFC 与 eSE 共用 PMU/VEN，已取得资料没有给出可批准的主机复位时序或 eSE 会话前置条件。因此本轮未操作共享 VEN、未做 eSE/APDU，也不能验收 eSE。继续前需先实现并审查 SE 接口、取得 NXP SN100T 主机接口时序及 Umi 板级电源/复位依据，并明确隔离 eSE 会话的安全步骤。NDEF 读卡还需要 NFC Forum Type 4 测试标签及只读用户态消费者；NDEF、PM、HCE 仍未验。
+
+诊断改进：`nfc-l3` 明确输出该探针只覆盖 NCI reset/init、RF target discovery 与 clean reopen；NDEF、PM、HCE、eSE 均不在其测试范围，避免把基础 transport L3 误读成完整 NFC/eSE 验收。
+
+## 2026-11-18 更新诊断镜像复验
+
+- 镜像为一次性 `fastboot boot` RAM 启动：boot.img SHA-256 `10a844576eb16aa66e97bab9f5ac75dcd25739ae2107908664274452ef507591`；Linux 6.18.60 内核 `7a29245df56400fd2c3938632a0637bc27dffd56a4b31bef80f27769d0dbc17e`；DTB `8be099adb994ba2f7e44ebfa3c72568896a36b55f72474fe9789bf80647a0573`；更新后的 ARM64 rescue 用户态 SHA-256 `38ed8360daa2b7870c8298598b756de82654f8388375841ecd86b2e304dbfab0`。
+- 设备 `umi` / `ec04f57f`，CDC COM6。显示重采集：KMS `1080x2340@90Hz`，GPIO50 为 `out high func0 8mA pull up`；91 个事件无序号跳跃，`event_avg_hz=59.921`、min `58.819`、max `60.845`、span `1501.982ms`。探针按新格式标明这是 DRM command-mode callback cadence，不是光学面板扫描。维护者确认滚动仍然流畅。显示模式/GPIO/目视的本机 L3 范围通过；光学精确 Hz 未量化。采集器总状态 `FAIL` 是 runtime FDT 根 `compatible/model` 与参考 DTB 不同，见 `evidence/runtime-fdt.txt`。
+- NFC 被动身份确认仍为 `1-0028 / sn100x / nfc0`。主动探针运行超过其主机脚本 36 秒提示符界限；主机脚本未保存部分 NCI 输出。之后只读 dmesg 捕获到：open 前 `FIRM=0 VEN=1`，VEN 保持高；首次 CORE_RESET 在两次 standby retry 后写入被接受；约 12 秒 RF 测试窗口后出现 `I2C NCI write failed (4 bytes, 1 attempts): -6`，随后 `transport stopped: -6; VEN retained`，NCI request completion 超时且因故障锁存拒绝 reopen。故本次 reset/init/RF/close-reopen 整体验收为未通过；日志无法证明发现了 target，也无法从当前传输日志确定失败帧 opcode、具体 NACK 字节阶段或总线波形。禁止据 4 字节长度猜成 CORE_RESET，亦不重复发 NFC 命令。
+- 本次 `-ENXIO` 已重新出现；在取得 GENI/I²C 事务阶段或外部总线波形前停止进一步 NFC L3 重试，不拉低共享 VEN、不进行电源循环。NDEF、PM、HCE/eSE 未测试，eSE 仍无驱动回调。
+- 主机经救援控制台请求 bootloader 后以 `fastboot reboot` 返回 Android；ADB `sys.boot_completed=1`、产品 `umi`、Android NFC `mState=on`。USB/AC powered 为 false，电池 79%、31°C。未写入任何持久分区。
 
 ## 结论
 
 - 显示配置/驱动/GPIO50高电平及维护者目视验收通过；DRM command-mode vblank/TE cadence实测约59.9Hz，不作为独立光学刷新率测量。物理自刷新精确频率未独立量化。
-- NFC/NCI：当前驱动与成功 L3 提交 `05c4b74` 的 transport 源码一致；reset/init、普通 target discovery、close/reopen 通过记录可复用。NDEF、PM、HCE 与 eSE 不在该证据范围。
+- NFC/NCI：11-13 有一组历史 reset/init、target、close/reopen 成功记录；11-18 当前镜像复验遇到 4 字节 NCI 写 `-ENXIO`、故障锁存与 reopen 失败，当前 L3 重复性未通过。NACK 阶段/波形未明，停止重试并禁用 VEN 复位；本次无可保存 target 数。NDEF、PM、HCE 与 eSE 未验。
 - eSE：当前未实现，且安全时序依据不足；未验收、未执行主动操作。
 - 设备通过 Fastboot RAM 启动后已正常回 Android/ADB。没有持久分区写入。
+
+## CSOT 90Hz 命令与 GENI 阶段取证复验
+
+- 新镜像仅执行一次授权 Fastboot RAM 启动，boot.img SHA-256 `5bdb40418432a4b5dcf41cb4b1feaaebe34379965d451e166e87f644616edd91`，Linux Image `520a179344af2375358cbf9ed81db9cd1694d7931994f2813aeaa241a270277d`，构建锁 `aca0530a425faeb51f36a0e81cadea3679d64980eb267d1d6e530f49e09736a3`，DTB 与前述同哈希。原生 ARM64 L2、定向 DT/schema 与四项反例通过；WSL 回归运行 299 项、4 项跳过。原始证据仅留本地 `.work/csot-geni-final-20261118/`。
+- 显示：KMS active mode `1080x2340@90`，像素时钟 235788 kHz，GPIO50 高；内核记录 CSOT 90Hz DCS 发送成功。DRM command-mode vblank 在 1001.714 ms 内采到 91 个事件、0 跳号、均值 **89.846Hz**（前一镜像 59.921Hz）。配置与 90Hz 级回调通过；本次未采集内容 FPS 或独立 TE/光学扫描，不能用回调代替物理扫描频率。
+- NFC：被动枚举 `1-0028 / sn100x / nfc0` 通过；唯一主动探针在 `DEV_UP` 的首发 `CORE_RESET` 失败。GPIO 读回 `FIRM=0 VEN=1`，随后 `984000.i2c` 日志 `bus=1 addr=0x28 dir=write phase=address gp_length=0 irq=0x409`；SN100T 记录 `opcode=0x0000 len=4 ret=-6`，锁存且保留 VEN。上层 `-110` 是等待响应超时；没有重发、进入 RF 阶段或执行 reopen。地址阶段未应答不等于芯片收到并拒绝 opcode，也不能倒推上一镜像的失败阶段。下步查首发时 NFCC 就绪条件和 SCL/SDA 波形，不做盲重试或 VEN 复位。NDEF、PM、HCE、eSE 未验。
+- 采集：两套传输帧及日志均完整。FDT 单独仍 `root_identity=FAIL`：打包 `xiaomi,umi / qcom,sm8250`，运行时 `qcom,kona-mtp / qcom,kona / qcom,mtp`，`model` 也变化；`live_hardware`、`ram`、`display_vblank` 均 PASS。按 TD-006 跟进 EFI DT 交接，不降低检查要求。
+- 从救援控制台返回 Bootloader 后执行一次 `fastboot reboot`，Android ADB 恢复，`sys.boot_completed=1` 且产品仍为 `umi`。未刷写持久分区。

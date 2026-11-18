@@ -75,9 +75,16 @@ static int umi_csot_prepare(struct drm_panel *panel)
 	ret = gpiod_direction_output(c->disprate, 1);
 	if (ret)
 		goto reset;
+	ret = gpiod_get_value_cansleep(c->disprate);
+	if (ret != 1) {
+		ret = ret < 0 ? ret : -EIO;
+		goto reset;
+	}
 	c->prepared = true;
-	dev_info(&c->dsi->dev, "CSOT prepared: DSC and %zu DCS commands complete\n",
-		 ARRAY_SIZE(umi_csot_init));
+	dev_info(&c->dsi->dev,
+		 "CSOT prepared: mode=%dx%d@%d Hz clock=%d kHz, 90 Hz DCS programmed, rate_select=1 (not measured scanout)\n",
+		 umi_csot_mode.hdisplay, umi_csot_mode.vdisplay,
+		 drm_mode_vrefresh(&umi_csot_mode), umi_csot_mode.clock);
 	ret = 0;
 	goto out;
 reset:

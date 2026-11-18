@@ -99,6 +99,9 @@ class RuntimeDtTests(unittest.TestCase):
         self.assertEqual(report["result"], "FAIL")
         self.assertEqual([i["section"] for i in report["issues"]],
                          ["root_identity", "root_identity", "live_hardware"])
+        self.assertEqual(report["checks"], {"root_identity": "FAIL", "live_hardware": "FAIL",
+                                            "ram": "PASS"})
+        self.assertEqual(report["issues"][0]["runtime"], ["qcom,kona"])
         with self.assertRaisesRegex(ValueError, "compatible.*model.*subtree changed"):
             audit.audit(self.reference, blob)
 

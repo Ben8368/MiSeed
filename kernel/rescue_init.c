@@ -64,9 +64,11 @@ static void usb_console(void) {
         else if (!strcmp(line, "thermal")) report_thermal_devices();
         else if (!strcmp(line, "thermal-stop")) (void)set_wired_pd_cooling_state(1);
         else if (!strcmp(line, "thermal-clear")) (void)set_wired_pd_cooling_state(0);
-        else if (!strcmp(line, "nfc-status"))
+        else if (!strcmp(line, "nfc-status")) {
+            puts("NFC_STATUS_BEGIN");
             report_nfc_status("/sys/bus/i2c/devices", "/sys/class/nfc");
-        else if (!strcmp(line, "nfc-l3"))
+            puts("NFC_STATUS_END");
+        } else if (!strcmp(line, "nfc-l3"))
             (void)run_nfc_l3_probe();
         else if (!strcmp(line, "tcpm-log")) report_tcpm_logs();
         else if (!strcmp(line, "version")) print_file("/proc/version");

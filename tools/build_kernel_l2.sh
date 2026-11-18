@@ -123,6 +123,7 @@ python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_adc5_fix.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_pd_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_nfc_port.py" --source "$source_tree" --project-root "$repo_root"
+python3 "$repo_root/tools/apply_geni_nack_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
 python3 "$repo_root/tools/extract_abl_anchors.py" \

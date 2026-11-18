@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from tools import apply_nfc_port as stage
+from tools import apply_geni_nack_diagnostics as geni_nack
 from tools import nfc_inventory as nfc
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,6 +153,22 @@ class StagingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.apply()
         self.assertEqual(before, self.snapshot())
+
+
+class GeniNackDiagnosticsTests(unittest.TestCase):
+    def test_adds_phase_without_payload_or_recovery_changes(self):
+        source = b"irq handler\n" + geni_nack.OLD + b"\nirq clear\n"
+        result = geni_nack.transform(source)
+        self.assertIn(b'!gp_length ? "address" : rd ? "unknown" : "data"', result)
+        self.assertIn(b"readl_relaxed(base + SE_GENI_M_GP_LENGTH)", result)
+        self.assertEqual(result.replace(geni_nack.NEW, geni_nack.OLD), source)
+        self.assertNotIn(b"buf", result)
+        self.assertEqual(result.count(b"i2c_master"), 0)
+        self.assertEqual(geni_nack.transform(result), result)
+
+    def test_refuses_unrecognized_upstream_handler(self):
+        with self.assertRaises(ValueError):
+            geni_nack.transform(b"different kernel implementation")
 
 
 if __name__ == '__main__':
