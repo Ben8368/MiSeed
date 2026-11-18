@@ -39,8 +39,8 @@ static void usb_console(void) {
     for (;;) {
         char line[64];
         puts("\nMiSeed Umi/CSOT USB diagnostic. Storage is not mounted.");
-        puts("Commands: help, status, dtb, display, display-frame, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-l3, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-stop, pps-status, pps-stop, reboot, bootloader");
-        puts("display/display-frame/dmesg are read-only; display-on/off set only the identified CSOT backlight to 1500/0.");
+        puts("Commands: help, status, dtb, display, display-vblank, display-frame, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-l3, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-stop, pps-status, pps-stop, reboot, bootloader");
+        puts("display/display-vblank/display-frame/dmesg are read-only; display-on/off set only the identified CSOT backlight to 1500/0.");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
         puts("thermal reads thermal sysfs; thermal-stop/thermal-clear set only umi-wired-pd cooling state 1/0.");
         puts("Wired control: charge-stop uses standard power_supply charge_behaviour.");
@@ -54,6 +54,7 @@ static void usb_console(void) {
         line[strcspn(line, "\r\n")] = '\0';
         if (!strcmp(line, "help")) continue;
         if (!strcmp(line, "display")) report_display_status();
+        else if (!strcmp(line, "display-vblank")) measure_display_vblank();
         else if (!strcmp(line, "display-frame")) export_display_frame();
         else if (!strcmp(line, "display-on")) (void)set_display_brightness(1500);
         else if (!strcmp(line, "display-off")) (void)set_display_brightness(0);

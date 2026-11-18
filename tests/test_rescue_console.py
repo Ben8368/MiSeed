@@ -19,6 +19,11 @@ from rescue_test_support import RescueFixture
 
 
 class RescueConsoleTests(RescueFixture):
+    def test_readonly_display_vblank_command_is_advertised_and_dispatched(self):
+        source = (ROOT / "kernel/rescue_init.c").read_text(encoding="utf-8")
+        self.assertIn("display-vblank", source)
+        self.assertIn('measure_display_vblank();', source)
+
     def test_unbound_pon_refuses_without_reboot_syscall(self):
         result = subprocess.run([self.program, "bootloader-unbound"],
                                 capture_output=True, text=True, timeout=5)

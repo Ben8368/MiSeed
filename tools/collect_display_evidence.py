@@ -42,6 +42,11 @@ def validate_frame(snapshot, kind):
         payload_end = frame.find(b"\nKMSG_NOTE ", header.end())
         if payload_end < 0 or payload_end - header.end() != int(header[1]):
             raise ExportError("kernel-log snapshot lost bytes")
+    if kind == b"DISPLAY_VBLANK":
+        result = re.findall(rb"^DISPLAY_VBLANK_RESULT events=(\d+) sequence_gaps=(\d+) .* rc=(-?\d+)$",
+                            frame, re.MULTILINE)
+        if len(result) != 1 or int(result[0][0]) > 91:
+            raise ExportError("invalid or duplicated vblank result")
     return frame
 
 
@@ -66,9 +71,12 @@ def capture(port, output, command, kind):
     partial.rename(output)
 
 
-def capture_sequence(port, output, light_panel):
+def capture_sequence(port, output, light_panel, measure_vblank=False):
     control_error = None
     capture(port, output / "display-before.txt", "display", b"DISPLAY")
+    if measure_vblank:
+        capture(port, output / "display-vblank.txt", "display-vblank",
+                b"DISPLAY_VBLANK")
     if light_panel:
         try:
             capture(port, output / "display-control.txt", "display-on", b"DISPLAY_CONTROL")
@@ -89,6 +97,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--light-panel", action="store_true",
                         help="explicitly set the unique CSOT backlight to 1500 via standard sysfs")
+    parser.add_argument("--measure-vblank", action="store_true",
+                        help="collect 91 read-only DRM vblank waits from CRTC 0")
     args = parser.parse_args()
     output = args.output.resolve()
     if os.name != "nt":
@@ -102,7 +112,8 @@ def main():
     output.mkdir(parents=True)
     port = open_windows_port(args.port)
     try:
-        control_error = capture_sequence(port, output, args.light_panel)
+        control_error = capture_sequence(port, output, args.light_panel,
+                                         args.measure_vblank)
     finally:
         port.close()
     runtime = decode_export((output / "runtime-fdt.txt").read_text(encoding="ascii"))

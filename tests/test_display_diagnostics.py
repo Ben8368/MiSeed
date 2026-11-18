@@ -59,6 +59,33 @@ class EvidenceFrameTests(unittest.TestCase):
             collector.capture_sequence(None, Path("unused"), True)
         self.assertEqual(calls, ["display", "display-on"])
 
+    def test_display_sequence_can_collect_vblank_measurement(self):
+        calls = []
+        def capture(port, output, command, kind):
+            calls.append((command, kind))
+        with patch.object(collector, "capture", capture):
+            self.assertIsNone(collector.capture_sequence(None, Path("unused"), False,
+                                                         measure_vblank=True))
+        self.assertEqual(calls, [("display", b"DISPLAY"),
+                                 ("display-vblank", b"DISPLAY_VBLANK"),
+                                 ("dmesg", b"KMSG"), ("dtb", b"DTB")])
+
+    def test_vblank_frame_requires_single_result(self):
+        frame = (b"DISPLAY_VBLANK_BEGIN\n"
+                 b"DISPLAY_VBLANK device=/dev/dri/card1 crtc=0 "
+                 b"source=DRM_IOCTL_WAIT_VBLANK\n"
+                 b"DISPLAY_VBLANK_RESULT events=91 sequence_gaps=0 span_ms=1000.000 "
+                 b"avg_hz=90.000 min_hz=90.000 max_hz=90.000 errno=0 rc=0\n"
+                 b"DISPLAY_VBLANK_END\n")
+        self.assertEqual(validate_frame(frame, b"DISPLAY_VBLANK"), frame)
+        with self.assertRaises(ExportError):
+            validate_frame(frame.replace(b"DISPLAY_VBLANK_END", b"DISPLAY_VBLANK_END\n"
+                                                                     b"DISPLAY_VBLANK_END"),
+                           b"DISPLAY_VBLANK")
+        no_result = frame.replace(frame.splitlines()[2] + b"\n", b"")
+        with self.assertRaises(ExportError):
+            validate_frame(no_result, b"DISPLAY_VBLANK")
+
     def test_missing_reordered_failed_and_dropped_frames(self):
         frame = b"KMSG_BEGIN\nKMSG_SNAPSHOT bytes=4 ring_bytes=4096 filtered=0 clear=0\nabc\n\nKMSG_NOTE ring\nKMSG_END\n"
         self.assertEqual(validate_frame(frame, b"KMSG"), frame)
@@ -117,3 +144,24 @@ class DisplayDiagnosticsTests(unittest.TestCase):
         self.assertIn("unfiltered drm ready", self.invoke("kmsg"))
         for mode in (1, 2):
             self.assertIn("KMSG_ERROR", self.invoke("kmsg", mode))
+
+    def test_vblank_probe_reports_rate_and_sequence_gaps(self):
+        output = self.invoke("vblank")
+        self.assertIn("events=91 sequence_gaps=0", output)
+        self.assertIn("avg_hz=90.000", output)
+        self.assertIn("rc=0", output)
+
+    def test_vblank_probe_stops_on_ioctl_error(self):
+        output = self.invoke("vblank", 6)
+        self.assertIn("events=4", output)
+        self.assertIn("errno=22 rc=-1", output)
+
+    def test_vblank_probe_counts_missed_sequences(self):
+        output = self.invoke("vblank", 9)
+        self.assertIn("events=91 sequence_gaps=1", output)
+        self.assertIn("rc=0", output)
+
+    def test_vblank_probe_reports_missing_drm_device(self):
+        output = self.invoke("vblank", 7)
+        self.assertIn("events=0 sequence_gaps=0", output)
+        self.assertIn("errno=19 rc=-1", output)

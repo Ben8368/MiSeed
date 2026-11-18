@@ -53,6 +53,7 @@ void export_runtime_dtb(const char *path);
 void report_thermal_devices(void);
 int set_wired_pd_cooling_state(long requested);
 void report_display_status(void);
+void measure_display_vblank(void);
 void export_display_frame(void);
 int set_display_brightness(unsigned int value);
 void export_kernel_log(void);
