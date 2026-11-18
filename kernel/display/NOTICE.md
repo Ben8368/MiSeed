@@ -14,7 +14,9 @@ Reference source reports are not MiSeed hardware verification.
 `531c16b9e50f0351ad0b95051c13a705ad8e223b`, contributors including color.
 `dts/xiaomi-umi-panels.dtsi` (BSD-3-Clause) supplies H 16/8/8, V 4/4/8,
 90Hz and active-high GPIO50. Its unchanged common DTS also leaves GPIO50 usable.
-`patches/panel-xiaomi-umi.c` (GPL-2.0-only) supplies the 20ms post-init wait.
+`patches/panel-xiaomi-umi.c` (GPL-2.0-only) describes a vendor ~128ms
+post-init wait before selecting 90Hz; the reference implementation shortened
+it to 20ms. MiSeed uses the vendor delay pending L3 confirmation.
 The fixed native mode now uses these timings (235788kHz, 1112x2356 totals).
 MiSeed requires the GPIO and propagates acquisition/direction errors; it does
 not import the reference private sysfs, arbitrary DT command data interface,

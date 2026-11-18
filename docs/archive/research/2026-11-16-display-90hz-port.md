@@ -4,7 +4,7 @@
 
 RQ-14 / WP2；宿主 Darwin 25.6.0 arm64、zsh；基线 `f464b38029f47965919ab5ec7d55d718069d7682`，工作分支 `codex/display-90hz`。本轮审查 MiSeed 已有接口与 colorgarden 显示实现，移植固定 CSOT 90Hz；不以来源报告替代本项目 L3。
 
-读取引用对话后，复核固定来源 `colorgarden/umi-mainline@531c16b9e50f0351ad0b95051c13a705ad8e223b`：`dts/xiaomi-umi-panels.dtsi`（BSD-3-Clause，SHA-256 `b9eba6584dfdad6b9ebc6c7149c01efed8529ad10cc1003ea3fb13e2ba200bc1`）给出 H 16/8/8、V 4/4/8、90Hz、GPIO50 高电平选择；`patches/panel-xiaomi-umi.c`（GPL-2.0-only，SHA-256 `8589418e099ee114902b25eeeb52be2e7ca550ea614dd9e89b5c8d3ad29632a3`）在初始化后等20ms重申选择。`dts/sm8250-xiaomi-umi-common.dtsi`（BSD-3-Clause，SHA-256 `d4f51be4d33db8c82fe5fdf37a103bad4e23acf566b3cb2487305434a3219afa`）未保留GPIO50。原贡献者为 colorgarden/umi-mainline contributors，驱动作者 color；仅选择时序、接线和等待值，不复制通用驱动。
+读取引用对话后，复核固定来源 `colorgarden/umi-mainline@531c16b9e50f0351ad0b95051c13a705ad8e223b`：`dts/xiaomi-umi-panels.dtsi`（BSD-3-Clause，SHA-256 `b9eba6584dfdad6b9ebc6c7149c01efed8529ad10cc1003ea3fb13e2ba200bc1`）给出 H 16/8/8、V 4/4/8、90Hz、GPIO50 高电平选择；`patches/panel-xiaomi-umi.c`（GPL-2.0-only，SHA-256 `8589418e099ee114902b25eeeb52be2e7ca550ea614dd9e89b5c8d3ad29632a3`）包含厂商约128ms等待说明，而参考实现实际使用20ms。`dts/sm8250-xiaomi-umi-common.dtsi`（BSD-3-Clause，SHA-256 `d4f51be4d33db8c82fe5fdf37a103bad4e23acf566b3cb2487305434a3219afa`）未保留GPIO50。原贡献者为 colorgarden/umi-mainline contributors，驱动作者 color；仅选择时序、接线和等待值，不复制通用驱动。
 
 来源提交 `027e114627e750071abbf898f1eccd79fc4fbf1d` 报告1080×2340@90实测；未提供对应本机的KMS事件或光学测量。参考实现还有任意DSI写入/寄存器读回的`dbg/kick/repower/dsi`私有sysfs、任意DT命令序列及GPIO获取错误被忽略；不准入这些部分。源码存在、来源实测、本项目L2、本项目L3和上游合入分别记录。
 
@@ -28,7 +28,7 @@ RQ-14 / WP2；宿主 Darwin 25.6.0 arm64、zsh；基线 `f464b38029f47965919ab5e
 
 ## 实施边界与待验证
 
-仅原生DSI opt-in profile改为单一90Hz模式，默认simpledrm不变。不暴露未经验证的60/90动态切换。只额外开放GPIO50；probe不改电平，prepare初始化后设置高电平并传播方向设置错误，失败重新断言reset，允许后续重试。GPIO缺失、占用和EPROBE_DEFER均失败返回，不依赖ABL残留。独立供电不在本次改动范围。
+仅原生DSI opt-in profile改为单一90Hz模式，默认simpledrm不变。不暴露未经验证的60/90动态切换。只额外开放GPIO50；probe不改电平，prepare初始化后等待厂商说明的约128ms，再设置高电平并传播方向设置错误，失败重新断言reset，允许后续重试。GPIO缺失、占用和EPROBE_DEFER均失败返回，不依赖ABL残留。独立供电不在本次改动范围。
 
 验证计划：实际C生命周期故障注入/恢复及KMS模式发布；板级GPIO allowlist及缺失/错误资源反例；完整离线回归；固定ARM64内核/DTB/initramfs/boot L2；定向dt_binding_check/CHECK_DTBS和最终打包DTB验证。L3需另行明确授权、材料备齐后单次RAM启动；以KMS 90Hz模式、连续vblank/page-flip时间戳及目视确认分别取证，不能只凭点亮或DRM名称认定物理90Hz。当前不接入或操作手机，不提交/推送。
 
@@ -54,7 +54,7 @@ MISEED_NATIVE_DSI=1 MISEED_JOBS=4 bash tools/build_kernel_l2.sh
 
 上述容器由 `docker --host unix:///Users/ben/.colima/miseed-boot-l2/docker.sock run --rm --mount type=bind,source=/Users/ben/Project/Code/MiSeed,target=/workspace --mount type=volume,source=miseed-boot-l2-miseed-boot-l2-arm64,target=/build --workdir /workspace miseed-boot-l2:local bash -c '<对应命令>'` 运行。既有源码缓存先经构建器对固定Git tree核验，再重新stage；新输出目录独立，不覆盖既有硬件镜像。
 
-实际panel函数经合成transport验证59个DCS失败点、短写、压缩/PPS失败、reset方向失败、刷新选择方向错误（EIO/EBUSY/EPROBE_DEFER）、失败后的reset及重试；验证只在全部命令及20ms等待后选择90Hz。实际get_modes函数验证分配失败、单一preferred模式及约90.000Hz；这些是L1模拟，不是DRM设备或GPIO实测。编译DT反例覆盖缺失GPIO50、错误引脚/控制器/极性及错误面板变体；GPIO申请错误传播另经源码审查，不把方向错误注入当作probe真机证据。
+实际panel函数经合成transport验证59个DCS失败点、短写、压缩/PPS失败、reset方向失败、刷新选择方向错误（EIO/EBUSY/EPROBE_DEFER）、失败后的reset及重试；90Hz选择只允许在全部命令及128ms等待后执行。实际get_modes函数验证分配失败、单一preferred模式及约90.000Hz；这些是L1模拟，不是DRM设备或GPIO实测。编译DT反例覆盖缺失GPIO50、错误引脚/控制器/极性及错误面板变体；GPIO申请错误传播另经源码审查，不把方向错误注入当作probe真机证据。
 
 | 产物 | SHA-256 |
 | --- | --- |

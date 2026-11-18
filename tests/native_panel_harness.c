@@ -45,7 +45,7 @@ static struct gpio_desc *rate_gpio;
 static void msleep(unsigned int n) { last_delay = n; }
 static void usleep_range(unsigned int a, unsigned int b) { (void)a; (void)b; }
 static int gpiod_direction_output(struct gpio_desc *g, int value) {
-    if (g == rate_gpio) assert(command == 59 && last_delay == 20 && value == 1);
+    if (g == rate_gpio) assert(command == 59 && last_delay == 128 && value == 1);
     if (g->error) return g->error;
     g->value = value;
     return 0;

@@ -70,8 +70,8 @@ static int umi_csot_prepare(struct drm_panel *panel)
 		if (cmd->delay_ms)
 			msleep(cmd->delay_ms);
 	}
-	/* Reference 531c16b: select 90Hz self-scan after the on-sequence. */
-	msleep(20);
+	/* Vendor timing waits ~128ms after on-sequence before 90Hz select. */
+	msleep(128);
 	ret = gpiod_direction_output(c->disprate, 1);
 	if (ret)
 		goto reset;
