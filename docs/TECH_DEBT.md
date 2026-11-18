@@ -40,7 +40,7 @@
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线BQ IRQ删除不支持的input-enable，新增固定PD thermal binding及TLMM检查，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。CSOT已有binding/显示链路schema/FDT审计；GPIO50高选90Hz，WP2按[移植审查](archive/research/2026-11-16-display-90hz-port.md)送DRM/DT评审。等待改为来源说明的128ms，待L3确认90Hz。剩余新DT/消费者L3、binding上游评审、整机DTBO及专项复核；定向检查不等于整机合规。
+源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线BQ IRQ删除不支持的input-enable，新增固定PD thermal binding及TLMM检查，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。CSOT已有binding/显示链路schema/FDT审计；GPIO50高选90Hz，来源等待为128ms；DRM command-mode vblank cadence不是独立光学扫描。剩余新DT/消费者L3、binding上游评审、整机DTBO及专项复核；定向检查不等于整机合规。
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 

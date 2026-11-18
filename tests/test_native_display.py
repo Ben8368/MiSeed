@@ -15,6 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NativePanelTests(unittest.TestCase):
+    def test_display_diagnostics_include_read_only_gpio_snapshot(self):
+        source = (ROOT / "kernel/rescue_display.c").read_text()
+        self.assertIn('print_file("/sys/kernel/debug/gpio");', source)
+
     @unittest.skipUnless(all(shutil.which(t) for t in ("dtc", "fdtget", "fdtput")), "libfdt tools required")
     def test_native_panel_rejects_missing_wrong_or_inverted_gpio(self):
         fixture = '''/dts-v1/;

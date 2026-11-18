@@ -194,6 +194,7 @@ void report_display_status(void) {
     report_platform_driver("DSI PHY", "qcom,dsi-phy-7nm");
     print_file("/proc/interrupts");
     print_file("/sys/kernel/debug/clk/clk_summary");
+    print_file("/sys/kernel/debug/gpio");
     display_class("/sys/class/drm", drm);
     display_class("/sys/class/backlight", backlight);
     display_class("/sys/class/graphics", fb);

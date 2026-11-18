@@ -1,6 +1,6 @@
 # 当前状态
 
-2026-11-18｜[显示/NFC/eSE](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)：KMS报90Hz、vblank实测59.9Hz；GPIO50等待改为厂商约128ms，待复测。NFC当前驱动与05c4b74成功L3相同；eSE未实现。
+2026-11-18｜[显示/NFC/eSE](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)：KMS90Hz、GPIO50高、目视通过；command-mode vblank/TE cadence约59.934Hz，不等同光学扫描测量。NFC驱动与05c4b74成功L3相同；eSE未实现。
 
 PR7：L0–L2过；固定PD L3部分过，BQ ADC/独立复核未闭。[记录](archive/reviews/2026-11-17-pr7-coderabbit.md)
 
@@ -12,7 +12,7 @@ WP10 NFC/NCI：reset/init、RF target、close/reopen L3过，驱动与当前一�
 
 SMB5 bit5修复，FG/SMB5 10组Charging、Android回退过。[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)
 
-显示90Hz移植过L2；实测约60Hz后将GPIO50等待改为厂商约128ms，待L2/L3复测。交接、SMMU/PM和启动条纹待查。[L3](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)
+显示模式/GPIO和维护者目视L3通过；command-mode vblank/TE cadence约60Hz，物理扫描精确频率未光学量化。交接、SMMU/PM和启动条纹待查。[L3](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)
 
 旧旁路、PD/PPS恢复及watchdog/热保护见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
 

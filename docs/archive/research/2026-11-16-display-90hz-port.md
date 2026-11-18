@@ -71,4 +71,6 @@ MISEED_NATIVE_DSI=1 MISEED_JOBS=4 bash tools/build_kernel_l2.sh
 
 ## PR交付
 
+2026-11-18 L3 跟进：KMS 固定模式报90Hz，GPIO50由debugfs确认out high；GPIO50等待按来源说明由20ms改为128ms后，DRM vblank仍约59.9Hz。该panel走DSI command mode，DPU vblank callback来自read-pointer/TE路径，不能单独代表面板自刷新扫描率；维护者目视验收通过，精确物理频率未光学量化。详见[真机记录](../hardware/2026-11-18-umi-display-nfc-ese-l3.md)。
+
 上述离线验证结束后，维护者授权提交到[PR #7](https://github.com/Ben8368/MiSeed/pull/7)。改动转入其现有分支`codex/fixed-pd-sampling`，保留原有有线PD修复历史，新增独立90Hz提交；不合并、不操作手机。PR描述分别列出最终281项回归、原生显示L2/schema与各自L3缺口，远端CI以推送后的精确HEAD为准。
