@@ -10,7 +10,7 @@ SCHEMAS = ("power/supply/qcom,pm8150b-fg.yaml",
            "power/supply/xiaomi,umi-bq25970.yaml",
            "power/supply/battery.yaml", "thermal/thermal-zones.yaml",
            "thermal/thermal-sensor.yaml", "pinctrl/qcom,sm8250-pinctrl.yaml",
-           "connector/usb-connector.yaml")
+           "connector/usb-connector.yaml", "iio/adc/qcom,spmi-vadc.yaml")
 
 
 def check(dtb, schema):
@@ -25,7 +25,7 @@ def check(dtb, schema):
         return result.stdout.strip()
 
     nodes = {name: prop("/__symbols__", name, "s") for name in
-             ("umi_battery", "umi_fg", "umi_charger", "umi_pps", "pm8150b_typec")}
+             ("umi_battery", "umi_fg", "umi_charger", "umi_pps", "pm8150b_typec", "pm8150b_adc")}
     connector = nodes["pm8150b_typec"] + "/connector"
     if prop(connector, "op-sink-microwatt", "i") != "7000000":
         raise ValueError("PPS operating floor must permit the 1 A request region")
@@ -40,12 +40,20 @@ def check(dtb, schema):
     if prop(safe, "sink-pdos", "u") != prop(connector, "sink-pdos", "u"):
         raise ValueError("attach profile must retain fixed 5 V and PPS")
     fast_pdos = [int(value) for value in prop(fast, "sink-pdos", "u").split()]
-    if (fast_pdos != [pdos[0], (9000 // 50 << 10) | (2000 // 10), pdos[1]]):
-        raise ValueError("fast profile must restrict fixed PD to 9 V/2 A")
+    if (fast_pdos != [pdos[0], (9000 // 50 << 10) | (3000 // 10), pdos[1]]):
+        raise ValueError("fast profile must permit fixed PD 9 V/3 A")
     for profile in (safe, fast):
         if prop(profile, "op-sink-microwatt", "i") != "7000000":
             raise ValueError("PD profiles must retain the operating floor")
     handles = {name: prop(node, "phandle") for name, node in nodes.items()}
+    adc = handles["pm8150b_adc"]
+    if prop(nodes["umi_charger"], "io-channels") != f"{adc} 7 {adc} 8 {adc} 1e":
+        raise ValueError("SMB5 needs USB current, unloaded USBIN and loaded MID_CHG ADCs")
+    if prop(nodes["umi_charger"], "io-channel-names", "s") != "usb_in_i_uv usb_in_v_div_16 mid_chg_div6":
+        raise ValueError("SMB5 ADC consumer names mismatch")
+    mid = nodes["pm8150b_adc"] + "/channel@1e"
+    if prop(mid, "reg") != "1e" or prop(mid, "qcom,pre-scaling") != "1 6":
+        raise ValueError("MID_CHG must retain the device-matched channel and 1:6 prescale")
     references = (("umi_fg", "monitored-battery", "umi_battery"),
                   ("umi_charger", "monitored-battery", "umi_battery"),
                   ("umi_charger", "qcom,fuel-gauge", "umi_fg"),

@@ -26,14 +26,14 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 
 	if (rc)
 		return rc;
-	if (!chip->policy_icl_ua || icl_ua != chip->policy_icl_ua)
+	if (!chip->policy_icl_valid || icl_ua != chip->policy_icl_ua)
 		chip->saved_icl_ua = icl_ua;
 	chip->power_stage = umi_pps_max(chip->power_stage, umi_pps_soc_stage(soc));
 	{
 		target_mw = chip->power_stage == 0 ? UMI_WIRED_LOW_MW :
 			chip->power_stage >= 2 ? UMI_WIRED_FINISH_MW :
 			chip->pd_voltage_uv == 9000000 ? UMI_WIRED_PD_9V_MW : UMI_WIRED_PD_FAST_MW;
-		rc = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input_uv);
+		rc = smb5_get_input_voltage(chip, &input_uv);
 		if (rc)
 			return rc;
 		if (input_uv <= 0)
@@ -55,9 +55,41 @@ int smb5_power_limit(struct smb5_chip *chip, int soc)
 	/* Tightening a stage/thermal/contract ceiling takes effect immediately. */
 	if (icl_ua != target)
 		rc = smb5_set_current_limit(chip, target);
-	if (!rc)
+	if (!rc) {
 		chip->policy_icl_ua = target;
+		chip->policy_icl_valid = true;
+	}
 	return rc;
+}
+
+/* The wired input is shared with TCPM. APSD only describes BC1.2 and
+ * must not hide an attached PD/PPS source from standard power_supply users.
+ * Keep supplier reads outside chip->lock (TCPM has its own port lock).
+ */
+static int smb5_get_usb_type(struct smb5_chip *chip, int *type)
+{
+	union power_supply_propval val;
+	int online, ret;
+
+	ret = smb5_get_prop_usb_online(chip, &online);
+	if (ret)
+		return ret;
+	if (!online) {
+		*type = POWER_SUPPLY_USB_TYPE_UNKNOWN;
+		return 0;
+	}
+	if (chip->pd) {
+		ret = power_supply_get_property(chip->pd, POWER_SUPPLY_PROP_USB_TYPE, &val);
+		if (ret)
+			return ret;
+		if (val.intval == POWER_SUPPLY_USB_TYPE_PD ||
+		    val.intval == POWER_SUPPLY_USB_TYPE_PD_PPS ||
+		    val.intval == POWER_SUPPLY_USB_TYPE_PD_DRP) {
+			*type = val.intval;
+			return 0;
+		}
+	}
+	return smb5_apsd_get_charger_type(chip, type);
 }
 
 static enum power_supply_property smb5_properties[] = {
@@ -110,10 +142,12 @@ static int smb5_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		return smb5_get_current_limit(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		return smb5_get_input_current(chip, &val->intval);
+		return smb5_get_input_current_now(chip, &val->intval);
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		return smb5_get_iio_chan(chip, chip->usb_in_v_chan,
-					 &val->intval);
+		mutex_lock(&chip->lock);
+		rc = smb5_get_input_voltage(chip, &val->intval);
+		mutex_unlock(&chip->lock);
+		return rc;
 	case POWER_SUPPLY_PROP_ONLINE:
 		return smb5_get_prop_usb_online(chip, &val->intval);
 	case POWER_SUPPLY_PROP_STATUS:
@@ -121,7 +155,7 @@ static int smb5_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_HEALTH:
 		return smb5_get_prop_health(chip, &val->intval);
 	case POWER_SUPPLY_PROP_USB_TYPE:
-		return smb5_apsd_get_charger_type(chip, &val->intval);
+		return smb5_get_usb_type(chip, &val->intval);
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
 		val->intval = smb5_get_charge_control_threshold(chip, true);
 		return 0;
@@ -152,14 +186,39 @@ int smb5_set_property(struct power_supply *psy,
 	int rc = 0;
 
 	switch (psp) {
-	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT: {
+		unsigned int applied;
+
+		if (val->intval < 0 || val->intval > UMI_CHARGE_USB_ICL_UA)
+			return -EINVAL;
 		mutex_lock(&chip->lock);
-		rc = chip->pps_owned || chip->stopping ? -EBUSY : smb5_set_current_limit(chip, val->intval);
-		if (!rc)
+		if (chip->pps_owned || chip->stopping) {
+			rc = -EBUSY;
+			goto limit_out;
+		}
+		rc = smb5_get_current_limit(chip, &applied);
+		if (rc)
+			goto limit_out;
+		/* A user request is a ceiling, never permission to override the
+		 * live PD/thermal/power policy. Tighten immediately; increases
+		 * require a fresh worker safety sample and its normal ramp.
+		 */
+		if ((unsigned int)val->intval < applied) {
+			applied = val->intval / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
+			rc = smb5_set_current_limit(chip, applied);
+		}
+		if (!rc) {
 			chip->saved_icl_ua = val->intval / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR;
+			chip->policy_icl_ua = applied;
+			chip->policy_icl_valid = true;
+			mod_delayed_work(system_wq, &chip->status_change_work, 0);
+		}
+limit_out:
 		mutex_unlock(&chip->lock);
-		power_supply_changed(psy);
+		if (!rc)
+			power_supply_changed(psy);
 		return rc;
+	}
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
 		if (val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
                     val->intval != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
@@ -169,13 +228,11 @@ int smb5_set_property(struct power_supply *psy,
                         mutex_unlock(&chip->lock);
                         return -EBUSY;
                 }
-                chip->test_armed = false;
-                chip->test_active = false;
                 chip->inhibit = val->intval == POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
                 if (chip->inhibit)
                         rc = smb5_inhibit_with_fallback(chip, "user-inhibit");
-                mutex_unlock(&chip->lock);
                 mod_delayed_work(system_wq, &chip->status_change_work, 0);
+                mutex_unlock(&chip->lock);
                 power_supply_changed(psy);
                 return rc;
 	default:
@@ -201,7 +258,10 @@ const struct power_supply_desc smb5_psy_desc = {
 	.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO) |
 			     BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE),
 	.type = POWER_SUPPLY_TYPE_USB,
-	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_SDP) |
+	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_PD) |
+		     BIT(POWER_SUPPLY_USB_TYPE_PD_PPS) |
+		     BIT(POWER_SUPPLY_USB_TYPE_PD_DRP) |
+		     BIT(POWER_SUPPLY_USB_TYPE_SDP) |
 		     BIT(POWER_SUPPLY_USB_TYPE_CDP) |
 		     BIT(POWER_SUPPLY_USB_TYPE_DCP) |
 		     BIT(POWER_SUPPLY_USB_TYPE_UNKNOWN),

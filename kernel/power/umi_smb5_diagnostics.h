@@ -22,6 +22,7 @@ static void smb5_log_registers(struct smb5_chip *chip)
 	};
 	static const unsigned int addresses[] = {
 		OBS_USB_RT, OBS_CHGR_STATUS1, OBS_CHGR_STATUS2, OBS_CHGR_ENABLE,
+		0x107, 0x108, 0x10a, 0x10b, 0x340, 0x370,
 	};
 	unsigned int values[ARRAY_SIZE(addresses)];
 	int rc, i;
@@ -37,9 +38,10 @@ static void smb5_log_registers(struct smb5_chip *chip)
 
 	/* Hardware indications only; phase/enable alone do not prove net charge. */
 	dev_info(chip->dev,
-		 "miseed-power usb_present=%u hw_phase=%s chg_enable=%u usb_rt=0x%02x chgr1=0x%02x chgr2=0x%02x control=read-only\n",
+		 "miseed-power usb_present=%u hw_phase=%s chg_enable=%u usb_rt=0x%02x chgr1=0x%02x chgr2=0x%02x icl_status=0x%02x aicl_icl=0x%02x aicl_status=0x%02x power_path=0x%02x input_cmd=0x%02x icl_cfg=0x%02x control=read-only\n",
 		 !!(values[0] & OBS_USB_PLUGIN), phases[values[1] & GENMASK(2, 0)],
-		 !!(values[3] & BIT(0)), values[0], values[1], values[2]);
+		 !!(values[3] & BIT(0)), values[0], values[1], values[2],
+		 values[4], values[5], values[6], values[7], values[8], values[9]);
 }
 
 #else

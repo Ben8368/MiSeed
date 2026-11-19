@@ -21,6 +21,10 @@ SHIM = r"""
 typedef uint8_t u8;
 #define U8_MAX 255
 #define NCI_CTRL_HDR_SIZE 3
+#define NCI_MT_CMD_PKT 1
+#define NCI_DEACTIVATE_TYPE_IDLE_MODE 0
+#define nci_mt(hdr) (((hdr)[0] >> 5) & 7)
+#define nci_opcode(hdr) ((((hdr)[0] & 15) << 8) | ((hdr)[1] & 63))
 #define GFP_KERNEL 0
 #define IRQ_HANDLED 1
 typedef int irqreturn_t;
@@ -28,9 +32,11 @@ struct mutex { int held; };
 struct device { void *phy; };
 struct i2c_client { int irq; struct device dev; };
 struct nci_dev { void *data; };
-struct gpio_desc { int value; int failure; int writes; };
+struct gpio_desc { int value; int failure; int writes; int read_error; int stuck; };
 struct sk_buff { unsigned int len; u8 *data; };
 static int held, depth=1, syncs, sends, received, live, oom;
+static struct gpio_desc *shared_ven, *mode_select;
+static int address_nacks;
 static int send_result=999, read_result[2], read_count;
 static u8 packet[258];
 static void mutex_lock(struct mutex *m) { assert(!m->held); m->held=1; held++; }
@@ -46,9 +52,10 @@ static void dev_info_stub(struct device *d, const char *fmt, ...) {
 #define dev_info(...) dev_info_stub(__VA_ARGS__)
 static void usleep_range(int a,int b) { (void)a;(void)b; }
 static void *nci_get_drvdata(struct nci_dev *n) { return n->data; }
-static int gpiod_get_value_cansleep(struct gpio_desc *g) { return g->value; }
+static int gpiod_get_value_cansleep(struct gpio_desc *g) { return g->read_error ? g->read_error : g->value; }
 static int gpiod_direction_output(struct gpio_desc *g,int value) {
- g->writes++; if(g->failure) return g->failure; g->value=value; return 0;
+ if(g==shared_ven) assert(value==1 && mode_select->value==0 && !mode_select->read_error);
+ g->writes++; if(g->failure) return g->failure; if(!g->stuck) g->value=value; return 0;
 }
 static struct sk_buff *alloc_skb(int length,int flags) {
  (void)flags; assert(length==258); if(oom) return NULL;
@@ -63,7 +70,7 @@ static int i2c_master_recv(struct i2c_client *c,void *dst,int n) {
  int ret=read_result[i]; if(ret>0) {assert(ret<=n);memcpy(dst,packet+(i?3:0),ret);} return ret;
 }
 static int i2c_master_send(struct i2c_client *c,const void *src,int n) {
- (void)c;(void)src;sends++;return send_result==999?n:send_result;
+ (void)c;(void)src;sends++;if(address_nacks>0){address_nacks--;return -ENXIO;}return send_result==999?n:send_result;
 }
 static int nci_recv_frame(struct nci_dev *n,struct sk_buff *s) {
  (void)n;received++;kfree_skb(s);return 0;
@@ -79,7 +86,9 @@ int main(int argc,char **argv) {
  assert(argc==2); int test=atoi(argv[1]);
  struct i2c_client client={.irq=5};struct nci_dev ndev={0};
  struct gpio_desc ven={.value=1}, firm={0};
- struct sn100x p={.client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
+ struct sn100x p={.geni_address_nack=true,.retry_first_reset=true,
+                  .client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
+ shared_ven=&ven;mode_select=&firm;
  ndev.data=&p;client.dev.phy=&p;
  struct sk_buff *s=NULL;
  if(test==0) { /* Exact header, zero and maximum payload; no phantom body read. */
@@ -130,12 +139,51 @@ int main(int argc,char **argv) {
   packet[0]=0x40;packet[2]=3;packet[4]=0x10;read_result[0]=3;read_result[1]=3;
   sn100x_irq(5,&p);assert(received==1 && p.reset_confirmed);
   sn100x_close(&ndev);assert(!p.fault && depth==1);
- } else if(test==8) {
+ } else if(test==8) { /* Persistent first address NACK exhausts the bounded budget. */
   assert(!sn100x_open(&ndev));send_result=-ENXIO;
-  assert(sn100x_send(&ndev,tx(3))==-ENXIO && depth==1);assert(p.fault==-ENXIO);
+  s=tx(4);s->data[0]=0x20;
+  assert(sn100x_send(&ndev,s)==-ENXIO && depth==1 && sends==3 && p.fault==-ENXIO);
+  assert(sn100x_send(&ndev,tx(3))==-ENXIO && sends==3 && ven.writes==1);
  } else if(test==9) {
   assert(!sn100x_open(&ndev));oom=1;sn100x_irq(5,&p);
   assert(p.fault==-ENOMEM && !read_count && depth==1);
+ } else if(test==10) {
+  firm.value=1;firm.stuck=1;
+  assert(sn100x_open(&ndev)==-EIO && !ven.writes && !p.opened && depth==1);
+  firm.stuck=0;
+  ven.read_error=-EREMOTEIO;
+  assert(sn100x_open(&ndev)==-EREMOTEIO && !p.opened && depth==1);
+  ven.read_error=0;
+  assert(!sn100x_open(&ndev) && p.opened && depth==0);
+ } else if(test==11) { /* Host ordering only; GPIO readback does not prove chip readiness. */
+  ven.value=0;firm.value=1;firm.read_error=-EIO;
+  assert(sn100x_open(&ndev)==-EIO && ven.value==0 && !ven.writes && depth==1 && !sends);
+  firm.read_error=0;firm.value=1;
+  assert(!sn100x_open(&ndev) && firm.value==0 && ven.value==1 && ven.writes==1);
+  sn100x_close(&ndev);assert(p.fault==-ETIMEDOUT && ven.writes==1 && depth==1);
+ } else if(test==12) {
+  assert(!sn100x_open(&ndev));address_nacks=2;
+  s=tx(4);s->data[0]=0x20;assert(!sn100x_send(&ndev,s) && sends==3);
+  send_result=-ENXIO;s=tx(4);s->data[0]=0x20;
+  assert(sn100x_send(&ndev,s)==-ENXIO && sends==4 && p.fault==-ENXIO);
+ } else if(test>=13 && test<=17) {
+  assert(!sn100x_open(&ndev));s=tx(4);s->data[0]=test==15?0x21:0x20;
+  if(test==16)p.geni_address_nack=false;
+  send_result=test==13?-EIO:test==14?2:-ENXIO;
+  if(test==17){address_nacks=1;send_result=-EIO;}
+  int expected=send_result==2?-EREMOTEIO:send_result;
+  assert(sn100x_send(&ndev,s)==expected && sends==(test==17?2:1) && p.fault==expected);
+ } else if(test>=18 && test<=24) {
+  assert(!sn100x_open(&ndev));assert(!sn100x_send(&ndev,tx(3)));
+  s=tx(4);s->data[0]=0x21;s->data[1]=0x06;
+  if(test==21)s->data[3]=1;
+  if(test==22)p.geni_address_nack=false;
+  if(test==23)s->data[0]=0x31; /* fragmented command */
+  send_result=test==20?-EIO:test==24?2:-ENXIO;
+  if(test==18){address_nacks=1;send_result=999;}
+  int expected=test==18?0:test==24?-EREMOTEIO:send_result;
+  assert(sn100x_send(&ndev,s)==expected && p.fault==expected);
+  assert(sends==(test<=19?3:2));
  } else {assert(0);}
  assert(!live && !held && ven.value==1);return 0;
 }
@@ -149,6 +197,7 @@ class TransportTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         text = (ROOT / 'kernel/nfc/sn100x.c').read_text(encoding='utf-8')
+        text = text.replace('#include "sn100x-frame.h"', (ROOT / 'kernel/nfc/sn100x-frame.h').read_text(encoding='utf-8'))
         logic = text[text.index('#define SN100X_FRAME_MAX'):text.index('static const struct nci_ops')]
         pm = text[text.index('static int sn100x_suspend'):text.index('static DEFINE_SIMPLE_DEV_PM_OPS')]
         path = Path(cls.temp.name) / 'transport.c'
@@ -162,7 +211,7 @@ class TransportTests(unittest.TestCase):
             raise AssertionError(result.stderr)
 
     def test_production_transport_failure_and_lifecycle_paths(self):
-        for case in range(10):
+        for case in range(25):
             with self.subTest(case=case):
                 subprocess.run([self.binary, str(case)], check=True, capture_output=True, timeout=5)
 

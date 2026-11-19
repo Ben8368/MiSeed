@@ -3,7 +3,126 @@
 #define _GNU_SOURCE
 #include "rescue_internal.h"
 #include <sys/klog.h>
+#include <sys/ioctl.h>
 #include <limits.h>
+#include <time.h>
+
+/* Linux DRM UAPI, include/uapi/drm/drm.h, using the 64-bit Linux ABI. */
+struct mseed_drm_wait_vblank_request {
+    unsigned int type;
+    unsigned int sequence;
+    unsigned long signal;
+};
+
+struct mseed_drm_wait_vblank_reply {
+    unsigned int type;
+    unsigned int sequence;
+    long tval_sec;
+    long tval_usec;
+};
+
+union mseed_drm_wait_vblank {
+    struct mseed_drm_wait_vblank_request request;
+    struct mseed_drm_wait_vblank_reply reply;
+};
+
+#define MSEED_DRM_VBLANK_RELATIVE 0x1U
+#define MSEED_DRM_IOCTL_WAIT_VBLANK \
+    _IOWR('d', 0x3a, union mseed_drm_wait_vblank)
+#define DISPLAY_VBLANK_SAMPLES 91U
+
+_Static_assert(sizeof(union mseed_drm_wait_vblank) == 24,
+               "DRM vblank UAPI layout must match 64-bit Linux");
+
+static volatile sig_atomic_t display_vblank_timeout;
+
+static void display_vblank_alarm(int signal_number) {
+    (void)signal_number;
+    display_vblank_timeout = 1;
+}
+
+static uint64_t display_timespec_ns(const struct timespec *time) {
+    return (uint64_t)time->tv_sec * 1000000000ULL + (uint64_t)time->tv_nsec;
+}
+
+void measure_display_vblank(void) {
+    struct sigaction action = {0}, previous_action;
+    struct timespec first = {0}, previous = {0}, now;
+    uint64_t min_interval = UINT64_MAX, max_interval = 0, span = 0;
+    uint32_t last_sequence = 0, sequence_gaps = 0;
+    unsigned int events = 0;
+    int fd, rc = -1, saved_errno = 0;
+
+    display_vblank_timeout = 0;
+    puts("DISPLAY_VBLANK_BEGIN");
+    puts("DISPLAY_VBLANK device=/dev/dri/card1 crtc=0 source=DRM_IOCTL_WAIT_VBLANK");
+    puts("DISPLAY_VBLANK_METRIC=DRM command-mode callback cadence; may follow TE/read-pointer and is not an optical panel-scan measurement.");
+    puts("Read-only DRM_IOCTL_WAIT_VBLANK; no modeset, framebuffer or brightness writes.");
+    fd = open("/dev/dri/card1", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) {
+        saved_errno = errno;
+        goto done;
+    }
+    action.sa_handler = display_vblank_alarm;
+    sigemptyset(&action.sa_mask);
+    if (sigaction(SIGALRM, &action, &previous_action)) {
+        saved_errno = errno;
+        goto close_done;
+    }
+    alarm(4);
+    for (unsigned int i = 0; i < DISPLAY_VBLANK_SAMPLES; i++) {
+        union mseed_drm_wait_vblank wait = {0};
+        wait.request.type = MSEED_DRM_VBLANK_RELATIVE;
+        wait.request.sequence = 1;
+        if (ioctl(fd, MSEED_DRM_IOCTL_WAIT_VBLANK, &wait)) {
+            saved_errno = errno;
+            goto restore_done;
+        }
+        if (clock_gettime(CLOCK_MONOTONIC, &now)) {
+            saved_errno = errno;
+            goto restore_done;
+        }
+        if (events) {
+            uint32_t step = wait.reply.sequence - last_sequence;
+            uint64_t interval = display_timespec_ns(&now) -
+                                display_timespec_ns(&previous);
+            if (step > 1) sequence_gaps += step - 1;
+            if (!step) sequence_gaps++;
+            if (interval && interval < min_interval) min_interval = interval;
+            if (interval > max_interval) max_interval = interval;
+        } else first = now;
+        previous = now;
+        last_sequence = wait.reply.sequence;
+        events++;
+    }
+    alarm(0);
+    rc = 0;
+restore_done:
+    alarm(0);
+    if (sigaction(SIGALRM, &previous_action, NULL) && !saved_errno) {
+        saved_errno = errno;
+        rc = -1;
+    }
+close_done:
+    close(fd);
+done:
+    if (events > 1)
+        span = display_timespec_ns(&previous) - display_timespec_ns(&first);
+    if (span && min_interval != UINT64_MAX && max_interval) {
+        double event_avg_hz = (double)(events - 1) * 1000000000.0 / (double)span;
+        double event_min_hz = 1000000000.0 / (double)max_interval;
+        double event_max_hz = 1000000000.0 / (double)min_interval;
+        printf("DISPLAY_VBLANK_RESULT events=%u sequence_gaps=%u span_ms=%.3f "
+               "event_avg_hz=%.3f event_min_hz=%.3f event_max_hz=%.3f errno=%d rc=%d\n",
+               events, sequence_gaps, (double)span / 1000000.0,
+               event_avg_hz, event_min_hz, event_max_hz, saved_errno, rc);
+    } else {
+        printf("DISPLAY_VBLANK_RESULT events=%u sequence_gaps=%u "
+               "timed_out=%d errno=%d rc=%d\n", events, sequence_gaps,
+               display_vblank_timeout, saved_errno, rc ? -1 : 0);
+    }
+    puts("DISPLAY_VBLANK_END");
+}
 
 static int display_path(char *path, size_t size, const char *root,
                         const char *entry, const char *attribute) {
@@ -76,6 +195,7 @@ void report_display_status(void) {
     report_platform_driver("DSI PHY", "qcom,dsi-phy-7nm");
     print_file("/proc/interrupts");
     print_file("/sys/kernel/debug/clk/clk_summary");
+    print_file("/sys/kernel/debug/gpio");
     display_class("/sys/class/drm", drm);
     display_class("/sys/class/backlight", backlight);
     display_class("/sys/class/graphics", fb);

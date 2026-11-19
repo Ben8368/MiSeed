@@ -20,7 +20,7 @@ class DisplayProfileTests(unittest.TestCase):
             text += '\n'.join('CONFIG_' + name + '=y' for name in (
                 'FB_DEVICE',
                 'FRAMEBUFFER_CONSOLE', 'DUMMY_CONSOLE', 'DRM_SIMPLEDRM',
-                'DRM_PANEL_XIAOMI_UMI_CSOT', 'PRINTK_TIME')) + '\nCONFIG_LOG_BUF_SHIFT=20\n'
+                'DRM_PANEL_XIAOMI_UMI_CSOT', 'PRINTK_TIME', 'EVENT_TRACING')) + '\nCONFIG_LOG_BUF_SHIFT=20\n'
         return text
 
     def test_profile_requires_capture_and_rejects_failed_console_experiment(self):
@@ -28,7 +28,7 @@ class DisplayProfileTests(unittest.TestCase):
         profile.check(self.config(True), True)
         for option in ('FB_DEVICE',
                        'FRAMEBUFFER_CONSOLE', 'DUMMY_CONSOLE', 'DRM_SIMPLEDRM',
-                       'DRM_PANEL_XIAOMI_UMI_CSOT', 'PRINTK_TIME'):
+                       'DRM_PANEL_XIAOMI_UMI_CSOT', 'PRINTK_TIME', 'EVENT_TRACING'):
             with self.subTest(option=option), self.assertRaises(ValueError):
                 profile.check(self.config(True).replace('CONFIG_' + option + '=y\n', ''), True)
         for old in ('CONFIG_CMDLINE_FORCE=y', 'CONFIG_LOG_BUF_SHIFT=20'):

@@ -84,13 +84,15 @@ HARNESS = r'''
 #define GENMASK(high, low) (((1U << ((high) + 1)) - 1) & ~((1U << (low)) - 1))
 @OBSERVER_CONSTANTS@
 struct smb5_chip { void *dev, *regmap; unsigned int base; };
-static unsigned int values[4];
+static unsigned int values[10];
 static int reads, fault;
 static char output[1024];
 static int regmap_read(void *regmap, unsigned int reg, unsigned int *value) {
-    static const unsigned int allowed[] = { 0x1310, 0x1006, 0x1007, 0x1042 };
+    static const unsigned int allowed[] = {
+        0x1310, 0x1006, 0x1007, 0x1042, 0x1107, 0x1108, 0x110a, 0x110b, 0x1340, 0x1370
+    };
     int index = reads++;
-    assert(index < 4 && reg == allowed[index]);
+    assert(index < 10 && reg == allowed[index]);
     if (index == fault) return -5;
     *value = values[index];
     return 0;
@@ -111,11 +113,12 @@ int main(void) {
         reads = 0; fault = -1;
         values[0] = 0x10; values[1] = state; values[2] = 0x22; values[3] = 1;
         smb5_log_registers(&observer);
-        assert(reads == 4 && strstr(output, phases[state]));
+        assert(reads == 10 && strstr(output, phases[state]));
         assert(strstr(output, "usb_present=1") && strstr(output, "chg_enable=1"));
         assert(strstr(output, "chgr2=0x22") && strstr(output, "control=read-only"));
+        assert(strstr(output, "aicl_status=") && strstr(output, "power_path="));
     }
-    for (int index = 0; index < 4; index++) {
+    for (int index = 0; index < 10; index++) {
         reads = 0; fault = index;
         smb5_log_registers(&observer);
         assert(reads == index + 1 && strstr(output, "read_error"));

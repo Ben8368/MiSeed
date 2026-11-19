@@ -161,10 +161,11 @@ def stage(source, project, native=False):
     stage_mdss(source)
     stage_clock(source, native)
     stage_fbdev(source, native)
-    for name in ("panel-xiaomi-umi-csot.c", "umi_csot_commands.h", "Kconfig", "Makefile", "umi-csot.Kconfig"):
+    panel_files = ("panel-xiaomi-umi-csot.c", "umi_csot_commands.h", "umi_csot_rate_90.h")
+    for name in (*panel_files, "Kconfig", "Makefile", "umi-csot.Kconfig"):
         if (target / name).is_symlink():
             raise ValueError("symlink panel target: " + name)
-    for name in ("panel-xiaomi-umi-csot.c", "umi_csot_commands.h"):
+    for name in panel_files:
         (target / name).write_bytes((inputs / name).read_bytes())
     (target / "umi-csot.Kconfig").write_bytes((inputs / "Kconfig").read_bytes())
     for name, rule in (("Kconfig", 'source "drivers/gpu/drm/panel/umi-csot.Kconfig"'),

@@ -26,9 +26,12 @@ def discover(root):
                 model = (path / "model_name").read_text().strip()
             except OSError:
                 continue
-            if model != "BQ25970":
+            if model == "BQ25970":
+                role = "pump_chip"
+            elif model == "Umi wired PPS coordinator":
+                role = "pump"
+            else:
                 continue
-            role = "pump"
         if role in found:
             raise ValueError(f"ambiguous {role} supplies")
         found[role] = path

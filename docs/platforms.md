@@ -51,10 +51,10 @@ python -X utf8 tools/collect_device.py --serial <设备序列号> --output local
 | --- | --- | --- |
 | Linux RAM bring-up / UEFI | `b53705e` / `9f4713db…69e32014` 启动、Fastboot→Android 往返 L3；UEFI 未测 | [本轮](archive/hardware/2026-11-10-umi-startup-usb-display-l3.md)；[PON](archive/hardware/2026-11-08-upstream-power-ramboot.md) |
 | UEFI → Linux | 设计中 | 无 L2/L3 |
-| CSOT 显示 / 触控 / USB | simpledrm/USB CDC/原生 DSI 点屏 L3；触控未实现 | [本轮](archive/hardware/2026-11-11-umi-native-dsi-first-l3.md) / [显示续修](archive/reviews/2026-11-10-mainline-interface-followup.md) |
+| CSOT 显示 / 触控 / USB | simpledrm、原生 DSI 与 USB CDC 通过 L3；90 Hz DCS 已发送，DRM 回调 89.846 Hz；物理扫描率与交接待验，触控未实现 | [显示与 FDT](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md) |
 | Debian 用户空间 | 计划 | 无 L2/L3 |
-| NFC / eSE | NCI L2；RAM 注册；FIRM 低后 CORE_RESET I²C `-ENXIO`；Android | [记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md) |
+| NFC / eSE | 初始化、实体 MIFARE 寻卡及关闭重开通过 L3。无卡停轮询地址 NACK 重试恢复。NDEF、PM、HCE/eSE 待验 | [本轮](archive/hardware/2026-11-19-umi-nfc-init-retry.md#无卡停止轮询地址-nack-恢复) |
 | 实体按键 | PWRKEY 电源、RESIN 音量下、GPIO6 音量上；L2 通过，真机事件/唤醒待验 | [记录](archive/reviews/2026-11-13-umi-keys-l2.md) |
 | GPU / Wi-Fi / UFS 持久化 | 设计中 | 无 L2/L3 |
-| 有线供电 / 旁路 | 最新HEAD固定PD L3无APDO、SOC6→80%，5→9V/2A→5V→旁路；9V单点2.405A超限，RISK-004待复核。PPS为旧证据，本轮未重测 | [固定PD](archive/hardware/2026-11-15-umi-wired-fixed-pd-l3.md) / [PPS](archive/hardware/2026-11-13-umi-wired-charge-l3-log-review.md) |
+| 有线供电 / 旁路 | 固定PD 9V/3A、ICL≤2A已测。`fb5f76c` 验证PPS BQ ADC、启停泵、71%交还SMB5、80%旁路和同源拔插。IRQ、热恢复、保护、温标及在线80/71回差待验 | [固定PD](archive/hardware/2026-11-17-umi-fixed-pd-bq25970-l3.md) / [PPS](archive/hardware/2026-11-19-umi-wired-pps-bq25970-l3.md) / [旁路](archive/hardware/2026-11-19-umi-wired-auto-bypass-l3.md) |
 | 无线接收 RX / 无线反充 TX | 未移植；独立于有线验收 | [NFC](NFC.md) |

@@ -9,6 +9,7 @@ PROFILE = ROOT / "kernel/power/tcpm_fixed_profile.inc"
 def transform(text, replace):
     text = replace(text, "\tstruct usb_power_delivery *selected_pd;",
                    "\tstruct usb_power_delivery *selected_pd;\n\tbool psy_selected_profile;\n"
+                   "\tbool psy_pd_link_dirty;\n"
                    "\tunsigned int psy_voltage_limit_mv;")
     # Apply the voltage ceiling to both fixed selection and PPS output.
     check = ("\n\t\tif (port->psy_voltage_limit_mv && "
@@ -30,6 +31,11 @@ def transform(text, replace):
     anchor = "static void tcpm_reset_port(struct tcpm_port *port)\n{"
     text = replace(text, anchor, PROFILE.read_text(encoding="utf-8") + "\n" + anchor +
                    "\n\ttcpm_psy_restore_profile(port);")
+    # Both standard selectors share port->lock; reject a conflicting Type-C
+    # write before the upstream setter changes capabilities or queues an AMS.
+    anchor = "\tif (port->selected_pd == pd)\n\t\tgoto unlock;"
+    text = replace(text, anchor, "\tret = tcpm_psy_check_pd(port, pd);\n"
+                   "\tif (ret)\n\t\tgoto unlock;\n\n" + anchor)
     text = replace(text, "static enum power_supply_property tcpm_psy_props[] = {",
                    "static enum power_supply_property tcpm_psy_props[] = {\n"
                    "\tPOWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT,")

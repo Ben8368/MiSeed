@@ -7,6 +7,7 @@
 #define MISEED_BQ25970_H
 
 struct regmap;
+#define BQ_IMAGE_VERIFY_ONLY BIT(8)
 struct bq25970_reg { unsigned int reg, mask, value; };
 struct bq25970_status {
 	unsigned int fault, latched, alarm, status, watchdog, control;

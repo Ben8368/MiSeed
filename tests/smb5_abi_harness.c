@@ -15,8 +15,8 @@
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO 0
 #define POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE 1
 struct smb5_chip {
- bool stopping, pps_owned, test_armed, test_active, inhibit;
- unsigned int saved_icl_ua;
+ bool stopping, pps_owned, inhibit, policy_icl_valid;
+ unsigned int saved_icl_ua, policy_icl_ua;
  int lock, status_change_work; unsigned int base; void *regmap;
 };
 struct power_supply { struct smb5_chip *chip; };
@@ -25,9 +25,13 @@ enum power_supply_property { POWER_SUPPLY_PROP_CURRENT_MAX,
 union power_supply_propval { int intval; };
 static struct smb5_chip *power_supply_get_drvdata(struct power_supply *p) {return p->chip;}
 static int writes, notifications, stop_error;
-static unsigned int raw_limit;
+static unsigned int raw_limit = 60;
+static int read_error, write_error;
+static int regmap_read(void *map, unsigned int reg, unsigned int *value) {
+ assert(reg==USBIN_CURRENT_LIMIT_CFG); *value=raw_limit; return read_error;
+}
 static int regmap_write(void *map, unsigned int reg, unsigned int value) {
- assert(reg==USBIN_CURRENT_LIMIT_CFG);raw_limit=value;writes++;return 0;
+ assert(reg==USBIN_CURRENT_LIMIT_CFG);if(write_error)return write_error;raw_limit=value;writes++;return 0;
 }
 static void power_supply_changed(struct power_supply *p) { notifications++; }
 static int smb5_inhibit_with_fallback(struct smb5_chip *c,const char *why) {return stop_error;}
@@ -43,13 +47,27 @@ int main(void) {
  v.intval=3000000;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_CURRENT_MAX,&v)==-EINVAL);
  c.pps_owned=true;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EBUSY);
  v.intval=1;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v)==-EBUSY);
- c.pps_owned=false;c.test_armed=true;c.test_active=true;stop_error=-EIO;
+ c.pps_owned=false;stop_error=-EIO;
  assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v)==-EIO);
- assert(c.inhibit && !c.test_armed && !c.test_active);
+ assert(c.inhibit);
  stop_error=0;assert(!smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v));
  v.intval=2;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v)==-EINVAL && c.inhibit);
  v.intval=0;assert(!smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v) && !c.inhibit);
- c.stopping=true;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v)==-EBUSY);
+ /* A larger request changes only the ceiling; hardware remains limited. */
+ raw_limit=20;c.policy_icl_ua=1000000;c.policy_icl_valid=true;
+ v.intval=3000000;
+ assert(!smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v));
+ assert(raw_limit==20 && c.policy_icl_ua==1000000 && c.saved_icl_ua==3000000);
+ v.intval=0;
+ assert(!smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v));
+ assert(raw_limit==0 && c.saved_icl_ua==0 && c.policy_icl_valid);
+ v.intval=1500000;read_error=-EIO;
+ assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EIO);
+ assert(c.saved_icl_ua==0 && raw_limit==0);read_error=0;
+ raw_limit=40;write_error=-EIO;
+ assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EIO);
+ assert(c.saved_icl_ua==0 && raw_limit==40);write_error=0;
+ v.intval=0;c.stopping=true;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,&v)==-EBUSY);
  assert(smb5_property_is_writable(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT));
  assert(!smb5_property_is_writable(&psy,POWER_SUPPLY_PROP_CURRENT_MAX));
  return 0;

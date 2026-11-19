@@ -19,7 +19,7 @@ def check(config, native=False):
         raise ValueError("resolved config lost the forced diagnostic command line")
     if native:
         for option in ("FB_DEVICE", "FRAMEBUFFER_CONSOLE", "DUMMY_CONSOLE", "DRM_SIMPLEDRM",
-                       "DRM_PANEL_XIAOMI_UMI_CSOT", "PRINTK_TIME"):
+                       "DRM_PANEL_XIAOMI_UMI_CSOT", "PRINTK_TIME", "EVENT_TRACING"):
             if "CONFIG_" + option + "=y" not in lines:
                 raise ValueError("native console/capture lost CONFIG_" + option)
         if "CONFIG_LOG_BUF_SHIFT=20" not in lines:

@@ -19,6 +19,11 @@ from rescue_test_support import RescueFixture
 
 
 class RescueConsoleTests(RescueFixture):
+    def test_readonly_display_vblank_command_is_advertised_and_dispatched(self):
+        source = (ROOT / "kernel/rescue_init.c").read_text(encoding="utf-8")
+        self.assertIn("display-vblank", source)
+        self.assertIn('measure_display_vblank();', source)
+
     def test_unbound_pon_refuses_without_reboot_syscall(self):
         result = subprocess.run([self.program, "bootloader-unbound"],
                                 capture_output=True, text=True, timeout=5)
@@ -68,15 +73,13 @@ class RescueConsoleTests(RescueFixture):
                 os.close(master)
 
 
-    def test_charge_commands_select_explicit_duration_and_stop(self):
+    def test_charge_stop_uses_standard_behaviour_without_private_controls(self):
         import pty
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             supply = root / "pm8150b-charger"
             supply.mkdir()
-            control = supply / "charge_test"
-            control.touch()
             behaviour = supply / "charge_behaviour"
             behaviour.touch()
             master, slave = pty.openpty()
@@ -88,16 +91,14 @@ class RescueConsoleTests(RescueFixture):
             try:
                 banner = self.read_until(master, b"miseed> ")
                 self.assertIn(b"read-only samples", banner)
-                self.assertIn(b"require a diagnostic kernel", banner)
+                self.assertIn(b"standard power_supply charge_behaviour", banner)
+                self.assertNotIn(b"charge-test", banner)
                 for command, value, message in (
-                    (b"charge-test\n", "arm", b"after 60 seconds"),
-                    (b"charge-test-10min\n", "arm-10min", b"after 600 seconds"),
-                    (b"charge-stop\n", "inhibit-charge", b"test cancelled"),
+                    (b"charge-stop\n", "inhibit-charge", b"Charging inhibited."),
                 ):
-                    control.write_text("")
                     os.write(master, command)
                     self.read_until(master, message)
-                    self.assertEqual((behaviour if command == b"charge-stop\n" else control).read_text(), value)
+                    self.assertEqual(behaviour.read_text(), value)
             finally:
                 process.terminate()
                 process.wait(timeout=5)
@@ -109,10 +110,16 @@ class RescueConsoleTests(RescueFixture):
             root = Path(directory)
             env = dict(os.environ, TEST_PPS_ROOT=str(root))
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            chip = root / "bq25970-15-0066"
+            chip.mkdir()
+            (chip / "model_name").write_text("BQ25970\n")
+            (chip / "charge_behaviour").write_text("do-not-write")
+            self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
+            self.assertEqual((chip / "charge_behaviour").read_text(), "do-not-write")
             first = root / "15-0066"
             first.mkdir()
             control = first / "charge_behaviour"
-            (first / "model_name").write_text("BQ25970\n")
+            (first / "model_name").write_text("Umi wired PPS coordinator\n")
             (first / "uevent").write_text("POWER_SUPPLY_STATUS=Charging\n")
             control.touch()
             self.assertIn("discovery=0", self.run_log("pps-discovery", env))
@@ -120,7 +127,7 @@ class RescueConsoleTests(RescueFixture):
             second = root / "16-0066"
             second.mkdir()
             (second / "charge_behaviour").touch()
-            (second / "model_name").write_text("BQ25970\n")
+            (second / "model_name").write_text("Umi wired PPS coordinator\n")
             control.write_text("keep")
             self.assertIn("discovery=-1", self.run_log("pps-discovery", env))
             self.assertEqual(control.read_text(), "keep")
@@ -134,7 +141,7 @@ class RescueConsoleTests(RescueFixture):
             pump = root / "pump0"
             pump.mkdir(parents=True)
             control = pump / "charge_behaviour"
-            (pump / "model_name").write_text("BQ25970\n")
+            (pump / "model_name").write_text("Umi wired PPS coordinator\n")
             (pump / "uevent").write_text("POWER_SUPPLY_STATUS=Charging\n")
             control.touch()
             supply = root / "pm8150b-charger"
@@ -153,7 +160,7 @@ class RescueConsoleTests(RescueFixture):
                 for command, value, message in (
                     (b"pps-status\n", "auto\n", b"POWER_SUPPLY_STATUS=Charging"),
                     (b"pps-stop\n", "inhibit-charge", b"PPS stopped; SMB5 fallback policy resumed."),
-                    (b"charge-stop\n", "inhibit-charge", b"test cancelled"),
+                    (b"charge-stop\n", "inhibit-charge", b"Charging inhibited."),
                 ):
                     control.write_text(value if command == b"pps-status\n" else "")
                     os.write(master, command)
@@ -171,7 +178,7 @@ class RescueConsoleTests(RescueFixture):
             root = Path(directory)
             (root / "15-0066").mkdir()
             (root / "15-0066/charge_behaviour").write_text("auto\n")
-            (root / "15-0066/model_name").write_text("BQ25970\n")
+            (root / "15-0066/model_name").write_text("Umi wired PPS coordinator\n")
             env = dict(os.environ, TEST_PPS_ROOT=str(root), TEST_PPS_READ_FAIL="1")
             result = subprocess.run([self.program, "pps-discovery"], env=env, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 23)

@@ -10,6 +10,30 @@ The generic reference panel driver is not copied. MiSeed uses a fixed variant
 DRM panel with standard backlight, without arbitrary DT commands or register sysfs.
 Reference source reports are not MiSeed hardware verification.
 
+90Hz timing/select data: colorgarden/umi-mainline commit
+`531c16b9e50f0351ad0b95051c13a705ad8e223b`, contributors including color.
+`dts/xiaomi-umi-panels.dtsi` (BSD-3-Clause) supplies H 16/8/8, V 4/4/8,
+90Hz and active-high GPIO50. Its unchanged common DTS also leaves GPIO50 usable.
+`patches/panel-xiaomi-umi.c` (GPL-2.0-only) describes a vendor ~128ms
+post-init wait before selecting 90Hz; the reference implementation shortened
+it to 20ms. MiSeed uses the vendor delay pending L3 confirmation.
+The fixed native mode now uses these timings (235788kHz, 1112x2356 totals).
+MiSeed requires the GPIO and propagates acquisition/direction errors; it does
+not import the reference private sysfs, arbitrary DT command data interface,
+optional-error fallback or unrelated touch/power changes. This is a single
+90Hz mode, not runtime 60/90 switching. GPIO50 high is not a measurement.
+Original attribution above still applies to common commands and DSC data.
+
+The panel-side 90Hz B4/2F/26 tuples come from the Xiaomi/LineageOS
+`android_kernel_xiaomi_sm8250` commit `71b13e62f057a649b77fe4062feb73ee72ad609c`,
+`arch/arm64/boot/dts/vendor/qcom/dsi-panel-j2-mp-42-02-0b-dsc-cmd.dtsi`,
+`timing@1` on-command. The source has no file license override; kernel COPYING
+states GPL v2 only (syscall note does not apply to this kernel-internal data).
+The tuples live in a separate GPL-2.0-only header. The preceding page selection
+and subsequent sleep-out retain their order. No LOS driver, private binding,
+dynamic modes, DSI clock overrides or unverified DCS readbacks imported.
+Exact hashes and attribution are in sources.lock.json. L3 remains separate.
+
 Uncertain physical-dimension units are not imported. Panel rails remain inherited;
 this is not independent cold-power sequencing. Default rescue stays simpledrm;
 native display is opt-in. Variant identity, reset/DSC/brightness, suspend/resume

@@ -188,6 +188,7 @@
 		clock-request-pins {
 			pins = "gpio7";
 			function = "gpio";
+			output-disable; /* NFCC requests the clock; AP must not drive CLKREQ. */
 			drive-strength = <2>;
 			bias-pull-up;
 		};

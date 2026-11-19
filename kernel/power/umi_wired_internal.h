@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-#ifndef MISEED_UMI_SMB5_H
-#define MISEED_UMI_SMB5_H
+#ifndef MISEED_UMI_WIRED_INTERNAL_H
+#define MISEED_UMI_WIRED_INTERNAL_H
+/* Private to qcom_pm8150b_charger.o; never exported to another module. */
 struct power_supply;
 /* Exclusive ownership; a successful release resumes the SMB5 policy worker. */
 int umi_smb5_claim(struct power_supply *psy, int *stage);

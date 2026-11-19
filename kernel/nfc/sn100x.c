@@ -16,12 +16,12 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/mutex.h>
 #include <linux/pm.h>
 #include <net/nfc/nci_core.h>
 
 #define SN100X_FRAME_MAX (NCI_CTRL_HDR_SIZE + U8_MAX)
-#define SN100X_RESET_WRITE_ATTEMPTS 3
 #define SN100X_PROTOCOLS (NFC_PROTO_JEWEL_MASK | NFC_PROTO_MIFARE_MASK | \
 			 NFC_PROTO_FELICA_MASK | NFC_PROTO_ISO14443_MASK | \
 			 NFC_PROTO_ISO14443_B_MASK)
@@ -36,6 +36,8 @@ struct sn100x {
 	bool opened;
 	bool irq_enabled;
 	bool suspended;
+	bool geni_address_nack;
+	bool retry_first_reset;
 	bool reset_pending;
 	bool reset_acked;
 	bool reset_confirmed;
@@ -54,59 +56,7 @@ static void sn100x_fault(struct sn100x *phy, int error)
 			    "transport stopped: %d; VEN retained\n", error);
 }
 
-static int sn100x_read(struct sn100x *phy, struct sk_buff **frame)
-{
-	struct sk_buff *skb;
-	u8 length;
-	int ret;
-
-	*frame = NULL;
-	/* I2C buffers must be DMA safe, including the header. */
-	skb = alloc_skb(SN100X_FRAME_MAX, GFP_KERNEL);
-	if (!skb)
-		return -ENOMEM;
-	ret = i2c_master_recv(phy->client, skb_put(skb, NCI_CTRL_HDR_SIZE),
-			      NCI_CTRL_HDR_SIZE);
-	if (ret != NCI_CTRL_HDR_SIZE) {
-		dev_err_ratelimited(&phy->client->dev,
-				    "I2C NCI header read failed: %d\n", ret);
-		goto failed;
-	}
-	length = skb->data[2];
-	if (length) {
-		ret = i2c_master_recv(phy->client, skb_put(skb, length), length);
-		if (ret != length) {
-			dev_err_ratelimited(&phy->client->dev,
-					    "I2C NCI payload read failed (%u bytes): %d\n",
-					    length, ret);
-			goto failed;
-		}
-	}
-	*frame = skb;
-	return 0;
-failed:
-	kfree_skb(skb);
-	return ret < 0 ? ret : -EBADMSG;
-}
-
-/* Observe reset completion for safe close; NCI core owns the protocol. */
-static void sn100x_reset_response(struct sn100x *phy, const struct sk_buff *skb)
-{
-	const u8 *p = skb->data;
-
-	if (!phy->reset_pending)
-		return;
-	if (skb->len >= 4 && p[0] == 0x40 && p[1] == 0 && p[3] == 0) {
-		if (skb->len == 4)
-			phy->reset_acked = true; /* NCI 2.x also requires NTF. */
-		else if (skb->len == 6 && (p[4] & 0xf0) == 0x10)
-			phy->reset_confirmed = true;
-	} else if (phy->reset_acked && skb->len >= 12 &&
-		   p[0] == 0x60 && p[1] == 0 && p[3] == 2 &&
-		   (p[5] & 0xf0) == 0x20 && p[7] == skb->len - 8) {
-		phy->reset_confirmed = true;
-	}
-}
+#include "sn100x-frame.h"
 
 static irqreturn_t sn100x_irq(int irq, void *data)
 {
@@ -132,7 +82,6 @@ out:
 static int sn100x_open(struct nci_dev *ndev)
 {
 	struct sn100x *phy = nci_get_drvdata(ndev);
-	int firm_before, ven_before, firm_after, ven_after;
 	int ret;
 
 	mutex_lock(&phy->lock);
@@ -149,30 +98,29 @@ static int sn100x_open(struct nci_dev *ndev)
 				    ret);
 		goto out;
 	}
-	firm_before = gpiod_get_value_cansleep(phy->firmware);
-	ven_before = gpiod_get_value_cansleep(phy->enable);
-	dev_info(&phy->client->dev,
-		 "open GPIO readback before setup: FIRM=%d VEN=%d\n",
-		 firm_before, ven_before);
-	/* Normal NCI mode is FIRM low; never issue firmware-download commands. */
+	/* Require logical normal mode before enabling the shared NFCC/eSE. */
 	ret = gpiod_direction_output(phy->firmware, 0);
+	if (!ret) {
+		ret = gpiod_get_value_cansleep(phy->firmware);
+		if (ret > 0)
+			ret = -EIO;
+	}
 	if (ret) {
 		dev_err_ratelimited(&phy->client->dev,
-				    "failed to set FIRM low: %d\n", ret);
+				    "FIRM low not confirmed: %d\n", ret);
 		goto out;
 	}
-	firm_after = gpiod_get_value_cansleep(phy->firmware);
-	dev_info(&phy->client->dev, "open GPIO readback after FIRM low: %d\n",
-		 firm_after);
 	ret = gpiod_direction_output(phy->enable, 1);
+	if (!ret) {
+		ret = gpiod_get_value_cansleep(phy->enable);
+		ret = ret == 1 ? 0 : ret < 0 ? ret : -EIO;
+	}
 	if (ret) {
 		dev_err_ratelimited(&phy->client->dev,
-				    "failed to raise shared VEN: %d\n", ret);
+				    "shared VEN high not confirmed: %d\n", ret);
 		goto out;
 	}
-	ven_after = gpiod_get_value_cansleep(phy->enable);
-	dev_info(&phy->client->dev, "open GPIO readback after VEN high: %d\n",
-		 ven_after);
+	dev_info(&phy->client->dev, "open GPIO confirmed: FIRM=0 VEN=1\n");
 	/* Existing SN100 downstream power-on settling time; no VEN reset. */
 	usleep_range(10000, 15000);
 	phy->opened = true;
@@ -205,65 +153,6 @@ static int sn100x_close(struct nci_dev *ndev)
 	return 0;
 }
 
-static int sn100x_send(struct nci_dev *ndev, struct sk_buff *skb)
-{
-	struct sn100x *phy = nci_get_drvdata(ndev);
-	unsigned int attempts = 1;
-	int ret;
-
-	mutex_lock(&phy->lock);
-	if (phy->fault) {
-		ret = phy->fault;
-	} else if (!phy->opened || phy->suspended) {
-		ret = -ENETDOWN;
-	} else if (skb->len < NCI_CTRL_HDR_SIZE ||
-		   skb->len > SN100X_FRAME_MAX ||
-		   skb->len != NCI_CTRL_HDR_SIZE + skb->data[2]) {
-		ret = -EINVAL;
-	} else {
-		phy->reset_pending = skb->len == 4 && skb->data[0] == 0x20 &&
-				     skb->data[1] == 0;
-		phy->reset_acked = false;
-		phy->reset_confirmed = false;
-		ret = i2c_master_send(phy->client, skb->data, skb->len);
-		/*
-		 * The Umi NQ transport retries CORE_RESET NACKs while the NFCC
-		 * leaves standby. Keep this bounded and reset-only: VEN is shared
-		 * with eSE, and arbitrary NCI commands must not be replayed.
-		 */
-		while (phy->reset_pending && ret == -ENXIO &&
-		       attempts < SN100X_RESET_WRITE_ATTEMPTS) {
-			dev_dbg(&phy->client->dev,
-				"CORE_RESET NACK; standby retry %u/%u\n",
-				attempts, SN100X_RESET_WRITE_ATTEMPTS - 1);
-			usleep_range(1000, 1100);
-			attempts++;
-			ret = i2c_master_send(phy->client, skb->data, skb->len);
-		}
-		if (ret == skb->len) {
-			if (phy->reset_pending && attempts > 1)
-				dev_info(&phy->client->dev,
-					 "CORE_RESET accepted after %u standby retries\n",
-					 attempts - 1);
-			else if (phy->reset_pending)
-				dev_info(&phy->client->dev,
-					 "NCI CORE_RESET I2C write accepted (%u bytes)\n",
-					 skb->len);
-			ret = 0;
-		} else {
-			dev_err_ratelimited(&phy->client->dev,
-					    "I2C NCI write failed (%u bytes, %u attempts): %d\n",
-					    skb->len, attempts, ret);
-			if (ret >= 0)
-				ret = -EREMOTEIO;
-			sn100x_fault(phy, ret);
-		}
-	}
-	mutex_unlock(&phy->lock);
-	kfree_skb(skb);
-	return ret;
-}
-
 static const struct nci_ops sn100x_ops = {
 	.open = sn100x_open,
 	.close = sn100x_close,
@@ -286,6 +175,10 @@ static int sn100x_probe(struct i2c_client *client)
 	if (!phy)
 		return -ENOMEM;
 	phy->client = client;
+	/* The paired GENI backport distinguishes address and data NACKs. */
+	phy->geni_address_nack = client->adapter->dev.parent &&
+		of_device_is_compatible(client->adapter->dev.parent->of_node, "qcom,geni-i2c");
+	phy->retry_first_reset = true;
 	mutex_init(&phy->lock);
 	/* Acquiring descriptors must not reset the shared NFCC/eSE supply. */
 	phy->enable = devm_gpiod_get(dev, "enable", GPIOD_ASIS);
@@ -294,6 +187,10 @@ static int sn100x_probe(struct i2c_client *client)
 	phy->firmware = devm_gpiod_get(dev, "firmware", GPIOD_ASIS);
 	if (IS_ERR(phy->firmware))
 		return dev_err_probe(dev, PTR_ERR(phy->firmware), "FIRM GPIO\n");
+	/* Sample after default pinctrl, before this driver drives FIRM. */
+	dev_info(dev, "probe GPIO sample: FIRM=%d VEN=%d (negative = unavailable)\n",
+		 gpiod_get_value_cansleep(phy->firmware),
+		 gpiod_get_value_cansleep(phy->enable));
 	/* Hold normal-mode selection from probe; shared VEN is left untouched. */
 	ret = gpiod_direction_output(phy->firmware, 0);
 	if (ret)

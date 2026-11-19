@@ -47,24 +47,72 @@ void smb5_thermal_limit(struct smb5_chip *chip, int temp)
  * Do not compare a live ADC sample against a just-lowered thermal ICL:
  * those observations are not simultaneous and no settling model is qualified.
  */
-static int smb5_fixed_monitor(struct smb5_chip *chip, int contract_ua)
+static void smb5_fixed_fault(struct smb5_chip *chip, int ret)
+{
+	int stop_ret, suspend_ret;
+
+	chip->pps_fault = true;
+	chip->enabled = false;
+	/* Attempt both stops even if battery inhibition fails. Never feed WD. */
+	stop_ret = smb5_inhibit_with_fallback(chip, "fixed-pd-fault");
+	suspend_ret = regmap_update_bits(chip->regmap,
+		chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
+	dev_err(chip->dev, "miseed-fixed-pd fault rc=%d stop_rc=%d suspend_rc=%d\n",
+		ret, stop_ret, suspend_ret);
+}
+
+/* All callers hold chip->lock. Preserve every sample, including the one
+ * returned through power_supply; protection must not depend on which reader
+ * happened to observe an excursion between worker polls.
+ */
+static int smb5_fixed_check_current(struct smb5_chip *chip, int contract_ua,
+				  int measured_ua, const char *source)
 {
 	unsigned int icl_ua;
-	int measured_ua, ret;
+	int ret;
 
 	ret = smb5_get_current_limit(chip, &icl_ua);
 	if (ret)
 		return ret;
-	ret = smb5_get_input_current(chip, &measured_ua);
-	if (ret)
-		return ret;
 	if (icl_ua > (unsigned int)contract_ua || measured_ua > contract_ua) {
 		dev_err(chip->dev,
-			"miseed-fixed-pd input-overlimit measured_ua=%d icl_ua=%u contract_ua=%d\n",
-			measured_ua, icl_ua, contract_ua);
+			"miseed-fixed-pd input-overlimit measured_ua=%d icl_ua=%u contract_ua=%d source=%s\n",
+			measured_ua, icl_ua, contract_ua, source);
 		return -EOVERFLOW;
 	}
+	dev_info(chip->dev,
+		 "miseed-fixed-pd sample measured_ua=%d icl_ua=%u contract_ua=%d source=%s\n",
+		 measured_ua, icl_ua, contract_ua, source);
 	return 0;
+}
+
+int smb5_get_input_current_now(struct smb5_chip *chip, int *current_ua)
+{
+	int contract_ua, ret, check_ret = 0;
+
+	mutex_lock(&chip->lock);
+	ret = smb5_get_input_current(chip, current_ua);
+	if (!chip->pps_owned && !chip->pd_transition && !chip->pps_fault &&
+	    !chip->stopping && chip->pd_limit_uv) {
+		/* The source may renegotiate between worker polls. */
+		check_ret = ret ? ret : smb5_pd_get(chip,
+			POWER_SUPPLY_PROP_CURRENT_NOW, &contract_ua);
+		if (!check_ret && (contract_ua <= 0 || contract_ua > UMI_CHARGE_USB_ICL_UA))
+			check_ret = -EPROTO;
+		if (!check_ret)
+			check_ret = smb5_fixed_check_current(chip, contract_ua,
+				*current_ua, "power_supply");
+		if (check_ret)
+			smb5_fixed_fault(chip, check_ret);
+	}
+	/* Queue before dropping the lock: teardown sets stopping under this
+	 * same lock, then cancels work. A late queue after unlock could escape it.
+	 */
+	if (check_ret)
+		mod_delayed_work(system_wq, &chip->status_change_work, 0);
+	mutex_unlock(&chip->lock);
+	/* A successfully read overlimit is still the original ADC value. */
+	return ret;
 }
 
 int smb5_fixed_update(struct smb5_chip *chip)
@@ -91,7 +139,8 @@ int smb5_fixed_update(struct smb5_chip *chip)
 		return 0;
 	}
 	/* PPS-capable sources keep the safe profile for pump entry/exit at 5 V.
-	 * Only the no-APDO fixed-PD path selects the 9 V/2 A profile.
+	 * Only the no-APDO fixed-PD path selects the 9 V/3 A contract profile;
+	 * SMB5's 18 W stage and 2 A ICL still limit actual wired input power.
 	 */
 	fast = type == POWER_SUPPLY_USB_TYPE_PD && chip->power_stage == 1 &&
 		!chip->full_bypass && !chip->inhibit && !chip->cooling_state && !chip->pps_fault &&
@@ -136,18 +185,26 @@ verify:
 		ret = smb5_pd_get(chip, POWER_SUPPLY_PROP_CURRENT_NOW, &input_ua);
 	if (!ret && (online != 1 || (voltage != 5000000 && voltage != 9000000) ||
 		voltage > limit.intval || input_ua <= 0 ||
-		input_ua > (voltage == 9000000 ? 2000000 : UMI_CHARGE_USB_ICL_UA)))
+		input_ua > UMI_CHARGE_USB_ICL_UA))
 		ret = -EPROTO;
+	/* Loaded PM8150B USBIN has the same erratum as the public getter.
+	 * The common selector uses MID while loaded, USBIN only when suspended.
+	 */
 	if (!ret)
-		ret = smb5_get_iio_chan(chip, chip->usb_in_v_chan, &input);
+		ret = smb5_get_input_voltage(chip, &input);
 	/* Reuse the existing no-load settle tolerance, not a new cable model. */
 	if (!ret && chip->pd_transition && (input <= 0 || abs(input - voltage) > 200000))
 		ret = -ERANGE;
 	/* A transition is deliberately unloaded; apply its new ICL before the
 	 * worker restores input. Only monitor the previous limit under load.
 	 */
-	if (!ret && !chip->pd_transition)
-		ret = smb5_fixed_monitor(chip, input_ua);
+	if (!ret && !chip->pd_transition) {
+		int measured_ua;
+
+		ret = smb5_get_input_current(chip, &measured_ua);
+		if (!ret)
+			ret = smb5_fixed_check_current(chip, input_ua, measured_ua, "worker");
+	}
 	if (ret)
 		goto failed;
 	if (chip->pd_transition) {
@@ -166,19 +223,6 @@ verify:
 failed:
 	if (ret == -EAGAIN && time_before(jiffies, chip->pd_deadline))
 		return ret;
-	chip->pps_fault = true; /* No automatic charging after an unverified shift. */
-	chip->enabled = false;
-	/* A fixed-input fault also forbids bypass system input. Attempt both
-	 * stops even if the first fails; do not feed the watchdog on this path.
-	 */
-	{
-		int stop_ret = smb5_inhibit_with_fallback(chip, "fixed-pd-fault");
-		int suspend_ret = regmap_update_bits(chip->regmap,
-			chip->base + USBIN_CMD_IL, USBIN_SUSPEND_BIT, USBIN_SUSPEND_BIT);
-
-		dev_err(chip->dev,
-			"miseed-fixed-pd fault rc=%d stop_rc=%d suspend_rc=%d\n",
-			ret, stop_ret, suspend_ret);
-	}
+	smb5_fixed_fault(chip, ret);
 	return ret == -EAGAIN ? -ETIMEDOUT : ret;
 }

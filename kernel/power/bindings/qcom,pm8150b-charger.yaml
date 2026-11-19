@@ -26,11 +26,12 @@ properties:
       - const: wdog-bark
       - const: usbin-icl-change
   io-channels:
-    maxItems: 2
+    maxItems: 3
   io-channel-names:
     items:
       - const: usb_in_i_uv
       - const: usb_in_v_div_16
+      - const: mid_chg_div6
   monitored-battery: true
   power-supplies:
     maxItems: 1

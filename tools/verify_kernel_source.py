@@ -11,30 +11,36 @@ import subprocess
 from pathlib import Path
 
 if __package__:
+    from . import apply_adc5_fix as adc5
     from . import apply_pd_diagnostics as pd
     from .apply_power_port import RPMHPD_KCONFIG_RULE
     from .source_layout import POWER_FILES, POWER_RULES
     from .apply_display_port import HOST_TRANSFORMS
+    from .apply_geni_nack_diagnostics import PATH as GENI_NACK_PATH, transform as transform_geni_nack
 else:
+    import apply_adc5_fix as adc5
     import apply_pd_diagnostics as pd
     from apply_power_port import RPMHPD_KCONFIG_RULE
     from source_layout import POWER_FILES, POWER_RULES
     from apply_display_port import HOST_TRANSFORMS
+    from apply_geni_nack_diagnostics import PATH as GENI_NACK_PATH, transform as transform_geni_nack
 
 MAKEFILE = "arch/arm64/boot/dts/qcom/Makefile"
 GENERATED = {
     "drivers/soc/qcom/umi_abl_ubwc.h",
     "drivers/gpu/drm/panel/panel-xiaomi-umi-csot.c",
     "drivers/gpu/drm/panel/umi_csot_commands.h",
+    "drivers/gpu/drm/panel/umi_csot_rate_90.h",
     "drivers/gpu/drm/panel/umi-csot.Kconfig",
     "arch/arm64/boot/dts/qcom/umi-native-dsi.dtsi",
     "Documentation/devicetree/bindings/display/panel/xiaomi,umi-csot.yaml",
-    "drivers/nfc/sn100x.c",
+    "drivers/nfc/sn100x.c", "drivers/nfc/sn100x-frame.h",
     "drivers/nfc/sn100x.Kconfig",
     "Documentation/devicetree/bindings/net/nfc/nxp,sn100t.yaml",
     "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-fg.yaml",
     "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-charger.yaml",
     "Documentation/devicetree/bindings/power/supply/xiaomi,umi-bq25970.yaml",
+    "Documentation/devicetree/bindings/power/supply/ti,bq25970.yaml",
     ".miseed-source-revision",
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
@@ -47,7 +53,8 @@ GENERATED = {
     "drivers/power/supply/bq25970.c",
     "drivers/power/supply/bq25970.h",
     "drivers/power/supply/umi_pps_policy.h",
-    "drivers/power/supply/umi_smb5.h",
+    "drivers/power/supply/umi_wired_internal.h",
+    "drivers/power/supply/umi_wired_driver.c",
     "drivers/power/supply/umi_smb5_diagnostics.h",
 } | {"drivers/power/supply/" + name for name in POWER_FILES}
 OVERLAY_RULES = {
@@ -126,9 +133,17 @@ def verify_source(repository, revision, source):
             actual = digest.hexdigest()
             if name in patched_pd and path.read_bytes() == patched_pd[name]:
                 continue
+            if actual != oid and name == adc5.PATH:
+                original = git(repository, "show", revision + ":" + name)
+                if path.read_bytes() == adc5.transform(original):
+                    continue
             if actual != oid and name in HOST_TRANSFORMS:
                 original = git(repository, "show", revision + ":" + name)
                 if path.read_bytes() == HOST_TRANSFORMS[name](original):
+                    continue
+            if actual != oid and name == GENI_NACK_PATH:
+                original = git(repository, "show", revision + ":" + name)
+                if path.read_bytes() == transform_geni_nack(original):
                     continue
             if actual != oid and name == "drivers/pmdomain/qcom/Kconfig":
                 original = git(repository, "show", revision + ":" + name).decode("utf-8")

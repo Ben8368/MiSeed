@@ -1,19 +1,24 @@
 # 当前状态
 
-2026-11-15｜`codex/linux-standard-interfaces`；收尾基线 `f349fec9`。固定PD输入监测/旁路故障锁已修，L1/L2过、L3待验，见[记录](archive/reviews/2026-11-15-fixed-pd-input-monitor.md)。
+2026-11-18｜[真机复验](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md#csot-90hz-命令与-geni-阶段取证复验)：CSOT 90Hz命令已发，DRM回调89.846Hz、物理Hz待量；采集通过，FDT根身份仍FAIL，待EFI交接。
 
-WP10：SN100T/NCI 镜像L2、reset/init、RF target、close/reopen L3过；QUP1=1MHz，CORE_RESET有界重试。普通卡仅发现target；NDEF/PM/HCE/eSE未验。禁共享VEN；复位/NACK待查，见[记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)。
+PR7：L0–L2过，固定PD L3部分过，独立复核未闭。[记录](archive/reviews/2026-11-17-pr7-coderabbit.md)
 
-有线PPS快充：精确 HEAD `05c4b744` 的既有 L3，SOC11–65% PPS≤3A 后退出续5V，PPS峰值14.61W，非30W；本轮未重测。最新固定PD L3与限流异常见[本轮记录](archive/hardware/2026-11-15-umi-wired-fixed-pd-l3.md)。80%在线旁路已有本轮固定PD证据；断电回差、硬件保护/温标仍开放；无线RX/TX独立。
+固定PD `61c495d`：无APDO，71%转5V、80%旁路，输入峰1.986A/ICL≤2A；热恢复待验。[L3](archive/hardware/2026-11-17-umi-fixed-pd-bq25970-l3.md)
 
-有线 SMB5 bit5 误判已修；fullon 后 10 组 FG/SMB5 均 Charging，RAM启动/Android回退L3通过，见[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)。
+WP10 11-19 实体 MIFARE 寻卡及重开通过，无卡停轮询地址 NACK 重试恢复。[L3](archive/hardware/2026-11-19-umi-nfc-init-retry.md#无卡停止轮询地址-nack-恢复)
 
-显示：启动白/彩条仍现，维护者补报可能新增中间横条，接受本PR非阻断延期；稳定文字及1500既有通过。三种接管实验均撤回，未上机追踪已移除，手机已回Android16，见[续查](archive/reviews/2026-11-15-native-display-framebuffer.md)。首帧/PM开放。
+有线PPS `fb5f76c`：BQ ADC及启停过、71%转固定5V续至78%；IRQ/保护/温标/旁路回差开放。[L3](archive/hardware/2026-11-19-umi-wired-pps-bq25970-l3.md)
 
-旧旁路、PD/PPS 恢复及 watchdog/热保护L3见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)；温标/保护开放，无线未移植。
+同镜像80%旁路及同源拔插恢复通过，两段约2W；在线80/71回差待验。[L3](archive/hardware/2026-11-19-umi-wired-auto-bypass-l3.md)
+
+SMB5 bit5修复，FG/SMB5 10组Charging、Android回退过。[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)
+
+
+旧旁路、PD/PPS恢复及watchdog/热保护见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
 
 ## 近期优先级
 
-1. WP10：验证只读 NDEF、PM、失败恢复并评估 eSE；Debian 用户态属后续阶段。NACK 时采集控制器阶段；禁共享 VEN 复位。
-2. 显示SMMU交接/独立供电PM；有线温标保护L3；后续Debian及无线RX/TX。
-3. RISK-004：保护/温标、错误诱因、独立复核、精确 HEAD CI；时钟见[记录](archive/reviews/2026-11-10-pd-pps-detach-clock.md)。
+1. 固定PD热恢复与低功率、BQ IRQ、保护/温标、旁路回差及独立复核、精确HEAD CI（RISK-004）。
+2. WP10 验 NDEF 和 PM，补地址 NACK 波形。eSE 按[回调和 VEN 门槛](archive/research/2026-11-18-sn100t-ese-ven.md)补证，禁共享 VEN 复位。
+3. 显示刷新率矛盾、SMMU/PM；Debian与无线RX/TX。

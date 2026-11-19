@@ -45,8 +45,10 @@ static void test_fault_paths(void)
    assert(c.state==PPS_FAULT);
   assert(!(regs[0x0c]&BIT(7)) && !claim_owned && wd_writes==prior_wd_writes);
  }
- /* No enable after failed negotiation, missing APDO, or exclusive claim. */
- reset();pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD;
+ /* No enable after a source withdraws/rejects PPS after advertising APDO,
+  * or when the exclusive claim is unavailable.
+  */
+ reset();pd.prop[POWER_SUPPLY_PROP_USB_TYPE]=POWER_SUPPLY_USB_TYPE_PD_PPS;
  fail_pps_unsupported=1;begin();
  assert(c.state==PPS_FAULT && !claim_owned && !c.pps && !fixed_count &&
         !pps_activations && !enable_count);

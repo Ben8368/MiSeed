@@ -63,8 +63,10 @@
 				     <0x2 0x16 0x1 IRQ_TYPE_EDGE_RISING>,
 				     <0x2 0x13 0x7 IRQ_TYPE_EDGE_RISING>;
 			interrupt-names = "usbin-plugin", "bat-ov", "wdog-bark", "usbin-icl-change";
-			io-channels = <&pm8150b_adc ADC5_USB_IN_I>, <&pm8150b_adc ADC5_USB_IN_V_16>;
-			io-channel-names = "usb_in_i_uv", "usb_in_v_div_16";
+			io-channels = <&pm8150b_adc ADC5_USB_IN_I>,
+				      <&pm8150b_adc ADC5_USB_IN_V_16>,
+				      <&pm8150b_adc ADC5_MID_CHG_DIV6>;
+			io-channel-names = "usb_in_i_uv", "usb_in_v_div_16", "mid_chg_div6";
 			monitored-battery = <&umi_battery>;
 			qcom,fuel-gauge = <&umi_fg>;
 			power-supplies = <&pm8150b_typec>;
@@ -84,5 +86,11 @@
 		reg = <ADC5_USB_IN_V_16>;
 		qcom,pre-scaling = <1 16>;
 		label = "usb_in_v_div_16";
+	};
+	/* LOS Umi 71b13e62: MID_CHG_DIV6 and its exact 1:6 prescale. */
+	channel@1e {
+		reg = <ADC5_MID_CHG_DIV6>;
+		qcom,pre-scaling = <1 6>;
+		label = "mid_chg_div6";
 	};
 };

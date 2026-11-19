@@ -19,6 +19,7 @@ struct umi_csot {
 	struct mipi_dsi_device *dsi;
 	struct drm_dsc_config dsc;
 	struct gpio_desc *reset;
+	struct gpio_desc *disprate;
 	struct mutex lock;
 	bool prepared;
 };
@@ -27,9 +28,10 @@ static struct umi_csot *to_csot(struct drm_panel *p)
 	return container_of(p, struct umi_csot, panel);
 }
 static const struct drm_display_mode umi_csot_mode = {
-	.clock = 235655,
+	/* H 16/8/8, V 4/4/8: 1112 * 2356 * 90 / 1000 kHz. */
+	.clock = 235788,
 	.hdisplay = 1080, .hsync_start = 1096, .hsync_end = 1104, .htotal = 1112,
-	.vdisplay = 2340, .vsync_start = 2940, .vsync_end = 2972, .vtotal = 3532,
+	.vdisplay = 2340, .vsync_start = 2344, .vsync_end = 2348, .vtotal = 2356,
 	.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 };
 static int umi_csot_prepare(struct drm_panel *panel)
@@ -68,9 +70,21 @@ static int umi_csot_prepare(struct drm_panel *panel)
 		if (cmd->delay_ms)
 			msleep(cmd->delay_ms);
 	}
+	/* Vendor timing waits ~128ms after on-sequence before 90Hz select. */
+	msleep(128);
+	ret = gpiod_direction_output(c->disprate, 1);
+	if (ret)
+		goto reset;
+	ret = gpiod_get_value_cansleep(c->disprate);
+	if (ret != 1) {
+		ret = ret < 0 ? ret : -EIO;
+		goto reset;
+	}
 	c->prepared = true;
-	dev_info(&c->dsi->dev, "CSOT prepared: DSC and %zu DCS commands complete\n",
-		 ARRAY_SIZE(umi_csot_init));
+	dev_info(&c->dsi->dev,
+		 "CSOT prepared: mode=%dx%d@%d Hz clock=%d kHz, 90 Hz DCS programmed, rate_select=1 (not measured scanout)\n",
+		 umi_csot_mode.hdisplay, umi_csot_mode.vdisplay,
+		 drm_mode_vrefresh(&umi_csot_mode), umi_csot_mode.clock);
 	ret = 0;
 	goto out;
 reset:
@@ -152,6 +166,9 @@ static int umi_csot_probe(struct mipi_dsi_device *dsi)
 	c->reset = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
 	if (IS_ERR(c->reset))
 		return dev_err_probe(dev, PTR_ERR(c->reset), "reset GPIO unavailable\n");
+	c->disprate = devm_gpiod_get(dev, "disprate", GPIOD_ASIS);
+	if (IS_ERR(c->disprate))
+		return dev_err_probe(dev, PTR_ERR(c->disprate), "refresh select GPIO unavailable\n");
 	mipi_dsi_set_drvdata(dsi, c);
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;

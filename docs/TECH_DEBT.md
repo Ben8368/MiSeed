@@ -1,6 +1,6 @@
 # 技术债
 
-只记有意保留的实现妥协；未知假设归 RISK_REGISTER。关闭后按 GOVERNANCE 归档。
+只记实现妥协；未知归 RISK_REGISTER，关闭后按 GOVERNANCE 归档。
 
 ## TD-001：构建环境闭包不完整（P2，2026-11-05）
 
@@ -12,7 +12,7 @@
 
 ## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：原 GPIO-free RAM 诊断禁用 TLMM。PPS 测试 profile 按 LOS 接线只开放 UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68，其余仍保留；原生 DSI profile 另开放 GPIO12 复位，待 L3；GPIO8 暂未接入。下游 TLMM overlay 继续隔离；来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。本轮掩码 L2、新镜像 L3 待验；旧 Fastboot 证据见[记录](archive/hardware/2026-11-07-direct-fastboot.md)。
+取舍：原 GPIO-free RAM 诊断禁用 TLMM。有线PPS按LOS接线开放UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68；NCI另开专用脚。原生DSI另开GPIO12复位；[90Hz移植](archive/research/2026-11-16-display-90hz-port.md)再开GPIO50选择，新增脚L3待验。GPIO8未接入，下游TLMM overlay仍隔离。旧来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 
@@ -24,9 +24,9 @@
 
 ## TD-004：有线充电诊断与私有协调（P1，2026-11-10；WP9）
 
-取舍：有线PPS保留umi_smb5_*互锁、固定5V复充阶段及故障锁；新增TCPM标准input_voltage_limit扩展与固定PD有序切档，见[审查](archive/reviews/2026-11-13-wired-policy.md)。BQ持续I²C失败仍阻塞卸载/关机。
+偿还：[BQ解耦](archive/reviews/2026-11-17-bq25970-decouple.md)独立模块/电源属性，SMB5/PPS互锁保留；板级旧DT/auxiliary与寄存器镜像暂留。TCPM限压仍本地，持续I²C失败仍阻塞退出。
 
-偿还：WP9闭合有界失败回退、watchdog到期/恢复L3、切档/热暂停/复充生命周期专项复核；TCPM提案需子系统评审，Debian及其他板型待验。
+退出：WP9核实0x2b/watchdog，迁移语义配置并撤旧DT桥；有界退出、watchdog/生命周期L3及独立复核通过；芯片API/binding与TCPM提案经子系统评审。Debian/其他板型待验。
 
 ## TD-005：有线温控模型与验收（P1，2026-11-10；WP9/WP6）
 
@@ -40,10 +40,10 @@
 
 ## TD-007：本地驱动 binding 与 DT 语义（P1，2026-11-10；WP2/WP9/WP10）
 
-源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线 BQ IRQ 删除 TLMM 不支持的 input-enable，输入方向由 IRQ 资源申请设置；新增固定 PD thermal binding，并将 TLMM 加入有线检查范围，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。新增 CSOT binding、显示链路定向 schema 与最终 FDT 审计；剩余新 DT/标准消费者 L3、binding 上游评审、整机 schema/实际 DTBO 与专项复核；定向检查不等于整机合规。
+源码偿还：FG/SMB5/BQ/NFC 已补 YAML，供电引用已修、observer 虚构节点已撤除。有线BQ IRQ删除不支持的input-enable，新增固定PD thermal binding及TLMM检查，见[标准接口完善](archive/reviews/2026-11-10-linux-standard-interfaces.md)。CSOT已有binding/显示链路schema/FDT审计；GPIO50高选90Hz，来源等待为128ms；DRM command-mode vblank cadence不是独立光学扫描。剩余新DT/消费者L3、binding上游评审、整机DTBO及专项复核；定向检查不等于整机合规。
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任与保留原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（330）、`qcom_pm8150b_policy.c`（340）、`umi_pps.c`（480）、`umi_pps_policy.h`（325）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（487）为传输/生命周期桩，TCPM 协商已拆至142行。WP10 `kernel/nfc/sn100x.c`（381）保留传输/PM及分阶段诊断重试；WP0 `tests/test_boot_l2.py`（355）保留缓存回归。WP2 `kernel/umi-csot.dts`（318）集中板级节点与 ABL 锚点审计，下次扩展拆为固定构建可编译的功能组。
+责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（360）、`umi_pps.c`（471）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（492）为传输/生命周期桩。WP0 `tests/test_boot_l2.py`（355）保留缓存回归；`tools/build_kernel_l2.sh`（303）保留构建/打包顺序，下次按配置/打包拆分。WP2 `kernel/umi-csot.dts`（319）集中板级节点与 ABL 锚点审计，下次扩展拆为可编译功能组。
 
-偿还：各工作包下次修改时复核内聚性，提取独立接口、代际后端或测试职责；所有相关文件≤300 行且适用回归通过后关闭。拆分与验证见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，本项不豁免红灯或供电安全要求。
+偿还：各WP下次修改时拆分接口、代际后端或测试职责；全部≤300行且回归通过后关闭。见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，不豁免红灯和供电安全。

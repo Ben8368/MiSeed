@@ -6,7 +6,7 @@
 void report_power_supply_diagnostics(void) {
     static const char *const properties[] = {
         "type", "online", "status", "usb_type", "voltage_now",
-        "current_now", "voltage_max", "current_max", "pd_current_max",
+        "current_now", "voltage_max", "current_max",
         "input_current_limit", "charge_type", "scope"
     };
     const char *root = "/sys/class/power_supply";
@@ -134,7 +134,7 @@ int pps_control_path(char *path, size_t size) {
         identity = fopen(candidate, "r");
         if (!identity) continue;
         int matches = fgets(model, sizeof(model), identity) &&
-                      !strcmp(model, "BQ25970\n");
+                      !strcmp(model, "Umi wired PPS coordinator\n");
         fclose(identity);
         if (!matches) continue;
         n = snprintf(candidate, sizeof(candidate), "%s/%s/charge_behaviour", base, entry->d_name);

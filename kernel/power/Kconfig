@@ -13,23 +13,24 @@ config CHARGER_MISEED_PM8150B
 	depends on THERMAL && THERMAL_OF
 	help
 	  SMB5 driver from colorgarden/umi-mainline with the fixed LOS Umi
-	  current/voltage profile and automatic attach policy. The optional
-	  bounded insertion command is diagnostic only.
+	  current/voltage profile and automatic attach policy. Userspace controls
+	  charging through the standard power_supply properties.
 
 config CHARGER_BQ25970_CORE
-	tristate "BQ25970 standalone silicon driver"
-	depends on I2C && OF
+	tristate "Texas Instruments BQ25970 charge pump"
+	depends on I2C && OF && POWER_SUPPLY
 	select REGMAP_I2C
-	select AUXILIARY_BUS
 	help
-	  Owns the I2C device, register backend and IRQ. The pump starts
-	  disabled. A separate kernel consumer owns charging policy.
+	  Independent chip transport, IRQ, fault cache and power_supply.
+	  Starts disabled. Generic DT devices expose monitoring only; active
+	  charging requires a qualified board adapter and exclusive owner.
 
 config CHARGER_MISEED_UMI_PPS
-	tristate "MiSeed Umi guarded BQ25970 PPS controller"
-	depends on I2C && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
+	bool "MiSeed Umi guarded BQ25970 PPS controller"
+	depends on I2C=y && OF && TYPEC_TCPM && TYPEC_QCOM_PMIC
 	depends on THERMAL && THERMAL_OF
 	depends on CHARGER_MISEED_PM8150B && BATTERY_MISEED_QCOM_FG
+	select AUXILIARY_BUS
 	select CHARGER_BQ25970_CORE
 	help
 	  Automatic LOS-style PPS policy using mainline TCPM and a standalone
@@ -43,11 +44,3 @@ config MISEED_POWER_DIAGNOSTICS
 	  Log raw status registers from the owning charger's polling worker.
 	  This is an optional diagnostic, not a product ABI or control path.
 	  Normal consumers use power_supply attributes and notifications.
-
-config MISEED_CHARGE_DIAGNOSTICS
-	bool "MiSeed bounded wired charge diagnostic command"
-	depends on CHARGER_MISEED_PM8150B
-	help
-	  Enable the temporary charge_test ABI only in diagnostic kernels.
-	  Product consumers use power_supply charge_behaviour. No protection
-	  is disabled by this option.

@@ -21,7 +21,7 @@ static int umi_pps_health(struct umi_pps *c)
 
 /* Caller holds c->lock. Read only live status, never latched fault flags.
  * Keep read errors in the snapshot so failures and recovery each notify once.
- * Voltage/current telemetry remains available through the standard getters.
+ * Voltage/current telemetry belongs to the separate chip power_supply.
  */
 bool umi_pps_changed(struct umi_pps *c)
 {
@@ -31,7 +31,7 @@ bool umi_pps_changed(struct umi_pps *c)
 		.stop_pending = c->stop_pending,
 	};
 	struct umi_pps_report *prev = &c->reported;
-	unsigned int status;
+	bool switching;
 	int ret;
 
 	if (!c->psy || !c->ready || c->removing || c->suspended)
@@ -42,8 +42,8 @@ bool umi_pps_changed(struct umi_pps *c)
 	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_USB_TYPE, &next.usb_type);
 	if (ret)
 		next.usb_type = ret;
-	ret = bq25970_live_status(c->map, &status);
-	next.pump_status = ret ? ret : !!(status & BIT(2));
+	ret = bq25970_is_switching(c->chip, &switching);
+	next.pump_status = ret ? ret : switching;
 	if (c->reported_valid && prev->state == next.state &&
 	    prev->online == next.online && prev->usb_type == next.usb_type &&
 	    prev->pump_status == next.pump_status && prev->health == next.health &&
@@ -61,8 +61,6 @@ static enum power_supply_property umi_pps_properties[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_HEALTH,
-	POWER_SUPPLY_PROP_VOLTAGE_NOW,
-	POWER_SUPPLY_PROP_CURRENT_NOW,
 	POWER_SUPPLY_PROP_USB_TYPE,
 	POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
 };
@@ -71,7 +69,7 @@ static int umi_pps_get_property(struct power_supply *psy,
 		enum power_supply_property prop, union power_supply_propval *val)
 {
 	struct umi_pps *c = power_supply_get_drvdata(psy);
-	unsigned int status;
+	bool switching;
 	int ret = 0, raw;
 
 	mutex_lock(&c->lock);
@@ -81,10 +79,10 @@ static int umi_pps_get_property(struct power_supply *psy,
 	}
 	switch (prop) {
 	case POWER_SUPPLY_PROP_MANUFACTURER:
-		val->strval = "Texas Instruments";
+		val->strval = "MiSeed";
 		break;
 	case POWER_SUPPLY_PROP_MODEL_NAME:
-		val->strval = "BQ25970";
+		val->strval = "Umi wired PPS coordinator";
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
 		ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &raw);
@@ -92,24 +90,14 @@ static int umi_pps_get_property(struct power_supply *psy,
 			val->intval = !!raw;
 		break;
 	case POWER_SUPPLY_PROP_STATUS:
-		ret = bq25970_live_status(c->map, &status);
+		ret = bq25970_is_switching(c->chip, &switching);
 		if (!ret)
-			val->intval = status & BIT(2) ? POWER_SUPPLY_STATUS_CHARGING :
+			val->intval = switching ? POWER_SUPPLY_STATUS_CHARGING :
 				POWER_SUPPLY_STATUS_NOT_CHARGING;
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
-		/* Fault flags are read and latched by the policy worker only. */
+		/* Policy health; chip fault latches belong to its own power_supply. */
 		val->intval = umi_pps_health(c);
-		break;
-	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-	case POWER_SUPPLY_PROP_CURRENT_NOW:
-		if (!c->configured) {
-			ret = -ENODATA;
-			break;
-		}
-		ret = umi_pps_adc(c, prop == POWER_SUPPLY_PROP_CURRENT_NOW ? 0 : 1, &raw);
-		if (!ret)
-			val->intval = raw * 1000; /* ADC mA/mV -> power_supply uA/uV */
 		break;
 	case POWER_SUPPLY_PROP_USB_TYPE:
 		ret = umi_pps_get(c->pd, prop, &val->intval);
@@ -169,7 +157,7 @@ static int umi_pps_property_is_writeable(struct power_supply *psy,
 }
 
 const struct power_supply_desc umi_pps_desc = {
-	.name = "bq25970-charger",
+	.name = "umi-wired-pps",
 	.type = POWER_SUPPLY_TYPE_USB,
 	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_C) | BIT(POWER_SUPPLY_USB_TYPE_PD) |
 		BIT(POWER_SUPPLY_USB_TYPE_PD_PPS),

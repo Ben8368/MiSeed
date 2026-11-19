@@ -18,9 +18,11 @@ class PpsTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("cc"), "C compiler required")
     def test_real_controller_success_faults_deadlines_and_cleanup(self):
         # Compile the real worker and hardware helpers with synthetic transports.
-        source = (ROOT / "kernel/power/umi_pps_internal.h").read_text()
-        for name in ("bq25970.c", "umi_pps_hw.c", "umi_pps_pd.c", "umi_pps.c"):
-            source += "\n" + (ROOT / "kernel/power" / name).read_text()
+        source = "\n".join((ROOT / "kernel/power" / name).read_text() for name in (
+            "bq25970_device.h", "bq25970_internal.h", "bq25970_board.h",
+            "umi_pps_internal.h", "bq25970.c", "bq25970_control.c",
+            "bq25970_sample.c", "umi_bq25970_profile.c",
+            "umi_pps_hw.c", "umi_pps_pd.c", "umi_pps.c"))
         full = "\n".join((ROOT / "kernel/power" / name).read_text() for name in
                          ("umi_pps_driver.c", "umi_pps_supply.c", "umi_pps_thermal.c"))
         start = full.index("static int umi_pps_health(")
@@ -31,9 +33,14 @@ class PpsTests(unittest.TestCase):
                      "umi_pps_get_cur_state", "umi_pps_set_cur_state"):
             start = full.index("static int " + name + "(")
             source += full[start:full.index("\n}\n", start) + 3]
+        chip_supply = (ROOT / "kernel/power/bq25970_supply.c").read_text()
+        start = chip_supply.index("static int bq25970_get_property(")
+        source += chip_supply[start:chip_supply.index("\n}\n", start) + 3]
         source = "\n".join(line for line in source.splitlines()
                            if not line.startswith("#include <linux/")
-                           and line != '#include "umi_pps_internal.h"'
+                           and line not in {'#include "umi_pps_internal.h"',
+                               '#include "bq25970_internal.h"', '#include "bq25970_device.h"',
+                               '#include "bq25970_board.h"', '#include "umi_bq25970.h"'}
                            and not line.startswith("extern const struct")
                            and not line.startswith("EXPORT_SYMBOL_GPL"))
         source = source.replace("dev_err(", "dev_info(")
@@ -98,9 +105,11 @@ class PpsTests(unittest.TestCase):
         harness = r'''
 #include <assert.h>
 #include <errno.h>
+#include <stdbool.h>
 #include "umi_pps_policy.h"
 #define CURRENT_SCALE_FACTOR 50000
 struct smb5_chip {
+ bool policy_icl_valid;
  int enabled, power_stage, pd_voltage_uv, pd_current_ua, full_bypass;
  unsigned int thermal_drop_ua;
  void *usb_in_v_chan;
@@ -112,6 +121,8 @@ static int smb5_get_current_limit(struct smb5_chip *c, unsigned int *v)
 { (void)c; *v = current; return read_error; }
 static int smb5_get_iio_chan(struct smb5_chip *c, void *chan, int *v)
 { (void)c; (void)chan; *v = input_uv; return voltage_error; }
+static int smb5_get_input_voltage(struct smb5_chip *c, int *v)
+{ return smb5_get_iio_chan(c, 0, v); }
 static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; writes++; if (write_error) return write_error; current = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 ''' + function + r'''
@@ -141,6 +152,13 @@ int main(void) {
  assert(!smb5_power_limit(&c, 5) && current == 1950000);
  for(int i=0;i<30;i++)assert(!smb5_power_limit(&c, 11));
  assert(current == 2900000 && c.saved_icl_ua == 3000000);
+ /* A 3 A PD contract is permission, not an instruction to consume 27 W.
+  * Keep the 18 W input target/2 A ICL and thermal derating independent. */
+ c = (struct smb5_chip){.pd_voltage_uv=9000000,.pd_current_ua=3000000};
+ current=3000000;input_uv=8600000;
+ assert(!smb5_power_limit(&c,11) && current==2000000);
+ c.thermal_drop_ua=200000;
+ assert(!smb5_power_limit(&c,11) && current==1800000);
  voltage_error = -EIO; int before_voltage = writes;
  assert(smb5_power_limit(&c, 11) == -EIO && writes == before_voltage);
  voltage_error = 0; input_uv = 0;

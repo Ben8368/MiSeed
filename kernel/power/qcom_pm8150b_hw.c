@@ -258,6 +258,36 @@ int smb5_get_input_current(struct smb5_chip *chip, int *current_ua)
 	return 0;
 }
 
+/* PM8150B's USBIN voltage ADC has a documented high-voltage erratum in
+ * device-matched LOS smb5-lib.c. Use MID_CHG while loaded. With input
+ * suspended MID may be disconnected; use USBIN for no-load checks.
+ * Never substitute the negotiated voltage for a failed physical reading.
+ */
+int smb5_get_input_voltage(struct smb5_chip *chip, int *voltage_uv)
+{
+	unsigned int command;
+	int online, ret;
+	bool suspended;
+
+	ret = smb5_get_prop_usb_online(chip, &online);
+	if (ret)
+		return ret;
+	if (!online) {
+		*voltage_uv = 0;
+		return 0;
+	}
+	ret = regmap_read(chip->regmap, chip->base + USBIN_CMD_IL, &command);
+	if (ret)
+		return ret;
+	suspended = command & USBIN_SUSPEND_BIT;
+	ret = smb5_get_iio_chan(chip, suspended ? chip->usb_in_v_chan :
+				chip->mid_chg_chan, voltage_uv);
+	if (ret < 0)
+		return ret;
+	/* Same unreliable-MID boundary as LOS, but fail rather than estimate. */
+	return !suspended && *voltage_uv < 1000000 ? -ENODATA : 0;
+}
+
 int smb5_get_prop_health(struct smb5_chip *chip, int *val)
 {
 	int rc;

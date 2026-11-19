@@ -22,23 +22,67 @@ static int tcpm_profile_fixed_mv(const struct pd_data *data)
 	return mv;
 }
 
+/* Type-C's setter only creates/removes a link; it cannot replace one. Keep
+ * capabilities unchanged if publication fails, and restore the previous link.
+ */
+static int tcpm_psy_link_pd(struct tcpm_port *port, struct usb_power_delivery *pd)
+{
+	int ret, restore;
+
+	ret = typec_port_set_usb_power_delivery(port->typec_port, NULL);
+	if (ret)
+		return ret;
+	port->psy_pd_link_dirty = true;
+	ret = typec_port_set_usb_power_delivery(port->typec_port, pd);
+	if (ret) {
+		restore = typec_port_set_usb_power_delivery(port->typec_port, port->selected_pd);
+		port->psy_pd_link_dirty = !!restore;
+		if (restore)
+			tcpm_log(port, "PD profile link restore failed: %d", restore);
+	} else {
+		port->psy_pd_link_dirty = false;
+	}
+	return ret;
+}
+
+/* Serialize the standard Type-C profile selector with a power_supply
+ * voltage-limit request. Changing capabilities behind that request would
+ * make its readback stale and could remove the current PPS APDO. An identical
+ * selection repairs a failed link; reset releases the power_supply selection.
+ * Caller holds port->lock, before any capabilities or links are changed.
+ */
+static int tcpm_psy_check_pd(struct tcpm_port *port, struct usb_power_delivery *pd)
+{
+	if (port->psy_selected_profile && port->selected_pd != pd)
+		return -EBUSY;
+	if (port->psy_pd_link_dirty)
+		return tcpm_psy_link_pd(port, port->selected_pd);
+	return 0;
+}
+
 static void tcpm_psy_restore_profile(struct tcpm_port *port)
 {
 	struct pd_data *data;
-	int i;
+	int i, ret;
 
-	if (!port->psy_selected_profile)
+	if (!port->psy_selected_profile && !port->psy_pd_link_dirty)
 		return;
 	data = port->pd_list[0];
+	ret = tcpm_psy_link_pd(port, data->pd);
+	if (ret)
+		tcpm_log(port, "PD default profile link failed: %d", ret);
 	for (i = 0; i < PDO_MAX_OBJECTS && data->sink_desc.pdo[i]; i++)
 		port->snk_pdo[i] = data->sink_desc.pdo[i];
 	port->nr_snk_pdo = i;
 	port->operating_snk_mw = data->operating_snk_mw;
 	port->port_sink_caps = data->sink_cap;
 	port->selected_pd = data->pd;
-	port->psy_selected_profile = false;
+	/* Always restore safe attach capabilities, even if sysfs publication
+	 * failed. Keep a retry marker; getters must not report that as success.
+	 */
+	port->psy_selected_profile = !!ret;
+	port->psy_pd_link_dirty = !!ret;
 	port->psy_voltage_limit_mv = 0;
-	typec_port_set_usb_power_delivery(port->typec_port, port->selected_pd);
 }
 
 static int tcpm_psy_get_fixed_limit(struct tcpm_port *port,
@@ -47,6 +91,11 @@ static int tcpm_psy_get_fixed_limit(struct tcpm_port *port,
 	int i, ret = -ENODATA;
 
 	mutex_lock(&port->lock);
+	if (port->psy_pd_link_dirty ||
+	    (port->psy_selected_profile && !port->psy_voltage_limit_mv)) {
+		ret = -EIO;
+		goto out;
+	}
 	if (port->state != SNK_READY || port->update_sink_caps) {
 		ret = -EAGAIN;
 		goto out;
@@ -87,6 +136,11 @@ static int tcpm_psy_set_fixed_limit(struct tcpm_port *port, int uv)
 		ret = -EAGAIN;
 		goto out;
 	}
+	if (port->psy_pd_link_dirty) {
+		ret = tcpm_psy_link_pd(port, port->selected_pd);
+		if (ret)
+			goto out;
+	}
 	if (port->pps_data.active) {
 		/* Lower the live PPS contract before lowering its ceiling. */
 		if (uv / 1000 < port->supply_voltage) {
@@ -109,14 +163,24 @@ static int tcpm_psy_set_fixed_limit(struct tcpm_port *port, int uv)
 		goto out;
 	}
 	if (best->pd == port->selected_pd) {
+		if (port->psy_selected_profile && !port->psy_voltage_limit_mv) {
+			ret = tcpm_psy_link_pd(port, best->pd);
+			if (ret)
+				goto out;
+		}
 		port->psy_voltage_limit_mv = uv / 1000;
 		port->psy_selected_profile = true;
 		goto out;
 	}
+	ret = tcpm_psy_link_pd(port, best->pd);
+	if (ret)
+		goto out;
 	port->upcoming_state = SNK_NEGOTIATE_CAPABILITIES;
 	ret = tcpm_ams_start(port, POWER_NEGOTIATION);
 	if (ret) {
 		port->upcoming_state = INVALID_STATE;
+		if (tcpm_psy_link_pd(port, port->selected_pd))
+			tcpm_log(port, "PD busy profile link rollback failed");
 		goto out;
 	}
 	for (i = 0; i < PDO_MAX_OBJECTS && best->sink_desc.pdo[i]; i++)
@@ -128,7 +192,6 @@ static int tcpm_psy_set_fixed_limit(struct tcpm_port *port, int uv)
 	port->psy_selected_profile = true;
 	port->psy_voltage_limit_mv = uv / 1000;
 	port->update_sink_caps = true;
-	typec_port_set_usb_power_delivery(port->typec_port, port->selected_pd);
 	/* Enqueued is not negotiated: callers must wait for SNK_READY/readback. */
 	ret = -EAGAIN;
 out:

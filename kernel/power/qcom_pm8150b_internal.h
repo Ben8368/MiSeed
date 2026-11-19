@@ -34,7 +34,7 @@
 #include <linux/jiffies.h>
 #include <linux/thermal.h>
 #include "umi_charge_policy.h"
-#include "umi_smb5.h"
+#include "umi_wired_internal.h"
 
 #include "qcom_pm8150b_regs.h"
 
@@ -82,12 +82,13 @@ struct smb5_chip {
 
 	struct iio_channel *usb_in_i_chan;
 	struct iio_channel *usb_in_v_chan;
+	struct iio_channel *mid_chg_chan;
 
 	struct power_supply *chg_psy;
 	struct power_supply *bms;
 	struct power_supply *pd;
 	struct mutex lock;
-	bool enabled, inhibit, stopping, test_armed, test_saw_disconnect, test_active;
+	bool enabled, inhibit, stopping, policy_icl_valid;
 	bool pps_owned;
 	bool full_bypass;
 	bool pd_transition;
@@ -101,8 +102,6 @@ struct smb5_chip {
 	bool pps_fault;
 	unsigned int policy_icl_ua, saved_icl_ua;
 	unsigned long cooling_state;
-	unsigned long test_deadline;
-	unsigned int test_seconds;
 	int max_fv_uv;
 };
 
@@ -113,6 +112,8 @@ int smb5_get_prop_charging_enabled(struct smb5_chip *chip, int *val);
 int smb5_get_prop_status(struct smb5_chip *chip, int *val);
 int smb5_power_limit(struct smb5_chip *chip, int soc);
 int smb5_fixed_update(struct smb5_chip *chip);
+int smb5_get_input_current_now(struct smb5_chip *chip, int *current_ua);
+int smb5_get_input_voltage(struct smb5_chip *chip, int *voltage_uv);
 void smb5_thermal_limit(struct smb5_chip *chip, int temp);
 int smb5_get_current_limit(struct smb5_chip *chip,
 					 unsigned int *val);
@@ -130,8 +131,5 @@ int smb5_set_property(struct power_supply *psy,
 			     enum power_supply_property psp,
 			     const union power_supply_propval *val);
 extern const struct power_supply_desc smb5_psy_desc;
-#ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
-extern const struct attribute_group smb5_group;
-#endif
 
 #endif

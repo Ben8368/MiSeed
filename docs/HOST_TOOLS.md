@@ -39,16 +39,11 @@ make 时钟警告阻断构建，不改写输入时间戳。先查来宾 NTP、�
 
 安装 Google [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)（含 `adb`、`fastboot`），或用 Android Studio SDK Manager 安装。二进制放在忽略目录 `.work/host-tools/platform-tools/`，不要提交。当前 Mac 使用 37.0.2，官方 ZIP SHA-256：`de86d62321ad38049d488fb1854c7b9a29f7e1b17e8dfb597c304b038cc37ae7`。
 
-```sh
-export PATH="$PWD/.work/host-tools/platform-tools:$PATH"
-adb version
-fastboot --version
-adb devices
-adb reboot bootloader
-fastboot devices
-```
+版本用 `adb version` / `fastboot --version` 核对，Android 连接用 `adb devices`。
 
-正常 Android 模式下需先开启 USB 调试并在手机上授权；Bootloader Fastboot 模式可直接运行 `fastboot devices`。序列号是设备标识，公开日志先脱敏。只看到设备仅能证明 USB/Fastboot 通信可用。
+Fastboot 检查须在主机 USB 权限下运行 `python3 tools/check_fastboot_connection.py`（每命令限时 2 秒，不轮询、不启动、脱敏）。本机沙箱实测 Fastboot 空枚举且 `ioreg` 权限失败，不能判定设备未连接；`usb_visibility_unverified` 或空结果时停止，改用主机权限单次核实。macOS `ioreg` 带 `-l`；成功后另核身份。
+
+零接口停止空扫，告知维护者可断开/正常回 Android；配置未就绪的[实测与后续](archive/reviews/2026-11-16-fastboot-host-enumeration.md)先在主机处理，不占用接机窗口。
 
 ## RAM 启动与持久刷写
 

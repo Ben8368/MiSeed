@@ -36,6 +36,20 @@ def verify_native_reset(dtb):
         raise ValueError("native MDSS must use DISP_CC_MDSS_CORE_BCR")
 
 
+def verify_native_panel(dtb):
+    panel = get(dtb, "/__symbols__", "umi_csot")
+    tlmm = get(dtb, "/__symbols__", "miseed_live_tlmm")
+    def cells(node, prop):
+        return subprocess.check_output(
+            ["fdtget", "-t", "x", str(dtb), node, prop], text=True).split()
+    if get(dtb, panel, "compatible") != "xiaomi,umi-csot":
+        raise ValueError("unexpected native panel variant")
+    provider = cells(tlmm, "phandle")
+    if (cells(panel, "reset-gpios") != provider + ["c", "1"] or
+            cells(panel, "disprate-gpios") != provider + ["32", "0"]):
+        raise ValueError("native panel needs reset GPIO12 active-low and 90Hz GPIO50 active-high")
+
+
 def isolate(dtb, native=False):
     dtb = Path(dtb)
     with tempfile.TemporaryDirectory(dir=dtb.parent) as directory:
@@ -65,6 +79,7 @@ def _isolate(dtb, native=False):
 def verify(dtb, native=False):
     if native:
         verify_native_reset(dtb)
+        verify_native_panel(dtb)
     if get(dtb, "/abl_ovf", "status") != "disabled":
         raise ValueError("overlay container must be disabled")
     for name in TARGETS:
@@ -85,12 +100,12 @@ def verify(dtb, native=False):
     ranges = subprocess.check_output(
         ["fdtget", "-t", "u", str(dtb), tlmm, "gpio-reserved-ranges"], text=True).split()
     expected = (["0", "4", "6", "1", "8", "4", "13", "21", "36", "8",
-                 "46", "22", "69", "14", "84", "26", "112", "69"] if native else
+                 "46", "4", "51", "17", "69", "14", "84", "26", "112", "69"] if native else
                 ["0", "4", "6", "1", "8", "26", "36", "8",
                  "46", "22", "69", "14", "84", "26", "112", "69"])
     if ranges != expected:
         raise ValueError(
-            "TLMM must expose only Umi UART12, I2C15, BQ IRQ, and NQ NFC GPIOs")
+            "TLMM Umi UART12/NFC/I2C15/BQ/panel GPIO allowlist differs from the selected profile")
     print("verified isolated soc/SPMI/TLMM/DPU/MMC targets; live phandles retained")
 
 

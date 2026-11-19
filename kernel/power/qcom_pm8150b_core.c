@@ -53,8 +53,6 @@ static irqreturn_t smb5_handle_usb_plugin(int irq, void *data)
 		chip->pd_limit_uv = chip->pd_voltage_uv = chip->pd_current_ua = 0;
 		chip->thermal_sampled = chip->thermal_recover = false;
 		chip->thermal_drop_ua = 0;
-		if (chip->test_armed && !chip->test_active)
-			chip->test_saw_disconnect = true;
 		mutex_unlock(&chip->lock);
 	}
 
@@ -137,7 +135,6 @@ static int smb5_probe(struct platform_device *pdev)
 	 * charger limits, health and temperature have been checked.
 	 */
 	chip->inhibit = false;
-	chip->test_seconds = UMI_CHARGE_TEST_SECONDS;
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chip->regmap)
@@ -176,6 +173,10 @@ static int smb5_probe(struct platform_device *pdev)
 		return dev_err_probe(chip->dev, PTR_ERR(chip->usb_in_i_chan),
 				     "Couldn't get usb_in_i_uv IIO channel\n");
 	}
+	chip->mid_chg_chan = devm_iio_channel_get(chip->dev, "mid_chg_div6");
+	if (IS_ERR(chip->mid_chg_chan))
+		return dev_err_probe(chip->dev, PTR_ERR(chip->mid_chg_chan),
+				     "Couldn't get mid_chg_div6 IIO channel\n");
 
 
 	supply_config.drv_data = chip;
@@ -233,10 +234,7 @@ static int smb5_probe(struct platform_device *pdev)
 	rc = smb5_register_thermal(chip);
 	if (rc)
 		return rc;
-#ifdef CONFIG_MISEED_CHARGE_DIAGNOSTICS
- rc = devm_device_add_group(&chip->chg_psy->dev, &smb5_group);
- if (rc) return rc;
-#endif
+
 
 
 	/* Initialise charger state */
@@ -257,7 +255,7 @@ static const struct of_device_id smb5_match_id_table[] = {
 };
 MODULE_DEVICE_TABLE(of, smb5_match_id_table);
 
-static struct platform_driver qcom_spmi_smb5 = {
+struct platform_driver qcom_spmi_smb5 = {
 	.probe = smb5_probe,
 	.shutdown = smb5_shutdown,
 	.driver = {
@@ -266,7 +264,7 @@ static struct platform_driver qcom_spmi_smb5 = {
 		},
 };
 
-module_platform_driver(qcom_spmi_smb5);
+
 
 MODULE_AUTHOR("Caleb Connolly <caleb.connolly@linaro.org>");
 MODULE_DESCRIPTION("Qualcomm SMB5 Charger Driver");

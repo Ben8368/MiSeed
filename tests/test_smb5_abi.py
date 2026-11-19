@@ -74,7 +74,7 @@ int main(void) {
     def test_standard_input_limit_and_behaviour_failure_paths(self):
         source = power_source("qcom_pm8150b_charger")
         functions = []
-        for name in ("smb5_set_current_limit", "smb5_set_property", "smb5_property_is_writable"):
+        for name in ("smb5_get_current_limit", "smb5_set_current_limit", "smb5_set_property", "smb5_property_is_writable"):
             start = source.rindex("int " + name + "(")
             functions.append(source[start:source.index("\n}\n", start) + 3])
         harness = (ROOT / "tests/smb5_abi_harness.c").read_text().replace(

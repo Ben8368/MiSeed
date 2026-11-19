@@ -18,6 +18,10 @@ PROFILE = "umi-csot-boot-l2"
 MANIFEST = "manifests/sources.lock.json"
 SCRIPT = "tools/build_kernel_l2.sh"
 REQUIRED_INPUTS = {
+    "tools/apply_adc5_fix.py", "kernel/power/adc5_configure.inc",
+    "tests/test_wired_interfaces.py", "tools/wired_power.py",
+    "tests/test_wired_power.py", "tests/test_rescue_console.py", "kernel/power/bindings/ti,bq25970.yaml",
+    "tests/test_adc5_config.py", "tests/adc5_config_harness.c",
     "tools/tcpm_fixed_profile.py", "kernel/power/tcpm_fixed_profile.inc",
     SCRIPT, "tools/check_build_lock.py", "tools/verify_kernel_source.py",
     "tools/fetch_kernel_source.py", "tests/test_kernel_source_fetch.py",
@@ -29,6 +33,8 @@ REQUIRED_INPUTS = {
     "tools/apply_power_port.py",
     "tools/apply_pd_diagnostics.py", "tools/make_initramfs.py",
     "tools/apply_nfc_port.py",
+    "tools/apply_geni_nack_diagnostics.py",
+    "tests/test_nfc_transport.py",
     "tools/pack_android_boot_v2.py", "tests/test_abl_isolation.py",
     "kernel/umi-csot.dts", "kernel/umi-csot-dtbo-targets.txt",
     "kernel/umi-l2.config", "kernel/rescue_init.c", "kernel/charge_log.h",
@@ -36,9 +42,9 @@ REQUIRED_INPUTS = {
     "kernel/power/umi_charge_policy.h", "kernel/power/umi-pm8150b.dtsi",
     "kernel/power/bq25970.c", "kernel/power/bq25970.h",
     "kernel/power/umi_pps.c", "kernel/power/umi_pps_policy.h",
-    "kernel/power/umi_smb5.h", "kernel/power/umi-pps.dtsi",
+    "kernel/power/umi_wired_internal.h", "kernel/power/umi-pps.dtsi",
     "kernel/power/pmic_pdphy_receive.inc",
-    "kernel/nfc/sn100x.c", "kernel/nfc/Kconfig",
+    "kernel/nfc/sn100x.c", "kernel/nfc/sn100x-frame.h", "kernel/nfc/Kconfig",
     "kernel/nfc/bindings/nxp,sn100t.yaml",
     "LICENSES/BSD-3-Clause.txt", "LICENSES/GPL-2.0-only.txt",
     "tools/apply_display_port.py", "tools/check_runtime_dt.py",

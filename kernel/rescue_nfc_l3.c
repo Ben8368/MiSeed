@@ -105,7 +105,76 @@ static void report_nfc_error(const char *step, int error) {
            step, strerror(-error), error);
 }
 
-int run_nfc_l3_probe(void) {
+/* Serialized USB console; a first-transfer capture must have its own RAM boot. */
+static bool first_used, rf_used;
+
+void run_nfc_first(void) {
+    struct nfc_nl_client client = { .fd = -1 };
+    struct nfc_device_info device;
+    int rc = -EALREADY;
+    const char *stage = "guard";
+
+    puts("NFC_FIRST_BEGIN");
+    if (!first_used && !rf_used) {
+        first_used = true;
+        stage = "setup";
+        rc = nfc_nl_open(&client);
+        if (!rc) rc = get_nfc_device(&client, &device);
+        if (!rc) {
+            stage = "dev_up";
+            rc = nfc_simple(&client, NFC_CMD_DEV_UP, device.index);
+        }
+        nfc_nl_close(&client); /* Netlink socket only; no DEV_DOWN/reset or reopen. */
+    }
+    printf("NFC_FIRST_RESULT stage=%s rc=%d\n", stage, rc);
+    puts("NFC_FIRST_END");
+}
+
+/* Functional two-phone check: no physical bus measurement or card I/O. */
+void run_nfc_mifare_discovery(void) {
+    struct nfc_nl_client client = { .fd = -1 };
+    struct nfc_device_info device;
+    struct nfc_target_info target = {0};
+    const char *stage = "guard";
+    bool up = false, polling = false;
+    int rc = -EALREADY, cleanup = 0;
+
+    puts("NFC_DISCOVERY_BEGIN");
+    if (first_used || rf_used) goto done;
+    first_used = true; /* Also blocks the existing RF/reopen probes. */
+    stage = "setup";
+    rc = nfc_nl_open(&client);
+    if (!rc) rc = get_nfc_device(&client, &device);
+    if (!rc && !(device.protocols & NFC_PROTO_MIFARE_MASK)) rc = -EOPNOTSUPP;
+    if (rc) goto done;
+    stage = "dev_up";
+    rc = nfc_simple(&client, NFC_CMD_DEV_UP, device.index);
+    if (rc) goto done;
+    up = true;
+    stage = "poll";
+    rc = nfc_poll(&client, device.index, NFC_PROTO_MIFARE_MASK);
+    if (rc) goto done;
+    polling = true;
+    sleep(NFC_POLL_WINDOW_SECONDS);
+    stage = "target";
+    rc = nfc_get_targets(&client, device.index, &target);
+    if (!rc && (target.count != 1 || !(target.protocol & NFC_PROTO_MIFARE_MASK))) rc = -ENODATA;
+done:
+    if (polling) {
+        cleanup = nfc_simple(&client, NFC_CMD_STOP_POLL, device.index);
+        if (cleanup == -EINVAL) cleanup = 0; /* Discovery may have already stopped. */
+    }
+    if (up) {
+        int down = nfc_simple(&client, NFC_CMD_DEV_DOWN, device.index);
+        if (!cleanup) cleanup = down;
+    }
+    nfc_nl_close(&client);
+    printf("NFC_DISCOVERY_RESULT stage=%s up=%d polling=%d targets=%u protocols=%u rc=%d cleanup=%d\n",
+           stage, up, polling, target.count, target.protocol, rc, cleanup);
+    puts("NFC_DISCOVERY_END");
+}
+
+int run_nfc_l3_probe(int read_fixture) {
     struct nfc_nl_client client = { .fd = -1 };
     struct nfc_device_info device;
     struct nfc_target_info target;
@@ -113,8 +182,13 @@ int run_nfc_l3_probe(void) {
     int rc, close_rc;
     bool up = false, polling = false;
 
+    puts("NFC_L3_BEGIN");
+    if (first_used) { rc = -EALREADY; goto done; }
+    rf_used = true;
     puts("NFC L3 base: standard NCI reset/init, RF target discovery and clean reopen.");
-    puts("No firmware download, VEN low pulse, eSE, HCE, write APDU or UID logging.");
+    puts(read_fixture ? "Read-only Type 4 MiSeed test fixture; PM, HCE and eSE are not tested." :
+         "Scope is NCI/RF discovery/reopen only; NDEF, PM, HCE and eSE are not tested.");
+    puts("No firmware download, VEN low pulse, APDU logging or UID logging.");
     rc = nfc_nl_open(&client);
     if (!rc) rc = get_nfc_device(&client, &device);
     if (rc) goto done;
@@ -123,6 +197,7 @@ int run_nfc_l3_probe(void) {
                 NFC_PROTO_ISO14443_B_MASK);
     printf("NFC device=%s index=%u protocols=0x%x\n",
            device.name, device.index, device.protocols);
+    if (read_fixture) supported &= NFC_PROTO_ISO14443_MASK | NFC_PROTO_ISO14443_B_MASK;
     if (!supported) { rc = -EOPNOTSUPP; goto done; }
 
     rc = nfc_simple(&client, NFC_CMD_DEV_UP, device.index);
@@ -139,6 +214,10 @@ int run_nfc_l3_probe(void) {
         puts("NFC unsupported-protocol negative case unexpectedly accepted.");
         rc = -EUCLEAN;
         goto cleanup;
+    }
+    if (rc != -EINVAL) {
+        report_nfc_error("empty-protocol check", rc);
+        goto cleanup; /* Transport/permission/timeout errors are not the expected rejection. */
     }
     printf("NFC empty-protocol request rejected: %s (%d).\n",
            strerror(-rc), rc);
@@ -164,7 +243,11 @@ int run_nfc_l3_probe(void) {
     }
     printf("NFC RF discovery passed: targets=%u protocol=%u; UID omitted.\n",
            target.count, target.protocol);
-    puts("NDEF read not attempted; this probe never sends application or write APDUs.");
+    if (read_fixture) {
+        rc = target.count == 1 ? read_type4_fixture(device.index, target.index, target.protocol) : -E2BIG;
+        if (rc) { report_nfc_error("read Type 4 fixture", rc); goto cleanup; }
+        puts("NFC NDEF Type 4 fixture verified; no UID or payload logged.");
+    } else puts("NDEF read not attempted; this probe never sends application or write APDUs.");
 
 cleanup:
     {
@@ -183,6 +266,7 @@ cleanup:
         if (!result) result = close_rc;
         goto cleanup_done;
     }
+    if (result) goto cleanup_done; /* No fresh session after a failed RF run. */
     rc = nfc_simple(&client, NFC_CMD_DEV_UP, device.index);
     if (rc) {
         report_nfc_error("clean reopen", rc);
@@ -205,5 +289,7 @@ done:
     nfc_nl_close(&client);
     if (rc) printf("NFC L3 base incomplete: %s (%d). Run dmesg and preserve the session.\n",
                    strerror(-rc), rc);
+    printf("NFC_L3_RESULT rc=%d\n", rc);
+    puts("NFC_L3_END");
     return rc;
 }

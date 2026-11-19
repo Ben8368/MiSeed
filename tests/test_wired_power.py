@@ -16,7 +16,7 @@ class WiredPowerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         for name in ("qcom-battery", "pm8150b-charger", "pump0", "wireless"):
             (self.root / name).mkdir()
-        (self.root / "pump0/model_name").write_text("BQ25970\n")
+        (self.root / "pump0/model_name").write_text("Umi wired PPS coordinator\n")
         (self.root / "wireless/model_name").write_text("IDTP9221\n")
         (self.root / "qcom-battery/capacity").write_text("73\n")
         for name in ("pm8150b-charger", "pump0"):
@@ -29,6 +29,17 @@ class WiredPowerTests(unittest.TestCase):
         self.assertEqual(values["battery"]["capacity"], "73")
         self.assertNotIn("charge_counter", values["battery"])
         self.assertEqual(values["pump"]["charge_behaviour"], "[auto] inhibit-charge")
+
+    def test_physical_pump_telemetry_never_receives_policy_commands(self):
+        chip = self.root / "bq25970-15-0066"
+        chip.mkdir()
+        (chip / "model_name").write_text("BQ25970\n")
+        (chip / "voltage_now").write_text("8400000\n")
+        supplies = wired_power.discover(self.root)
+        self.assertEqual(supplies["pump_chip"], chip)
+        self.assertEqual(wired_power.set_behaviour(supplies, "inhibit-charge"), {})
+        self.assertFalse((chip / "charge_behaviour").exists())
+        self.assertEqual(wired_power.snapshot(supplies)["pump_chip"]["voltage_now"], "8400000")
 
     def test_registered_switch_name_drives_status_and_successful_actions(self):
         supplies = wired_power.discover(self.root)
@@ -49,7 +60,7 @@ class WiredPowerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing"):
             wired_power.set_behaviour({"pump": supplies["pump"]}, "auto")
         (self.root / "clone").mkdir()
-        (self.root / "clone/model_name").write_text("BQ25970\n")
+        (self.root / "clone/model_name").write_text("Umi wired PPS coordinator\n")
         with self.assertRaisesRegex(ValueError, "ambiguous"):
             wired_power.discover(self.root)
 

@@ -127,6 +127,7 @@ struct umi_pps_caps {
 };
 
 struct umi_pps_sample {
+	int clean_disabled;
 	int online, present, good, temp, soc;
 	int vbat_mv, ibat_ma, vbus_mv, ibus_ma;
 	int pump_vbat_mv;
@@ -138,14 +139,6 @@ struct umi_pps_sample {
 
 static inline int umi_pps_min(int a, int b) { return a < b ? a : b; }
 static inline int umi_pps_max(int a, int b) { return a > b ? a : b; }
-
-/* Never silently round a requested threshold to a less protective value. */
-static inline int umi_pps_encode(int value, int base, int step, int mask)
-{
-	if (value < base || value > base + step * mask || (value - base) % step)
-		return -1;
-	return (value - base) / step;
-}
 
 static inline int umi_pps_battery_ok(const struct umi_pps_sample *s, int max_mv)
 {

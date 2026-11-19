@@ -200,13 +200,15 @@ static int device_property_read_u32(struct device *d, const char *key, u32 *v) {
  return -EINVAL;
 }
 
+struct power_supply_desc { int unused; };
 /* MISEED_DRIVER_UNDER_TEST */
 
 static struct umi_pps c;
+static struct bq25970_device chip;
 static void reset(void) {
  drvdata=&c;
  info_count=scheduled=check_operating_power=0;
- memset(&c,0,sizeof(c));memset(regs,0,sizeof(regs));
+ memset(&c,0,sizeof(c));memset(&chip,0,sizeof(chip));c.chip=&chip;memset(regs,0,sizeof(regs));
  memset(&pd,0,sizeof(pd));memset(&bms,0,sizeof(bms));memset(&sw,0,sizeof(sw));
  c.pd=&pd;c.bms=&bms;c.sw=&sw;c.ready=true;
  clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
@@ -230,7 +232,8 @@ static void reset(void) {
  bms.prop[POWER_SUPPLY_PROP_CAPACITY]=50;bms.prop[POWER_SUPPLY_PROP_VOLTAGE_NOW]=4000000;
  sw.prop[POWER_SUPPLY_PROP_HEALTH]=POWER_SUPPLY_HEALTH_GOOD;
  regs[0x0d]=6;adc(4,4000);adc(8,60);
- assert(!umi_pps_parse(&c));assert(c.nprotection==19);
+ assert(!umi_bq25970_profile(NULL, &chip));chip.owner=true;
+ assert(!umi_pps_parse(&c));assert(chip.nprotection==20);
  c.state=PPS_WAIT_PLUG;
 }
 static void tick(void) { umi_pps_work(&c.work.work); }
@@ -247,6 +250,7 @@ static void run(void) {
 #include "pps_detach_cases.h"
 #include "pps_protection_cases.h"
 int main(void) {
+ test_chip_boundary();
  test_notifications();
  test_partial_fault_snapshot();
  test_power_policy();
@@ -255,12 +259,13 @@ int main(void) {
  struct thermal_cooling_device cooling = {.devdata=&c};
  int temp; unsigned long cooling_state;
  reset();c.psy=&sw;changed=0;
- assert(umi_pps_get_property(&sw,POWER_SUPPLY_PROP_VOLTAGE_NOW,&value)==-ENODATA);
- assert(!umi_pps_get_temp(&tz,&temp) && temp==32561);
+ assert((drvdata=&chip, bq25970_get_property(&sw,POWER_SUPPLY_PROP_VOLTAGE_NOW,&value))==-ENODATA);
+ drvdata=&c;assert(!umi_pps_get_temp(&tz,&temp) && temp==32561);
  thermal_fail=1;assert(umi_pps_get_temp(&tz,&temp)==-EIO);thermal_fail=0;
  bms.prop[POWER_SUPPLY_PROP_TEMP]=1250;assert(umi_pps_get_temp(&tz,&temp)==-ERANGE);
  reset();c.psy=&sw;run();assert(changed>0);
- assert(!umi_pps_get_property(&sw,POWER_SUPPLY_PROP_CURRENT_NOW,&value) && value.intval==1000000);
+ struct bq25970_sample chip_sample;assert(!bq25970_read_sample(&chip,&chip_sample));
+ drvdata=&chip;assert(!bq25970_get_property(&sw,POWER_SUPPLY_PROP_CURRENT_NOW,&value) && value.intval==1000000);drvdata=&c;
  assert(!umi_pps_get_property(&sw,POWER_SUPPLY_PROP_STATUS,&value) && value.intval==POWER_SUPPLY_STATUS_CHARGING);
  int previous_io=io_count;unsigned int latched=regs[0x11];
  assert(!umi_pps_get_property(&sw,POWER_SUPPLY_PROP_HEALTH,&value));
@@ -322,11 +327,11 @@ int main(void) {
  assert(umi_pps_current(&caps,2500)==2500);
  caps.max_ma=2499;assert(umi_pps_current(&caps,2500)==2450);
  caps.max_ma=1999;assert(umi_pps_current(&caps,2500)<0);
- assert(umi_pps_encode(4550,3475,25,63)==43);
- assert(umi_pps_encode(4551,3475,25,63)<0);
- assert(umi_pps_encode(INT_MAX,3475,25,63)<0);
-	reset();missing_property="ti,sense-resistor-micro-ohms";c.nprotection=0;
-	assert(!umi_pps_parse(&c) && c.nprotection==19 && !enable_count);
+ assert(umi_bq_encode(4550,3475,25,63)==43);
+ assert(umi_bq_encode(4551,3475,25,63)<0);
+ assert(umi_bq_encode(INT_MAX,3475,25,63)<0);
+	reset();missing_property="ti,sense-resistor-micro-ohms";chip.nprotection=0;chip.owner=false;
+	assert(!umi_bq25970_profile(NULL, &chip) && chip.nprotection==20 && !enable_count);chip.owner=true;
  reset();pd.prop[POWER_SUPPLY_PROP_ONLINE]=1;tick();
  assert(c.state==PPS_SETTLE && claim_owned && !enable_count);
  reset();run();clock_ms+=200;tick();assert(c.state==PPS_RUN);
