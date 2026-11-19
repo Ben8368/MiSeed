@@ -43,4 +43,4 @@ Windows `collect_nfc_evidence.py` 默认只采注册与 dmesg；绑定、地址�
 
 ## 证据与开放项
 
-[内核 L2 / 旧驱动 probe L3](archive/hardware/2026-11-09-umi-nfc-l2-ramboot.md)、[新 SN100T NCI L3 尝试](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)、[Android 基线](archive/hardware/2026-11-10-umi-nfc-android-baseline.md)、[Linux 接口审计](archive/reviews/2026-11-10-linux-interface-audit.md)；当前设备能力见 [platforms](platforms.md)，未知能力归 RISK-011，旧 ABI 退出归 TD-003。
+[内核 L2 / 旧驱动 probe L3](archive/hardware/2026-11-09-umi-nfc-l2-ramboot.md)、[11-19 真机记录](archive/hardware/2026-11-19-umi-nfc-init-retry.md)、[新 SN100T NCI L3 尝试](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)、[Android 基线](archive/hardware/2026-11-10-umi-nfc-android-baseline.md)、[Linux 接口审计](archive/reviews/2026-11-10-linux-interface-audit.md)；当前设备能力见 [platforms](platforms.md)，未知能力归 RISK-011，旧 ABI 退出归 TD-003。
