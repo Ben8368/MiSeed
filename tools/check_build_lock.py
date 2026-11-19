@@ -44,7 +44,7 @@ REQUIRED_INPUTS = {
     "kernel/power/umi_pps.c", "kernel/power/umi_pps_policy.h",
     "kernel/power/umi_wired_internal.h", "kernel/power/umi-pps.dtsi",
     "kernel/power/pmic_pdphy_receive.inc",
-    "kernel/nfc/sn100x.c", "kernel/nfc/Kconfig",
+    "kernel/nfc/sn100x.c", "kernel/nfc/sn100x-frame.h", "kernel/nfc/Kconfig",
     "kernel/nfc/bindings/nxp,sn100t.yaml",
     "LICENSES/BSD-3-Clause.txt", "LICENSES/GPL-2.0-only.txt",
     "tools/apply_display_port.py", "tools/check_runtime_dt.py",

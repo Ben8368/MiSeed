@@ -19,7 +19,7 @@
 | 电池、电量计、有线固定 PD | FG/SMB5 充电读数、固定 PDO 协商、降至 5 V、80% 旁路有 L3 | BQ25970 ADC、温标、保护、回差与独立复核 |
 | 有线 PPS、温控与日志 | 历史镜像完成 PPS 调压充电；可读热区、记录并导出 RAM 日志 | 当前镜像的泵与故障恢复专项；TCPM 电池/身份应答为 MVP 后计划 |
 | 无线接收 RX、无线反充 TX | 两条路径均未移植 | 各自的驱动、保护和 NFC 共存须分别验收 |
-| SN100T NFC、eSE | Type 4 探针过 L2；该镜像在 Umi 上注册 `nfc0`，CLKREQ 输入配置过被动 L3；仅历史镜像曾发现标签并重开 | 此镜像未发首条命令、未读真卡；前次首发地址 NACK 待同步波形。PM、HCE、eSE、Debian 集成未验，详见 [NFC](docs/NFC.md) |
+| SN100T NFC、eSE | Type 4 探针过 L2 | 11-19 镜像通过初始化、MIFARE 寻卡和关闭。重开、NDEF、PM、HCE/eSE、Debian 待验。[NFC](docs/NFC.md) |
 | 安装与发行 | Fastboot **临时启动**可用，非持久安装 | Fastboot 发行包、持久化与多系统后置；EDL/9008 仅研究，须有授权且兼容的 Programmer |
 
 里程碑与完成条件见[工作包 WP0–WP11](docs/implementation-plan.md)，硬件证据见[本机记录](docs/platforms.md)。

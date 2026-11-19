@@ -34,7 +34,7 @@ GENERATED = {
     "drivers/gpu/drm/panel/umi-csot.Kconfig",
     "arch/arm64/boot/dts/qcom/umi-native-dsi.dtsi",
     "Documentation/devicetree/bindings/display/panel/xiaomi,umi-csot.yaml",
-    "drivers/nfc/sn100x.c",
+    "drivers/nfc/sn100x.c", "drivers/nfc/sn100x-frame.h",
     "drivers/nfc/sn100x.Kconfig",
     "Documentation/devicetree/bindings/net/nfc/nxp,sn100t.yaml",
     "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-fg.yaml",

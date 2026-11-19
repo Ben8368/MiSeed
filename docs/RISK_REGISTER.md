@@ -14,7 +14,7 @@
 | RISK-009 / P2（历史设备标识） | PR1 4处、PR3 2处序列号已在当前树脱敏，但 `8f67d5f` 及合并历史仍有副本，见[核实记录](archive/reviews/2026-11-06-pr1-coderabbit-verification.md) | 不宣称托管历史已脱敏；不得擅改已推送历史 | 维护者公开分发前复核历史与导出副本并明确策略；清理须另行授权 |
 
 | RISK-010 / P1（运行时DTBO/显示交接） | [CSOT L3](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)：90Hz DCS 已发送，KMS 90Hz、GPIO50 高，DRM command-mode vblank 由此前59.921Hz到89.846Hz。runtime根compatible/model审计仍FAIL。MDSS SMMU=15000000，3da0000为GPU | 物理刷新率未独立量化；首帧/PM未闭；CCF未上游 | 外部TE/光学测实际扫描；WP3/WP4查根交接；GPU另验，TLMM归TD-002 |
-| RISK-011 / P1（SN100T Linux NCI / eSE） | 11-13 基础L3过；11-18 [复验](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)首发 `CORE_RESET` 地址NACK。eSE路径、`CORE_RESET` 会话影响与VEN复位时序未证。 | 不盲重试、不拉低共享VEN、不挂SE回调；不宣称NDEF、PM、HCE/eSE可用。WP10 | 首发同步波形；分验NDEF、PM、HCE。eSE须闭合[身份/传输、收尾及权限](archive/research/2026-11-18-sn100t-ese-ven.md)，任何VEN复位另审；旧ABI归TD-003 |
+| RISK-011 / P1（SN100T Linux NCI / eSE） | 11-13 基础L3过；11-19 [首笔复验](archive/hardware/2026-11-19-umi-nfc-init-retry.md)地址NACK后第二次写通，DEV_UP过。eSE路径、`CORE_RESET` 会话影响与VEN复位时序未证。 | 不盲重试、不拉低共享VEN、不挂SE回调；不宣称NDEF、PM、HCE/eSE可用。WP10 | [首发波形与 GENI 时序对照](archive/research/2026-11-18-csot-nci-fdt-followup.md#同一首笔的-geni-时序对照)；分验NDEF、PM、HCE。eSE须闭合[身份/传输、收尾及权限](archive/research/2026-11-18-sn100t-ese-ven.md)，任何VEN复位另审；旧ABI归TD-003 |
 | RISK-012/P2 | LOS 源/DTBO 线索：QUP11、0x5a、GPIO129/130；主线驱动待合入；Mi 10 LRA 谐振/驱动边界未核 | 不接入 DT/开放保留 GPIO/宣称振动可用 | 核实本机参数与 GPIO 复用；用已合入驱动或审查回移植来源/许可；Debian EV_FF L2/L3、停止/恢复通过 |
 
 关闭条目按 [GOVERNANCE](GOVERNANCE.md) 移入带日期归档，不以“已登记”解除阻断。

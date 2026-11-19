@@ -35,6 +35,7 @@ struct gpio_desc { int value; int failure; int writes; int read_error; int stuck
 struct sk_buff { unsigned int len; u8 *data; };
 static int held, depth=1, syncs, sends, received, live, oom;
 static struct gpio_desc *shared_ven, *mode_select;
+static int address_nacks;
 static int send_result=999, read_result[2], read_count;
 static u8 packet[258];
 static void mutex_lock(struct mutex *m) { assert(!m->held); m->held=1; held++; }
@@ -68,7 +69,7 @@ static int i2c_master_recv(struct i2c_client *c,void *dst,int n) {
  int ret=read_result[i]; if(ret>0) {assert(ret<=n);memcpy(dst,packet+(i?3:0),ret);} return ret;
 }
 static int i2c_master_send(struct i2c_client *c,const void *src,int n) {
- (void)c;(void)src;sends++;return send_result==999?n:send_result;
+ (void)c;(void)src;sends++;if(address_nacks>0){address_nacks--;return -ENXIO;}return send_result==999?n:send_result;
 }
 static int nci_recv_frame(struct nci_dev *n,struct sk_buff *s) {
  (void)n;received++;kfree_skb(s);return 0;
@@ -84,7 +85,7 @@ int main(int argc,char **argv) {
  assert(argc==2); int test=atoi(argv[1]);
  struct i2c_client client={.irq=5};struct nci_dev ndev={0};
  struct gpio_desc ven={.value=1}, firm={0};
- struct sn100x p={.client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
+ struct sn100x p={.retry_first_reset=true,.client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
  shared_ven=&ven;mode_select=&firm;
  ndev.data=&p;client.dev.phy=&p;
  struct sk_buff *s=NULL;
@@ -136,11 +137,11 @@ int main(int argc,char **argv) {
   packet[0]=0x40;packet[2]=3;packet[4]=0x10;read_result[0]=3;read_result[1]=3;
   sn100x_irq(5,&p);assert(received==1 && p.reset_confirmed);
   sn100x_close(&ndev);assert(!p.fault && depth==1);
- } else if(test==8) { /* A CORE_RESET NACK latches without replay or VEN reset. */
+ } else if(test==8) { /* Persistent first address NACK exhausts the bounded budget. */
   assert(!sn100x_open(&ndev));send_result=-ENXIO;
   s=tx(4);s->data[0]=0x20;
-  assert(sn100x_send(&ndev,s)==-ENXIO && depth==1 && sends==1 && p.fault==-ENXIO);
-  assert(sn100x_send(&ndev,tx(3))==-ENXIO && sends==1 && ven.writes==1);
+  assert(sn100x_send(&ndev,s)==-ENXIO && depth==1 && sends==3 && p.fault==-ENXIO);
+  assert(sn100x_send(&ndev,tx(3))==-ENXIO && sends==3 && ven.writes==1);
  } else if(test==9) {
   assert(!sn100x_open(&ndev));oom=1;sn100x_irq(5,&p);
   assert(p.fault==-ENOMEM && !read_count && depth==1);
@@ -158,6 +159,18 @@ int main(int argc,char **argv) {
   firm.read_error=0;firm.value=1;
   assert(!sn100x_open(&ndev) && firm.value==0 && ven.value==1 && ven.writes==1);
   sn100x_close(&ndev);assert(p.fault==-ETIMEDOUT && ven.writes==1 && depth==1);
+ } else if(test==12) {
+  assert(!sn100x_open(&ndev));address_nacks=2;
+  s=tx(4);s->data[0]=0x20;assert(!sn100x_send(&ndev,s) && sends==3);
+  send_result=-ENXIO;s=tx(4);s->data[0]=0x20;
+  assert(sn100x_send(&ndev,s)==-ENXIO && sends==4 && p.fault==-ENXIO);
+ } else if(test>=13 && test<=17) {
+  assert(!sn100x_open(&ndev));s=tx(4);s->data[0]=test==15?0x21:0x20;
+  if(test==16)p.retry_first_reset=false; /* unqualified adapter */
+  send_result=test==13?-EIO:test==14?2:-ENXIO;
+  if(test==17){address_nacks=1;send_result=-EIO;}
+  int expected=send_result==2?-EREMOTEIO:send_result;
+  assert(sn100x_send(&ndev,s)==expected && sends==(test==17?2:1) && p.fault==expected);
  } else {assert(0);}
  assert(!live && !held && ven.value==1);return 0;
 }
@@ -171,6 +184,7 @@ class TransportTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         text = (ROOT / 'kernel/nfc/sn100x.c').read_text(encoding='utf-8')
+        text = text.replace('#include "sn100x-frame.h"', (ROOT / 'kernel/nfc/sn100x-frame.h').read_text(encoding='utf-8'))
         logic = text[text.index('#define SN100X_FRAME_MAX'):text.index('static const struct nci_ops')]
         pm = text[text.index('static int sn100x_suspend'):text.index('static DEFINE_SIMPLE_DEV_PM_OPS')]
         path = Path(cls.temp.name) / 'transport.c'
@@ -184,7 +198,7 @@ class TransportTests(unittest.TestCase):
             raise AssertionError(result.stderr)
 
     def test_production_transport_failure_and_lifecycle_paths(self):
-        for case in range(12):
+        for case in range(18):
             with self.subTest(case=case):
                 subprocess.run([self.binary, str(case)], check=True, capture_output=True, timeout=5)
 

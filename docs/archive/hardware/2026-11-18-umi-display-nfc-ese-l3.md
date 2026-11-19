@@ -83,3 +83,9 @@ GPIO诊断文件哈希：`display-before.txt` `bd0640a5cf37722f78be0582501e98e48
 - `fe9c0ba` 加本地变更，Windows x64 / PowerShell 7.6.9、Ubuntu 24.04 WSL2、ARM64 GCC 13.3.0。新增救援 `nfc-discover`，一次 DEV_UP，成功后才用 MIFARE 掩码轮询，结束清理但不重开。`MISEED_NATIVE_DSI=1 bash tools/build_kernel_l2.sh`、WSL `python3 -m unittest discover -s tests`（305 项、4 跳过）、离线哈希预检均退出 0。boot SHA-256 `d7c023f7086e95877aee1356811a89646695285076b1c355f624d673586b06e4`，DTB 与上节相同，未改 NFC transport 或供电配置。
 - 用户授权一次临时启动，已确认唯一 Umi、已解锁、非 userspace Fastboot。`1-0028 / sn100x / nfc0` 注册通过。7.050637 s open 回读 FIRM=0、VEN=1；7.071015 s GENI 报 `0x28/W phase=address gp_length=0 irq=0x409`；CORE_RESET 写入 `ret=-6`，首错锁存、保留 VEN。`stage=dev_up up=0 polling=0 rc=-110`。**初始化失败，未执行目标发现**，不是轮询后无卡。GPIO7 已修正的镜像仍复现同类首发失败；第九拍和芯片内部就绪状态未测。不重试、不写卡。
 - 完整记录在 `.work/umi-nfc-two-phone-20261118/evidence/`，运行时 FDT 硬件子树与 RAM 通过，既知根 compatible/model 差异仍 FAIL。`run.py --ram-boot-once` 按探针失败退出 1，回退成功：Android `umi`、ADB 在线、`sys.boot_completed=1`；未刷写。
+
+## Android 活动 DT：NFC 时钟与供电属性只读对照
+
+- 已授权临时 `adb root`；唯一设备 `umi`、Android 启动完成。普通 shell 先前因权限不足未能判断。本次确认 UID 0，成功列举活动 DT 的 `/soc/i2c@984000` 和 `nq@28`，校验子节点兼容 `qcom,nq-nci`、地址 `0x28` 后读取指定属性。原始记录 `.work/nfc-handoff-compare-20261118/android-live-clock-dt.txt`，SHA-256 `ac4f0de8a5a7a2dc151cd590573329e4abaa85514095f55be281263ba453eb97`。
+- 父控制器 `qcom,clk-freq-out=1000000`，`clock-names` 为 `se-clk`、`m-ahb`、`s-ahb`；这些是控制器时钟，不是 NFC 芯片的参考时钟。子节点有 GPIO7 CLKREQ、`nfc_active`/`nfc_suspend`，但未列出 `qcom,clk-src`、`clocks`、`clock-names`，也未列出 `qcom,nq-vdd-1p8-` 的 supply/voltage/current 三项。这回答的是运行时 DT 有无显式声明，不证明物理参考时钟、供电或首笔应答状态。无依据照搬一个芯片时钟或电源节点。
+- 未发 NFC 命令，未读写总线或 GPIO，未切换 NFC、重启或刷写。`adb unroot` 后确认 UID 2000、`product=umi`、`sys.boot_completed=1`。

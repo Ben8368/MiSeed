@@ -9,6 +9,11 @@ from tools import collect_display_evidence as display, collect_nfc_evidence as n
 from tools.report_dpu_fps import report_fps
 
 
+STATUS = (b'NFC_STATUS_BEGIN\nNFC I2C device=1-0028 driver=sn100x\nNFC 1-0028 reg=0x28\n'
+          b'NFC DT matches=1 scan=finished\nNFC class device=nfc0 (registration metadata only)\n'
+          b'NFC class devices=1 (all controllers, not a transport test)\nNFC_STATUS_END\n')
+
+
 class EvidenceTests(unittest.TestCase):
     def test_first_address_needs_waveform_and_never_runs_rf(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(nfc, 'capture') as capture:
@@ -17,8 +22,7 @@ class EvidenceTests(unittest.TestCase):
                 with self.assertRaises(display.ExportError):
                     nfc.collect(None, out, {}, run_rf=rf, first=True, waveform_armed=armed)
             capture.assert_not_called()
-            (out/'nfc-status.txt').write_bytes(b'NFC_STATUS_BEGIN\nNFC I2C device=1-0028 driver=sn100x\n'
-                b'NFC DT matches=1 scan=finished\nNFC class devices=1 (all)\nNFC_STATUS_END\n')
+            (out/'nfc-status.txt').write_bytes(STATUS)
             for rc in (0, -110):
                 capture.reset_mock()
                 (out/'nfc-first.txt').write_text(f'NFC_FIRST_BEGIN\nNFC_FIRST_RESULT stage=dev_up rc={rc}\nNFC_FIRST_END\n')
@@ -28,6 +32,20 @@ class EvidenceTests(unittest.TestCase):
                 self.assertEqual(report['probe_rc'], rc)
                 self.assertEqual(bool(report['issues']), bool(rc))
                 self.assertEqual(report['ninth_clock'], 'NOT_MEASURED_BY_HOST')
+
+    def test_init_retry_uses_single_dev_up(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(nfc, 'capture') as capture:
+            out = Path(tmp)
+            for extra in ({'run_rf': True}, {'first': True}, {'waveform_armed': True}, {'read_fixture': True}):
+                with self.assertRaises(display.ExportError):
+                    nfc.collect(None, out, {}, **({'run_rf': False, 'init_retry': True} | extra))
+            capture.assert_not_called()
+            (out/'nfc-status.txt').write_bytes(STATUS)
+            (out/'nfc-first.txt').write_bytes(b'NFC_FIRST_BEGIN\nNFC_FIRST_RESULT stage=dev_up rc=0\nNFC_FIRST_END\n')
+            report = {'issues': []}
+            nfc.collect(None, out, report, run_rf=False, init_retry=True)
+            self.assertEqual([c.args[2] for c in capture.call_args_list], ['nfc-status', 'nfc-first', 'dmesg'])
+            self.assertEqual(report['probe_rc'], 0)
 
     def test_fixture_read_before_close_failure_remains_evidence(self):
         lines = [b'NFC DEV_UP/reset-init passed.',
@@ -82,8 +100,7 @@ a [001] ... 12.21000: dpu_enc_phys_cmd_pp_tx_done: id=35, pp=0, new_count=0, eve
         def capture(port, out, command, kind, **kwargs):
             calls.append(command)
             if command == "nfc-status":
-                out.write_bytes(b"NFC_STATUS_BEGIN\nNFC I2C device=1-0028 driver=sn100x\n"
-                                b"NFC DT matches=1 scan=finished\nNFC class devices=1 (all)\nNFC_STATUS_END\n")
+                out.write_bytes(STATUS)
             if command == "nfc-l3":
                 self.assertEqual(kwargs["timeout"], 120)
                 out.write_bytes(b"NFC_L3_BEGIN\nNFC_L3_RESULT rc=-6\nNFC_L3_END\n")
@@ -105,3 +122,31 @@ a [001] ... 12.21000: dpu_enc_phys_cmd_pp_tx_done: id=35, pp=0, new_count=0, eve
         with self.assertRaises(display.ExportError):
             nfc.check_identity(b"NFC I2C device=1-0028 driver=sn100x\n"
                                b"NFC DT matches=1 scan=finished\nNFC class devices=2 (all)\n")
+
+    def test_conflicting_or_missing_inventory_stops_before_active_command(self):
+        bad_frames = [STATUS.replace(b'NFC_STATUS_END', line + b'\nNFC_STATUS_END') for line in (
+            b'NFC DT matches=2 scan=incomplete', b'NFC class devices=0 (all controllers, not a transport test)',
+            b'NFC I2C device=3-0028 driver=unbound-or-unavailable', b'NFC class scan truncated after 256 entries')]
+        bad_frames.extend((STATUS.replace(b'reg=0x28', b'reg=0x29'),
+                           STATUS.replace(b'NFC class device=nfc0 (registration metadata only)\n', b'')))
+        for frame in bad_frames:
+            with self.subTest(frame=frame), tempfile.TemporaryDirectory() as tmp, patch.object(nfc, 'capture') as capture:
+                out = Path(tmp)
+                (out / 'nfc-status.txt').write_bytes(frame)
+                with self.assertRaises(display.ExportError):
+                    nfc.collect(None, out, {}, run_rf=True)
+                self.assertEqual([call.args[2] for call in capture.call_args_list], ['nfc-status'])
+        nfc.check_identity(STATUS.replace(b'1-0028', b'12-0028').replace(b'nfc0', b'nfc3'))
+
+    def test_l3_result_must_be_unique_and_immediately_before_end(self):
+        prefix = (b'NFC_L3_BEGIN\nNFC DEV_UP/reset-init passed.\n'
+                  b'NFC RF discovery passed: targets=1 protocol=4; UID omitted.\n'
+                  b'NFC close/CORE_RESET/reopen/final close passed; shared VEN was retained.\n')
+        valid = prefix + b'NFC_L3_RESULT rc=0\nNFC_L3_END\n'
+        self.assertEqual(display.validate_frame(valid, b'NFC_L3'), valid)
+        for records in (b'NFC_L3_RESULT rc=0\nNFC_L3_RESULT rc=broken',
+                        b'NFC_L3_RESULT rc=broken\nNFC_L3_RESULT rc=-6',
+                        b'NFC_L3_RESULT rc=-6\nNFC DEV_UP/reset-init passed.', b'NFC_L3_RESULT rc=-0'):
+            frame = prefix + records + b'\nNFC_L3_END\n'
+            with self.subTest(records=records), self.assertRaises(display.ExportError):
+                display.validate_frame(frame, b'NFC_L3')

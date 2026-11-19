@@ -13,10 +13,22 @@ else:
 
 
 def check_identity(frame):
-    bound = re.findall(rb"^NFC I2C device=(\d+-0028) driver=sn100x$", frame, re.M)
-    if not (len(bound) == 1 and b"NFC DT matches=1 scan=finished" in frame
-            and b"NFC class devices=1 (" in frame and b"truncated" not in frame):
-        raise ExportError("expected one bound SN100T and one NFC controller; no RF command sent")
+    lines = frame.splitlines()
+
+    def only(prefix, pattern):
+        records = [line for line in lines if line.startswith(prefix)]
+        match = re.fullmatch(pattern, records[0]) if len(records) == 1 else None
+        if not match:
+            raise ExportError(f"missing, ambiguous or invalid {prefix.decode()} record; probe stopped")
+        return match
+
+    if b'truncated' in frame:
+        raise ExportError("truncated NFC inventory; probe stopped")
+    device = only(b'NFC I2C device', rb'NFC I2C device=(\d+-0028) driver=sn100x')[1]
+    only(b'NFC ' + device + b' reg', rb'NFC ' + re.escape(device) + rb' reg=0x28')
+    only(b'NFC DT matches', rb'NFC DT matches=1 scan=finished')
+    only(b'NFC class device=', rb'NFC class device=nfc\d+ \(registration metadata only\)')
+    only(b'NFC class devices', rb'NFC class devices=1 \(all controllers, not a transport test\)')
 
 
 def probe_steps(frame, read_fixture):
@@ -54,7 +66,9 @@ def probe_steps(frame, read_fixture):
     return checks
 
 
-def collect(port, output, report, *, run_rf, read_fixture=False, first=False, waveform_armed=False):
+def collect(port, output, report, *, run_rf, read_fixture=False, first=False, waveform_armed=False, init_retry=False):
+    if init_retry and (first or waveform_armed or run_rf or read_fixture):
+        raise ExportError("init-retry captures only one DEV_UP and kernel logs")
     if first and (run_rf or not waveform_armed) or waveform_armed and not first:
         raise ExportError("first-address probe requires an armed waveform capture and no RF probe")
     if read_fixture and not run_rf:
@@ -62,7 +76,7 @@ def collect(port, output, report, *, run_rf, read_fixture=False, first=False, wa
     status = output / "nfc-status.txt"
     capture(port, status, "nfc-status", b"NFC_STATUS")
     check_identity(validate_frame(status.read_bytes(), b"NFC_STATUS"))
-    if first:
+    if first or init_retry:
         probe = output / 'nfc-first.txt'
         capture(port, probe, 'nfc-first', b'NFC_FIRST')
         frame = validate_frame(probe.read_bytes(), b'NFC_FIRST')
@@ -98,6 +112,7 @@ def main():
     parser.add_argument("--port", required=True)
     parser.add_argument("--output", type=Path, required=True)
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--init-retry', action='store_true', help='one DEV_UP for the bounded reset experiment')
     mode.add_argument('--first-address', action='store_true', help='one DEV_UP only; no RF or reopen')
     parser.add_argument('--waveform-armed', action='store_true', help='confirm external synchronized capture is armed')
     mode.add_argument("--run-rf", action="store_true",
@@ -110,17 +125,17 @@ def main():
         parser.error("--read-fixture requires --run-rf")
     output = prepare_output(args.output, parser)
     output.mkdir(parents=True)
-    report = {"mode": "first-address" if args.first_address else "ndef-fixture" if args.read_fixture else "active" if args.run_rf else "passive", "probe_rc": None, "issues": []}
+    report = {"mode": "init-retry" if args.init_retry else "first-address" if args.first_address else "ndef-fixture" if args.read_fixture else "active" if args.run_rf else "passive", "probe_rc": None, "issues": []}
     try:
         port = open_windows_port(args.port)
         try:
             collect(port, output, report, run_rf=args.run_rf, read_fixture=args.read_fixture,
-                    first=args.first_address, waveform_armed=args.waveform_armed)
+                    first=args.first_address, waveform_armed=args.waveform_armed, init_retry=args.init_retry)
         finally:
             port.close()
     except (ExportError, OSError) as exc:
         report["issues"].append({"section": "capture", "message": str(exc)})
-    report["result"] = ("FAIL" if report["issues"] else "PASS DEV_UP only; consult waveform" if args.first_address else
+    report["result"] = ("FAIL" if report["issues"] else "PASS DEV_UP only" if args.init_retry else "PASS DEV_UP only; consult waveform" if args.first_address else
                         "PASS scoped Type 4 fixture/RF/reopen" if args.read_fixture else
                         "PASS scoped NCI/RF/reopen" if args.run_rf else "PASS passive registration only")
     return write_report(output, report)

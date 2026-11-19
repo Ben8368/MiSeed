@@ -66,10 +66,14 @@ def vblank_result(frame):
 
 
 def nfc_l3_result(frame):
-    result = re.findall(rb"^NFC_L3_RESULT rc=(-?\d+)\r?$", frame, re.MULTILINE)
-    if len(result) != 1 or int(result[0]) > 0:
-        raise ExportError("invalid or duplicated NFC L3 result")
-    return int(result[0])
+    lines = frame.splitlines()
+    records = [line for line in lines if line.startswith(b'NFC_L3_RESULT')]
+    if len(records) != 1 or lines[-2:] != [records[0], b'NFC_L3_END']:
+        raise ExportError("missing, duplicated or misplaced NFC L3 result")
+    match = re.fullmatch(rb'NFC_L3_RESULT rc=(0|-[1-9]\d{0,9})', records[0])
+    if not match or int(match[1]) < -(1 << 31):
+        raise ExportError("invalid NFC L3 result")
+    return int(match[1])
 
 
 def capture(port, output, command, kind, *, timeout=120):

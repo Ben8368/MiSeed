@@ -161,6 +161,9 @@ class GeniNackDiagnosticsTests(unittest.TestCase):
         result = geni_nack.transform(source)
         self.assertIn(b'!gp_length ? "address" : rd ? "unknown" : "data"', result)
         self.assertIn(b"readl_relaxed(base + SE_GENI_M_GP_LENGTH)", result)
+        for reg in (b'SE_GENI_CLK_SEL', b'GENI_SER_M_CLK_CFG', b'SE_I2C_SCL_COUNTERS'):
+            self.assertEqual(result.count(b'readl_relaxed(base + ' + reg + b')'), 1)
+        self.assertNotIn(b'writel', result)
         self.assertEqual(result.replace(geni_nack.NEW, geni_nack.OLD), source)
         self.assertNotIn(b"buf", result)
         self.assertEqual(result.count(b"i2c_master"), 0)

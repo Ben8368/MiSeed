@@ -51,7 +51,7 @@
 
 Windows `python tools/collect_nfc_evidence.py --port COMn --output .work/<新目录>` 只发 `nfc-status` 和 `dmesg`；成功仅指被动注册与日志采集。原主动验收须显式加 `--run-rf`：先确认板级测点、电平域、同步采集、明确授权和非支付测试标签；失败锁存停止，不自动重跑。未采波形时继续被动模式。
 
-从逻辑分析仪导出同一时间基准的 CSV，截取目标探针之前的空闲至首笔地址第九拍下降沿。首行 `time_ns,scl,sda,firm,ven,irq`（可追加 `,clkreq`），时间为严格递增的整数纳秒，其余列为 0/1。`python tools/nfc_first_address.py capture.csv` 仅解码第一个 START，不跳过别的事务找匹配项，不记录载荷。输出 START 与第九拍上升沿的控制线样本、7 位地址、读写方向、ACK/NACK；退出 0 表示已解码 `0x28/W`（含 NACK），1 是其他地址/方向，2 是无效或不完整。判读基于 [NXP I²C 规范 UM10204](https://www.nxp.com/docs/en/user-guide/UM10204.pdf) 的地址和应答位定义；数字采样不能证明模拟边沿质量、芯片内部模式或时间窗内无漏边。与同次 GENI 日志对齐后再归因。
+从逻辑分析仪导出同一时间基准的 CSV，截取目标探针之前的空闲至首笔地址第九拍下降沿。首行 `time_ns,scl,sda,firm,ven,irq`（可追加 `,clkreq`），时间为严格递增的整数纳秒，其余列为 0/1。`python tools/nfc_first_address.py capture.csv` 仅解码第一个 START，不跳过别的事务找匹配项，不记录载荷。输出首样本、START 与第九拍上升沿的控制线状态、7 位地址、方向与 ACK/NACK。`control_to_start` 和 `control_after_start_to_ninth` 分别统计（首样本，START] 和（START，第九拍上升沿] 内各控制线的采样翻转次数与最近翻转时间（纳秒，无翻转为 null）；未接入的 CLKREQ 不输出。两端电平相同不能排除期间有脉冲，首样本前状态未知。退出 0 表示已解码 `0x28/W`（含 NACK），1 是其他地址/方向，2 是无效或不完整。判读基于 [NXP I²C 规范 UM10204](https://www.nxp.com/docs/en/user-guide/UM10204.pdf) 的地址和应答位定义；数字采样不能证明模拟边沿质量、芯片内部模式或时间窗内无漏边。与同次 GENI 日志对齐后再归因。
 
 参考 [Linux 上游提交 1275cbed80a7](https://github.com/torvalds/linux/commit/1275cbed80a740e4d56b6aff2745de9fce4818fa) 的 `drivers/i2c/busses/i2c-qcom-geni.c`（GPL-2.0；Praveen Talari、Naresh Maramaina；原始 GitHub patch SHA-256 `ce41de1af55eb9da33e88a14dc46ecdb51ffae08d10eb3bb6c34082b033c7beb`）。本地在锁定版本的 IRQ 清除前读取 `SE_GENI_M_GP_LENGTH`，0 记地址阶段，非零写记数据阶段，其余未知；日志不输出 payload。仅采用判定逻辑，不移植后续上游依赖、errno 或 DMA 恢复行为；保留 Linux I²C/NCI 原接口。删除 SN100T 的 CORE_RESET 重发，首次失败即锁存并保持 VEN。升级基线时复核并替换本地诊断增量。最终镜像的复验见[真机记录](../hardware/2026-11-18-umi-display-nfc-ese-l3.md#csot-90hz-命令与-geni-阶段取证复验)。
 
@@ -62,3 +62,25 @@ Windows `python tools/collect_nfc_evidence.py --port COMn --output .work/<新目
 - 真机前置：板级资料已确认测点、电平域和探头配置，分析仪在启动前就绪，以同一时基被动采 SCL/SDA、FIRM/VEN、IRQ。不外加驱动或试 VEN 脉冲。波形未就绪、身份不符或运行时硬件 DT/内存核验失败均停止；已知 FDT 根身份差异保留独立 FAIL。保留首笔前空闲至第九拍下降沿的样本和采集配置。
 - `.work/sn100-first-only-20261118/run_first.py --check` 离线核对镜像、配置、DT、来源锁与主机工具哈希。分析仪就绪才运行 `--ram-boot-once --waveform-armed`，核验唯一 Umi、已解锁且非 userspace Fastboot，仅临时 `fastboot boot`。结束或采集失败后经救援控制台进 Bootloader，再 `fastboot reboot` 回 Android，核验 `umi` 与 `sys.boot_completed=1`；若控制台失联则停止命令并人工正常重启，不再启动镜像、不刷写。
 - Windows x64 / PowerShell 7.6.9 + Ubuntu 24.04 WSL2 / GCC 13.3.0。全量回归 305 项中 4 项跳过，无失败；定向 C 测试覆盖成功、超时、地址错误、重复调用及 RF 互斥。ARM64 Linux 6.18.60 L2 和定向 schema（4 个 DT 反例，无跳过）通过。`boot.img` SHA-256 `db9ad029a2382be9de30f708a7ccff5ec4aa4dfaa79a41040676cfaf40cb3de8`；DTB `b4c82ce6324f497111a13d3dcd1b7ae9afe3d824fe7fa6516450a16663d8d9b5`，与前次被动 L3 一致。本镜像未启动，首笔 ACK/NACK 待 L3。
+
+### 同一首笔的 GENI 时序对照
+
+WP10 / RISK-011：对照 Android 运行内核版本后缀对应的 LineageOS `71b13e62f057a649b77fe4062feb73ee72ad609c` 与本机 Linux stable `f45ed76d6791cf72ff1265ee93511175bbbc2f18`。只用下游源码作硬件线索，不执行下游代码、不新增产品 ABI。
+
+| 首发条件 | 对照与决定 |
+| --- | --- |
+| 引脚和时钟 | [Android 公共板级节点](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/71b13e62f057a649b77fe4062feb73ee72ad609c/arch/arm64/boot/dts/vendor/qcom/xiaomi-sm8250-common.dtsi) 的 `nq@28` 与已采活动节点的地址及四路 GPIO 相符；源码节点没有 `qcom,clk-src` 或 `ref_clk`。`NFC_POWER_ON` 中的显式时钟投票受属性控制。不能从驱动含 `clk_get` 推断本板漏开了一路时钟，也不能据此证明物理参考时钟有效。 |
+| 启用顺序 | [相应 NQ 驱动](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/71b13e62f057a649b77fe4062feb73ee72ad609c/drivers/nfc/nq-nci.c) 与来源锁中 NQ C 文件 SHA-256 完全相同。区分 `nfcc_hw_check` 的 VEN 翻转与重试、普通 `nfc_write` 的写重试，以及 `NFC_POWER_ON` 的 FIRM 低 → 等待 → VEN 高 → 等待。MiSeed 在 probe 已设 FIRM 低，open 再确认 FIRM/VEN；没有证据把这些下游操作或延时移植为必需条件。 |
+| 总线时序 | 同为 1 MHz，[Android GENI](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/71b13e62f057a649b77fe4062feb73ee72ad609c/drivers/i2c/busses/i2c-qcom-geni.c) 的 `(div,high,low,cycle)` 是 `(1,3,9,18)`；[固定 Linux GENI](https://github.com/gregkh/linux/blob/f45ed76d6791cf72ff1265ee93511175bbbc2f18/drivers/i2c/busses/i2c-qcom-geni.c) 的 19.2 MHz 表是 `(1,2,8,18)`，32 MHz 表是 `(2,3,5,15)`。这些是表项，不是两台系统上测得的 SCL 波形。既有 Linux 成功和失败镜像都不能仅凭标称频率归因。 |
+
+单变量取证：保留原发送策略和板级 DT，仅在 GENI 已报 NACK 的 IRQ 分支同一日志中读 `clk_sel`、`m_clk_cfg`、`scl_counters`；不读 FIFO，不改变恢复。对比 `m_clk_cfg` / `scl_counters`：按源码编码，Linux 两表预期分别为 `0x11/0x202012`、`0x21/0x30140f`；Android 表对应 `0x11/0x302412`，不是 Android 实测值。选择器是索引，不是 Hz，寄存器也不是第九拍采样。
+
+一次 `nfc-first`，不做 RF 或 reopen。若 `0x28/W` 第九拍线上为 ACK 而 GENI 报地址 NACK，优先复核采样对齐、SCL 高低时间及控制器配置；若线上也为 NACK，则对照已知正常 Android 波形和 VEN/FIRM/CLKREQ 交接，不能只凭 NACK 区分总线电气条件与 NFCC 未就绪。若该次成功，保存首笔 ACK 与 DEV_UP，不追加命令；无波形或采集不全均不做物理归因。不拉低共享 VEN、不调全局 GENI 时序表。
+
+离线准备（无新增 L3）：Windows x64 / PowerShell 7.6.9，Ubuntu 24.04 WSL2 / AArch64 GCC 13.3.0。`MISEED_NATIVE_DSI=1 bash tools/build_kernel_l2.sh`、`tools/validate_kernel_dt.py --source … --build … --dtb <打包 DTB>`、WSL `python3 -m unittest discover -s tests` 退出 0（309 项、4 跳过；定向 DT 四项反例无跳过）。`.work/nfc-handoff-compare-20261118/l2/boot.img` SHA-256 `9b2cde1b13d28c2e08ed47f6af011c9808f26d2b3550423c879291ec8dd313eb`；从 boot 头定位的内核载荷 `73954acd9098caceda0e4b35b95a587199c103c4b30165e6dbb3ad7eacc6f429` 含新读回日志。DTB、resolved.config、rescue-init 哈希与双手机失败镜像相同。同目录 `run_first.py --check` 离线退出 0；真机前另核对同步测量条件与本轮授权。仅 RAM 启动，确认设备身份后执行一次 DEV_UP，保全日志后经 bootloader 重启，核对 Android 产品及启动完成。
+
+#### 无分析仪：离线核对，不触发探针
+
+[Android 活动 DT 只读记录](../hardware/2026-11-18-umi-display-nfc-ese-l3.md#android-活动-dtnfc-时钟与供电属性只读对照)将三个时钟列在 I²C 控制器，而非 `nq@28`。离线解析 11-13 成功镜像的打包 DTB、11-18 双手机失败会话的运行时 FDT，以及 GENI 读回镜像的打包 DTB：三份均在 `i2c@984000` 声明 1 MHz、`se`（GCC `WRAP0_S1_CLK`）；两个 AHB 时钟在父级 `geniqup@9c0000`，不是缺失。三路均解析到 `clock-controller@100000`，SCL/SDA 均为 GPIO4/5、`qup1`。应按各自 binding 的消费者和时钟名对照，不跨两棵树比较 phandle 数值。DT 声明不证明时钟已开启。
+
+`python tools/nfc_geni_readback.py <dmesg.txt>` 只读完整 KMSG 导出，逐笔列出 `984000.i2c` 对 `0x28/W` 的地址 NACK，不按帧长猜 opcode。退出 0 表示至少一笔有寄存器读回，1 表示没有这种读回（包括旧日志），2 表示输入无效。匹配的是配置寄存器对，不是实测频率、物理第九拍或根因。11-18 双手机日志属于旧格式；缺字段不能用源码默认值填补。

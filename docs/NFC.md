@@ -1,6 +1,6 @@
 # Umi Linux NFC / eSE 适配
 
-RQ-14 / WP10：目标是通过 Linux NFC/NCI 接入 Debian。RQ-13 的 Android NQ 字符设备方案仅保留历史 bring-up 证据，旧 ABI 退出验收归 TD-003。统一规则见 [ARCHITECTURE](ARCHITECTURE.md#linux-接口准则)。
+WP10 通过 Linux NFC/NCI 接入 Debian，旧 NQ ABI 退出归 TD-003。接口规则见 [ARCHITECTURE](ARCHITECTURE.md#linux-接口准则)。
 
 ## 硬件与已有接口
 
@@ -13,8 +13,8 @@ RQ-14 / WP10：目标是通过 Linux NFC/NCI 接入 Debian。RQ-13 的 Android N
 `kernel/nfc/sn100x.c` 使用锁定 Linux 6.18.60 的 NCI core；标准控制经 generic netlink、数据经 AF_NFC。`CONFIG_NET/NFC/NFC_NCI/NFC_SN100X` 与 `nxp,sn100t` binding 配套；不导出字符设备或私有 ioctl，不同时绑定旧 NQ 驱动。来源、差异与验证见[适配记录](archive/research/2026-11-10-sn100t-linux-nci.md)；本地实现不等于已上游合入。
 
 - 使用独立 transport：通用 `nxp-nci` close 会拉低共享 VEN，且有固件下载流程。新驱动沿用上游 I²C 帧、skb、gpiod、IRQ、PM；NCI core 处理 reset/init 与 RF。
-- probe/open 将 FIRM 保持正常模式低，VEN 不拉低，IRQ 仅在 open 后启用；close/错误/移除不做硬复位或固件下载。2026-11-13 真机 reset/init、RF target discovery、close/reopen 通过；QUP1 1 MHz 与 CORE_RESET 重试组合下 `-ENXIO` 未复现，单一根因未区分，见[记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)。
-- 固定版本的 GENI 仍将 NACK 映射为 `-ENXIO`；诊断补充控制器阶段和 NCI opcode 日志。首次传输失败即禁用 IRQ 并锁存，不重发 CORE_RESET 或其他 NCI 帧，不做电源循环。close 核对 CORE_RESET 成功和适用的 NCI 2.x 通知，否则锁存超时。[本次 L3](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md#csot-90hz-命令与-geni-阶段取证复验) 确认首发 CORE_RESET 遇到地址阶段 NACK，尚未进入 RF。
+- probe/open 将 FIRM 保持正常模式低，VEN 不拉低，IRQ 仅在 open 后启用；close/错误/移除不做硬复位或固件下载。2026-11-13 真机 reset/init、RF target discovery、close/reopen 通过；最终成功会话采用 1 MHz 与有界重试，未采 dmesg，不能判断重试是否触发，见[记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)。
+- 配对的 GENI 补丁将 FIFO 写地址 NACK 与数据/阶段不明的错误区分。SN100T 仅在 probe 后首帧为 CORE_RESET 且返回地址 NACK 时等待 1–1.1 ms，最多发送三次。尝试耗尽、部分传输和后续写失败均锁存并保留 VEN。close 核对 CORE_RESET 成功和适用的 NCI 2.x 通知，否则锁存超时。[11-18 分镜像记录](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)：旧驱动第三次写通 reset，12 秒后另一笔 4 字节写失败，阶段未知。[11-19](archive/hardware/2026-11-19-umi-nfc-init-retry.md)第二次写通，DEV_UP 过。
 - CLKREQ7 配置 `output-disable`，不是 ready 信号。probe 设 FIRM 前采 FIRM/VEN，不是波形。仅关闭且无故障可 suspend；其余返回 EBUSY，不声明 RF 保持、唤醒或 eSE。
 - `sn100x` 不挂 SE 回调。WP10 先证实 Umi 的 NFCEE 身份与 APDU 通路，再解决 Linux core 的自动探测、关闭前 `CORE_RESET` 与 APDU 返回隔离；共享 VEN 保持高不等于 eSE 会话不受影响。见[回调及共享 VEN 审查](archive/research/2026-11-18-sn100t-ese-ven.md)。
 - 真机须分项验证注册、reset/init、帧收发、IRQ、失败/恢复、close/reopen 与 PM；协议掩码是待验证范围，固件/读卡不能由注册推导。按 QUALITY 取得 L2、schema 与授权 L3。
@@ -33,7 +33,7 @@ Android HAL/QTEE 仅作线索；固件另审版本、哈希和分发条件。
 
 Linux/Debian 的 `python3 tools/nfc_inventory.py --timeout 3` 仅查 generic-netlink family 与 GET_DEVICE；空列表合法，畸形响应/权限/超时报错。不执行 DEV_UP、轮询或写卡；initramfs 用 `nfc-status`。
 
-Windows `collect_nfc_evidence.py` 默认只采注册和 dmesg；主动报告分列 reset/init、空协议、发现、读卡、关闭重开，缺证不算通过。首笔 CSV 用 `nfc_first_address.py` [离线判读](archive/research/2026-11-18-csot-nci-fdt-followup.md#首笔波形与采集模式)。
+Windows `collect_nfc_evidence.py` 默认只采注册与 dmesg；绑定、地址、DT 或类枚举不一致即停。主动报告分阶段，结果行须唯一且紧邻帧尾。KMSG 用 `nfc_geni_readback.py`，波形 CSV 用 `nfc_first_address.py` [离线判读](archive/research/2026-11-18-csot-nci-fdt-followup.md#首笔波形与采集模式)。
 
 ## 有线、无线共存
 

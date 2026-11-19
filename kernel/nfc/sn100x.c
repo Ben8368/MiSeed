@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/mutex.h>
 #include <linux/pm.h>
 #include <net/nfc/nci_core.h>
@@ -35,6 +36,7 @@ struct sn100x {
 	bool opened;
 	bool irq_enabled;
 	bool suspended;
+	bool retry_first_reset;
 	bool reset_pending;
 	bool reset_acked;
 	bool reset_confirmed;
@@ -53,59 +55,7 @@ static void sn100x_fault(struct sn100x *phy, int error)
 			    "transport stopped: %d; VEN retained\n", error);
 }
 
-static int sn100x_read(struct sn100x *phy, struct sk_buff **frame)
-{
-	struct sk_buff *skb;
-	u8 length;
-	int ret;
-
-	*frame = NULL;
-	/* I2C buffers must be DMA safe, including the header. */
-	skb = alloc_skb(SN100X_FRAME_MAX, GFP_KERNEL);
-	if (!skb)
-		return -ENOMEM;
-	ret = i2c_master_recv(phy->client, skb_put(skb, NCI_CTRL_HDR_SIZE),
-			      NCI_CTRL_HDR_SIZE);
-	if (ret != NCI_CTRL_HDR_SIZE) {
-		dev_err_ratelimited(&phy->client->dev,
-				    "I2C NCI header read failed: %d\n", ret);
-		goto failed;
-	}
-	length = skb->data[2];
-	if (length) {
-		ret = i2c_master_recv(phy->client, skb_put(skb, length), length);
-		if (ret != length) {
-			dev_err_ratelimited(&phy->client->dev,
-					    "I2C NCI payload read failed (%u bytes): %d\n",
-					    length, ret);
-			goto failed;
-		}
-	}
-	*frame = skb;
-	return 0;
-failed:
-	kfree_skb(skb);
-	return ret < 0 ? ret : -EBADMSG;
-}
-
-/* Observe reset completion for safe close; NCI core owns the protocol. */
-static void sn100x_reset_response(struct sn100x *phy, const struct sk_buff *skb)
-{
-	const u8 *p = skb->data;
-
-	if (!phy->reset_pending)
-		return;
-	if (skb->len >= 4 && p[0] == 0x40 && p[1] == 0 && p[3] == 0) {
-		if (skb->len == 4)
-			phy->reset_acked = true; /* NCI 2.x also requires NTF. */
-		else if (skb->len == 6 && (p[4] & 0xf0) == 0x10)
-			phy->reset_confirmed = true;
-	} else if (phy->reset_acked && skb->len >= 12 &&
-		   p[0] == 0x60 && p[1] == 0 && p[3] == 2 &&
-		   (p[5] & 0xf0) == 0x20 && p[7] == skb->len - 8) {
-		phy->reset_confirmed = true;
-	}
-}
+#include "sn100x-frame.h"
 
 static irqreturn_t sn100x_irq(int irq, void *data)
 {
@@ -202,53 +152,6 @@ static int sn100x_close(struct nci_dev *ndev)
 	return 0;
 }
 
-static int sn100x_send(struct nci_dev *ndev, struct sk_buff *skb)
-{
-	struct sn100x *phy = nci_get_drvdata(ndev);
-	int ret;
-
-	mutex_lock(&phy->lock);
-	if (phy->fault) {
-		ret = phy->fault;
-	} else if (!phy->opened || phy->suspended) {
-		ret = -ENETDOWN;
-	} else if (skb->len < NCI_CTRL_HDR_SIZE ||
-		   skb->len > SN100X_FRAME_MAX ||
-		   skb->len != NCI_CTRL_HDR_SIZE + skb->data[2]) {
-		ret = -EINVAL;
-	} else {
-		phy->reset_pending = skb->len == 4 && skb->data[0] == 0x20 &&
-				     skb->data[1] == 0;
-		phy->reset_acked = false;
-		phy->reset_confirmed = false;
-		ret = i2c_master_send(phy->client, skb->data, skb->len);
-		/* Do not replay a failed frame: the bus may have accepted a prefix. */
-		if (ret == skb->len) {
-			if (phy->reset_pending)
-				dev_info(&phy->client->dev,
-					 "NCI CORE_RESET I2C write accepted (%u bytes)\n",
-					 skb->len);
-			ret = 0;
-		} else {
-			/* Identify the failing command without logging tag/APDU data. */
-			if (nci_mt(skb->data) == NCI_MT_CMD_PKT)
-				dev_err_ratelimited(&phy->client->dev,
-					"I2C NCI command write failed: opcode=%#06x len=%u ret=%d\n",
-					nci_opcode(skb->data), skb->len, ret);
-			else
-				dev_err_ratelimited(&phy->client->dev,
-					"I2C NCI non-command write failed: mt=%u len=%u ret=%d\n",
-					nci_mt(skb->data), skb->len, ret);
-			if (ret >= 0)
-				ret = -EREMOTEIO;
-			sn100x_fault(phy, ret);
-		}
-	}
-	mutex_unlock(&phy->lock);
-	kfree_skb(skb);
-	return ret;
-}
-
 static const struct nci_ops sn100x_ops = {
 	.open = sn100x_open,
 	.close = sn100x_close,
@@ -271,6 +174,9 @@ static int sn100x_probe(struct i2c_client *client)
 	if (!phy)
 		return -ENOMEM;
 	phy->client = client;
+	/* The paired GENI backport distinguishes address and data NACKs. */
+	phy->retry_first_reset = client->adapter->dev.parent &&
+		of_device_is_compatible(client->adapter->dev.parent->of_node, "qcom,geni-i2c");
 	mutex_init(&phy->lock);
 	/* Acquiring descriptors must not reset the shared NFCC/eSE supply. */
 	phy->enable = devm_gpiod_get(dev, "enable", GPIOD_ASIS);
