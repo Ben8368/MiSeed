@@ -36,6 +36,7 @@ struct sn100x {
 	bool opened;
 	bool irq_enabled;
 	bool suspended;
+	bool geni_address_nack;
 	bool retry_first_reset;
 	bool reset_pending;
 	bool reset_acked;
@@ -175,8 +176,9 @@ static int sn100x_probe(struct i2c_client *client)
 		return -ENOMEM;
 	phy->client = client;
 	/* The paired GENI backport distinguishes address and data NACKs. */
-	phy->retry_first_reset = client->adapter->dev.parent &&
+	phy->geni_address_nack = client->adapter->dev.parent &&
 		of_device_is_compatible(client->adapter->dev.parent->of_node, "qcom,geni-i2c");
+	phy->retry_first_reset = true;
 	mutex_init(&phy->lock);
 	/* Acquiring descriptors must not reset the shared NFCC/eSE supply. */
 	phy->enable = devm_gpiod_get(dev, "enable", GPIOD_ASIS);

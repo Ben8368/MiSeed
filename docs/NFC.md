@@ -14,7 +14,7 @@ WP10 通过 Linux NFC/NCI 接入 Debian，旧 NQ ABI 退出归 TD-003。接口�
 
 - 使用独立 transport：通用 `nxp-nci` close 会拉低共享 VEN，且有固件下载流程。新驱动沿用上游 I²C 帧、skb、gpiod、IRQ、PM；NCI core 处理 reset/init 与 RF。
 - probe/open 将 FIRM 保持正常模式低，VEN 不拉低，IRQ 仅在 open 后启用；close/错误/移除不做硬复位或固件下载。2026-11-13 真机 reset/init、RF target discovery、close/reopen 通过；最终成功会话采用 1 MHz 与有界重试，未采 dmesg，不能判断重试是否触发，见[记录](archive/hardware/2026-11-13-umi-sn100t-nci-l3-attempt.md)。
-- 配对的 GENI 补丁将 FIFO 写地址 NACK 与数据/阶段不明的错误区分。SN100T 仅在 probe 后首帧为 CORE_RESET 且返回地址 NACK 时等待 1–1.1 ms，最多发送三次。尝试耗尽、部分传输和后续写失败均锁存并保留 VEN。close 核对 CORE_RESET 成功和适用的 NCI 2.x 通知，否则锁存超时。[11-18 分镜像记录](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)：旧驱动第三次写通 reset，12 秒后另一笔 4 字节写失败，阶段未知。[11-19](archive/hardware/2026-11-19-umi-nfc-init-retry.md)第二次写通，DEV_UP 过。
+- 配对的 GENI 补丁将 FIFO 写地址 NACK 与数据或阶段不明的错误区分。首帧 CORE_RESET 遇地址 NACK 最多发送三次，RF_DEACTIVATE idle 最多发送两次，间隔 1–1.1 ms。其他写失败、部分传输和尝试耗尽均锁存并保留 VEN。close 核对 CORE_RESET 成功和适用的 NCI 2.x 通知。[11-19 真机记录](archive/hardware/2026-11-19-umi-nfc-init-retry.md)
 - CLKREQ7 配置 `output-disable`，不是 ready 信号。probe 设 FIRM 前采 FIRM/VEN，不是波形。仅关闭且无故障可 suspend；其余返回 EBUSY，不声明 RF 保持、唤醒或 eSE。
 - `sn100x` 不挂 SE 回调。WP10 先证实 Umi 的 NFCEE 身份与 APDU 通路，再解决 Linux core 的自动探测、关闭前 `CORE_RESET` 与 APDU 返回隔离；共享 VEN 保持高不等于 eSE 会话不受影响。见[回调及共享 VEN 审查](archive/research/2026-11-18-sn100t-ese-ven.md)。
 - 真机须分项验证注册、reset/init、帧收发、IRQ、失败/恢复、close/reopen 与 PM；协议掩码是待验证范围，固件/读卡不能由注册推导。按 QUALITY 取得 L2、schema 与授权 L3。
@@ -23,7 +23,7 @@ WP10 通过 Linux NFC/NCI 接入 Debian，旧 NQ ABI 退出归 TD-003。接口�
 
 当前诊断 initramfs 未集成 Debian；内核 L3 与 Debian 集成分别验收。
 
-救援 `nfc-ndef` 通过 AF_NFC 只读核对指定 Type 4 测试文本，L2 通过、真卡未验。[标签规格与 PM/HCE/eSE 门槛](archive/research/2026-11-18-csot-nci-fdt-followup.md#type-4-与独立专项)。Debian 权限与生命周期另验。
+救援 `nfc-ndef` 通过 AF_NFC 只读核对指定 Type 4 测试文本，L2 通过，待测标签。MIFARE 已验目标枚举，Classic 扇区认证与读块尚未接入。[标签规格](archive/research/2026-11-18-csot-nci-fdt-followup.md#type-4-与独立专项)。Debian 权限与生命周期另验。
 
 Android HAL/QTEE 仅作线索；固件另审版本、哈希和分发条件。
 

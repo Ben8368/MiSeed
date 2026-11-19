@@ -74,18 +74,26 @@ static void sn100x_reset_response(struct sn100x *phy, const struct sk_buff *skb)
 /* Caller holds lock. Consume the probe-time allowance even for a non-reset. */
 static int sn100x_write(struct sn100x *phy, const struct sk_buff *skb)
 {
-	bool initial_reset = phy->retry_first_reset && phy->reset_pending;
+	bool initial_reset = phy->geni_address_nack &&
+			     phy->retry_first_reset && phy->reset_pending;
+	/* Unfragmented RF_DEACTIVATE_CMD with the idle parameter. */
+	bool deactivate_idle = phy->geni_address_nack && skb->len == 4 &&
+			       skb->data[0] == 0x21 && skb->data[1] == 0x06 &&
+			       skb->data[3] == NCI_DEACTIVATE_TYPE_IDLE_MODE;
+	unsigned int attempts = initial_reset ? 3 : deactivate_idle ? 2 : 1;
 	unsigned int attempt;
 	int ret;
 
 	phy->retry_first_reset = false;
 	for (attempt = 1; ; attempt++) {
 		ret = i2c_master_send(phy->client, skb->data, skb->len);
-		if (!initial_reset)
-			return ret;
-		dev_info(&phy->client->dev, "initial CORE_RESET attempt=%u ret=%d\n",
-			 attempt, ret);
-		if (ret != -ENXIO || attempt == 3)
+		if (initial_reset)
+			dev_info(&phy->client->dev, "initial CORE_RESET attempt=%u ret=%d\n",
+				 attempt, ret);
+		if (deactivate_idle && (ret == -ENXIO || attempt > 1))
+			dev_info(&phy->client->dev, "RF_DEACTIVATE idle attempt=%u ret=%d\n",
+				 attempt, ret);
+		if (ret != -ENXIO || attempt == attempts)
 			return ret;
 		usleep_range(1000, 1100);
 	}

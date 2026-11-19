@@ -22,6 +22,7 @@ typedef uint8_t u8;
 #define U8_MAX 255
 #define NCI_CTRL_HDR_SIZE 3
 #define NCI_MT_CMD_PKT 1
+#define NCI_DEACTIVATE_TYPE_IDLE_MODE 0
 #define nci_mt(hdr) (((hdr)[0] >> 5) & 7)
 #define nci_opcode(hdr) ((((hdr)[0] & 15) << 8) | ((hdr)[1] & 63))
 #define GFP_KERNEL 0
@@ -85,7 +86,8 @@ int main(int argc,char **argv) {
  assert(argc==2); int test=atoi(argv[1]);
  struct i2c_client client={.irq=5};struct nci_dev ndev={0};
  struct gpio_desc ven={.value=1}, firm={0};
- struct sn100x p={.retry_first_reset=true,.client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
+ struct sn100x p={.geni_address_nack=true,.retry_first_reset=true,
+                  .client=&client,.ndev=&ndev,.enable=&ven,.firmware=&firm};
  shared_ven=&ven;mode_select=&firm;
  ndev.data=&p;client.dev.phy=&p;
  struct sk_buff *s=NULL;
@@ -166,11 +168,22 @@ int main(int argc,char **argv) {
   assert(sn100x_send(&ndev,s)==-ENXIO && sends==4 && p.fault==-ENXIO);
  } else if(test>=13 && test<=17) {
   assert(!sn100x_open(&ndev));s=tx(4);s->data[0]=test==15?0x21:0x20;
-  if(test==16)p.retry_first_reset=false; /* unqualified adapter */
+  if(test==16)p.geni_address_nack=false;
   send_result=test==13?-EIO:test==14?2:-ENXIO;
   if(test==17){address_nacks=1;send_result=-EIO;}
   int expected=send_result==2?-EREMOTEIO:send_result;
   assert(sn100x_send(&ndev,s)==expected && sends==(test==17?2:1) && p.fault==expected);
+ } else if(test>=18 && test<=24) {
+  assert(!sn100x_open(&ndev));assert(!sn100x_send(&ndev,tx(3)));
+  s=tx(4);s->data[0]=0x21;s->data[1]=0x06;
+  if(test==21)s->data[3]=1;
+  if(test==22)p.geni_address_nack=false;
+  if(test==23)s->data[0]=0x31; /* fragmented command */
+  send_result=test==20?-EIO:test==24?2:-ENXIO;
+  if(test==18){address_nacks=1;send_result=999;}
+  int expected=test==18?0:test==24?-EREMOTEIO:send_result;
+  assert(sn100x_send(&ndev,s)==expected && p.fault==expected);
+  assert(sends==(test<=19?3:2));
  } else {assert(0);}
  assert(!live && !held && ven.value==1);return 0;
 }
@@ -198,7 +211,7 @@ class TransportTests(unittest.TestCase):
             raise AssertionError(result.stderr)
 
     def test_production_transport_failure_and_lifecycle_paths(self):
-        for case in range(18):
+        for case in range(25):
             with self.subTest(case=case):
                 subprocess.run([self.binary, str(case)], check=True, capture_output=True, timeout=5)
 
