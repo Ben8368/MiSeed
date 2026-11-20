@@ -185,6 +185,9 @@ int smb5_set_property(struct power_supply *psy,
 	struct smb5_chip *chip = power_supply_get_drvdata(psy);
 	int rc = 0;
 
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	return -EPERM;
+#endif
 	switch (psp) {
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT: {
 		unsigned int applied;
@@ -192,7 +195,7 @@ int smb5_set_property(struct power_supply *psy,
 		if (val->intval < 0 || val->intval > UMI_CHARGE_USB_ICL_UA)
 			return -EINVAL;
 		mutex_lock(&chip->lock);
-		if (chip->pps_owned || chip->stopping) {
+		if (chip->pps_owned || chip->stopping || smb5_wireless_rx_state(chip)) {
 			rc = -EBUSY;
 			goto limit_out;
 		}
@@ -244,6 +247,9 @@ limit_out:
 static int smb5_property_is_writable(struct power_supply *psy,
 				     enum power_supply_property psp)
 {
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	return 0;
+#endif
 	switch (psp) {
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:

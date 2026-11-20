@@ -87,10 +87,11 @@ def main():
         board_dir = destination_dir(args.source, "arch/arm64/boot/dts/qcom")
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    for name in ("umi-pm8150b.dtsi", "umi-pps.dtsi"):
+    includes = ("umi-pm8150b.dtsi", "umi-pps.dtsi", "umi-rx1619.dtsi")
+    for name in includes:
         if (board_dir / name).is_symlink():
             parser.error("refusing board include symlink")
-    for name in ("umi-pm8150b.dtsi", "umi-pps.dtsi"):
+    for name in includes:
         (board_dir / name).write_bytes(
             (Path(__file__).resolve().parents[1] / "kernel/power" / name).read_bytes())
     binding_dir = destination_dir(args.source, "Documentation/devicetree/bindings/power/supply")

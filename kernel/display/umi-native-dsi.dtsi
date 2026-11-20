@@ -23,7 +23,7 @@
 &tlmm {
 	/* Known panel reset GPIO12 and 90Hz select GPIO50; retain other guards. */
 	gpio-reserved-ranges = <0 4>, <6 1>, <8 4>, <13 21>, <36 8>,
-		<46 4>, <51 17>, <69 14>, <84 26>, <112 69>;
+		<46 2>, <51 17>, <69 14>, <84 26>, <112 69>;
 };
 &mdss {
 	/* Stop ABL scanout before DPU attaches its translated IOMMU domain. */

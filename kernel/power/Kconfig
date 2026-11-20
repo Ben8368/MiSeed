@@ -44,3 +44,26 @@ config MISEED_POWER_DIAGNOSTICS
 	  Log raw status registers from the owning charger's polling worker.
 	  This is an optional diagnostic, not a product ABI or control path.
 	  Normal consumers use power_supply attributes and notifications.
+
+config CHARGER_MISEED_RX1619
+	tristate "Umi RX1619 wireless power monitor"
+	depends on I2C && OF && GPIOLIB && POWER_SUPPLY
+	select REGMAP_I2C
+	help
+	  Monitor power-good and output telemetry on Xiaomi Mi 10. This driver
+	  does not control charging, wireless TX or receiver firmware.
+
+config MISEED_RX_DIAGNOSTIC
+	bool "MiSeed Umi RX evidence-only RAM profile"
+	depends on CHARGER_MISEED_PM8150B=y && CHARGER_MISEED_RX1619=y
+	depends on CHARGER_MISEED_UMI_PPS && MISEED_POWER_DIAGNOSTICS
+	help
+	  Force the SMB5 battery charger and the wired BQ25970 pump off
+	  while collecting USB-C CC and RX1619 telemetry. Do not use as a
+	  product charging configuration.
+
+config MISEED_RX_ENABLE_EXPERIMENT
+	bool "Assert Umi receiver enable during RX diagnostics"
+	depends on MISEED_RX_DIAGNOSTIC
+	help
+	  Explicit experiment which drives the board RX enable line at probe.

@@ -2,25 +2,12 @@
 /* One-shot standard Linux NFC/NCI reset, RF discovery and recovery check. */
 #define _GNU_SOURCE
 #include "rescue_internal.h"
-#include "rescue_nfc_netlink.h"
+#include "rescue_nfc_probe.h"
 
 #include <linux/nfc.h>
 #include <stdbool.h>
 
 #define NFC_POLL_WINDOW_SECONDS 12
-
-struct nfc_device_info {
-    uint32_t index;
-    uint32_t protocols;
-    char name[16];
-    unsigned int count;
-};
-
-struct nfc_target_info {
-    uint32_t index;
-    uint32_t protocol;
-    unsigned int count;
-};
 
 static int device_visit(const unsigned char *attrs, size_t length, void *context) {
     struct nfc_device_info *device = context;
@@ -62,7 +49,7 @@ static int nfc_index_attr(unsigned char *attrs, size_t capacity,
                            NFC_ATTR_DEVICE_INDEX, index);
 }
 
-static int nfc_simple(struct nfc_nl_client *client, uint8_t command,
+int nfc_simple(struct nfc_nl_client *client, uint8_t command,
                       uint32_t index) {
     unsigned char attrs[32];
     size_t length = 0;
@@ -70,7 +57,7 @@ static int nfc_simple(struct nfc_nl_client *client, uint8_t command,
     return rc ? rc : nfc_nl_ack(client, command, attrs, length);
 }
 
-static int nfc_poll(struct nfc_nl_client *client, uint32_t index,
+int nfc_poll(struct nfc_nl_client *client, uint32_t index,
                     uint32_t protocols) {
     unsigned char attrs[64];
     size_t length = 0;
@@ -80,7 +67,7 @@ static int nfc_poll(struct nfc_nl_client *client, uint32_t index,
     return rc ? rc : nfc_nl_ack(client, NFC_CMD_START_POLL, attrs, length);
 }
 
-static int get_nfc_device(struct nfc_nl_client *client,
+int get_nfc_device(struct nfc_nl_client *client,
                           struct nfc_device_info *device) {
     memset(device, 0, sizeof(*device));
     int rc = nfc_nl_dump(client, NFC_CMD_GET_DEVICE, NULL, 0,
@@ -89,7 +76,7 @@ static int get_nfc_device(struct nfc_nl_client *client,
     return device->count == 1 ? 0 : -ENODEV;
 }
 
-static int nfc_get_targets(struct nfc_nl_client *client, uint32_t index,
+int nfc_get_targets(struct nfc_nl_client *client, uint32_t index,
                            struct nfc_target_info *target) {
     unsigned char attrs[32];
     size_t length = 0;
@@ -107,6 +94,12 @@ static void report_nfc_error(const char *step, int error) {
 
 /* Serialized USB console; a first-transfer capture must have its own RAM boot. */
 static bool first_used, rf_used;
+
+bool claim_rx_nfc_probe(void) {
+    if (first_used || rf_used) return false;
+    rf_used = true;
+    return true;
+}
 
 void run_nfc_first(void) {
     struct nfc_nl_client client = { .fd = -1 };

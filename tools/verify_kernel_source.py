@@ -13,6 +13,7 @@ from pathlib import Path
 if __package__:
     from . import apply_adc5_fix as adc5
     from . import apply_pd_diagnostics as pd
+    from . import apply_nci_rf_inhibit as rf
     from .apply_power_port import RPMHPD_KCONFIG_RULE
     from .source_layout import POWER_FILES, POWER_RULES
     from .apply_display_port import HOST_TRANSFORMS
@@ -20,6 +21,7 @@ if __package__:
 else:
     import apply_adc5_fix as adc5
     import apply_pd_diagnostics as pd
+    import apply_nci_rf_inhibit as rf
     from apply_power_port import RPMHPD_KCONFIG_RULE
     from source_layout import POWER_FILES, POWER_RULES
     from apply_display_port import HOST_TRANSFORMS
@@ -34,13 +36,14 @@ GENERATED = {
     "drivers/gpu/drm/panel/umi-csot.Kconfig",
     "arch/arm64/boot/dts/qcom/umi-native-dsi.dtsi",
     "Documentation/devicetree/bindings/display/panel/xiaomi,umi-csot.yaml",
-    "drivers/nfc/sn100x.c", "drivers/nfc/sn100x-frame.h",
+    "drivers/nfc/sn100x.c", "drivers/nfc/sn100x-frame.h", "drivers/nfc/sn100x-rx.h", rf.INCLUDE,
     "drivers/nfc/sn100x.Kconfig",
     "Documentation/devicetree/bindings/net/nfc/nxp,sn100t.yaml",
     "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-fg.yaml",
     "Documentation/devicetree/bindings/power/supply/qcom,pm8150b-charger.yaml",
     "Documentation/devicetree/bindings/power/supply/xiaomi,umi-bq25970.yaml",
     "Documentation/devicetree/bindings/power/supply/ti,bq25970.yaml",
+    "Documentation/devicetree/bindings/power/supply/xiaomi,umi-rx1619.yaml",
     ".miseed-source-revision",
     ".miseed-pd-diagnostics.json",
     "arch/arm64/boot/dts/qcom/umi-csot.dts",
@@ -49,6 +52,7 @@ GENERATED = {
     "drivers/power/supply/umi_charge_policy.h",
     "arch/arm64/boot/dts/qcom/umi-pm8150b.dtsi",
     "arch/arm64/boot/dts/qcom/umi-pps.dtsi",
+    "arch/arm64/boot/dts/qcom/umi-rx1619.dtsi",
     "drivers/power/supply/umi_pps.c",
     "drivers/power/supply/bq25970.c",
     "drivers/power/supply/bq25970.h",
@@ -144,6 +148,10 @@ def verify_source(repository, revision, source):
             if actual != oid and name == GENI_NACK_PATH:
                 original = git(repository, "show", revision + ":" + name)
                 if path.read_bytes() == transform_geni_nack(original):
+                    continue
+            if actual != oid and name in (rf.CORE, rf.HEADER, rf.RESPONSE):
+                original = git(repository, "show", revision + ":" + name)
+                if path.read_bytes() == rf.transform(name, original):
                     continue
             if actual != oid and name == "drivers/pmdomain/qcom/Kconfig":
                 original = git(repository, "show", revision + ":" + name).decode("utf-8")

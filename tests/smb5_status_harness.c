@@ -12,13 +12,25 @@
 enum { POWER_SUPPLY_STATUS_UNKNOWN, POWER_SUPPLY_STATUS_CHARGING,
        POWER_SUPPLY_STATUS_DISCHARGING, POWER_SUPPLY_STATUS_NOT_CHARGING,
        POWER_SUPPLY_STATUS_FULL };
-struct smb5_chip { void *regmap; unsigned int base; };
-static unsigned int usb = 0x10;
+struct power_supply { int online, error; };
+union power_supply_propval { int intval; };
+#define POWER_SUPPLY_PROP_ONLINE 0
+struct smb5_chip { void *regmap; unsigned int base; struct power_supply *wireless_rx, *pd; };
+static int power_supply_get_property(struct power_supply *rx, int property,
+                                     union power_supply_propval *value)
+{
+ assert(property == POWER_SUPPLY_PROP_ONLINE);
+ if (rx->error) return rx->error;
+ value->intval = rx->online;
+ return 0;
+}
+static unsigned int usb = 0x10, path = 0x11;
 static unsigned char snapshot[2];
 static int usb_error, status_error, usb_reads, status_reads;
 static int regmap_read(void *map, unsigned int reg, unsigned int *value)
 {
  (void)map;
+ if (reg == 0x110b) { *value = path; return 0; }
  assert(reg == 0x1310);
  usb_reads++;
  if (usb_error) return usb_error;
@@ -37,7 +49,8 @@ static int regmap_bulk_read(void *map, unsigned int reg, void *value, unsigned i
 /* MISEED_SMB5_STATUS_UNDER_TEST */
 int main(void)
 {
- struct smb5_chip chip = { .base = 0x1000 };
+ struct power_supply sink = { .online = 1 };
+ struct smb5_chip chip = { .base = 0x1000, .pd = &sink };
  /* PM8150B phase encodings 0..7, independently specified by smb5-reg.h. */
  const int expected[] = {
   POWER_SUPPLY_STATUS_NOT_CHARGING, POWER_SUPPLY_STATUS_CHARGING,
@@ -79,5 +92,24 @@ int main(void)
  snapshot[1] = 0x28;
  assert(!smb5_get_prop_status(&chip, &value));
  assert(value == POWER_SUPPLY_STATUS_CHARGING);
+ struct power_supply rx = { .online = 1 };
+ chip.wireless_rx = &rx;
+ status_reads = 0;
+ assert(!smb5_get_prop_status(&chip, &value));
+ assert(value == POWER_SUPPLY_STATUS_DISCHARGING && !status_reads);
+ rx.error = -EIO;
+ assert(smb5_get_prop_status(&chip, &value) == -EIO && !status_reads);
+ rx.error = rx.online = 0;
+ assert(!smb5_get_prop_status(&chip, &value) && value == POWER_SUPPLY_STATUS_CHARGING);
+ sink.online = 0; usb = 0x18; path = 0x03;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && !value);
+ sink.online = 2;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && !value);
+ path = 0x19;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && !value);
+ path = 0x11;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && value);
+ sink.error = -EIO;
+ assert(smb5_get_prop_usb_online(&chip, &value) == -EIO);
  return 0;
 }

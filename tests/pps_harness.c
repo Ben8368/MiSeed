@@ -72,6 +72,7 @@ static unsigned int regs[0x30];
 static int io_count, fail_at, enable_count, fixed_count, release_count, wd_writes;
 static int fail_stop, fail_fixed, fail_claim, fail_sensor, fail_request, fail_caps;
 static int fail_pps_unsupported, smb_stage, smb_bypass, smb_fault;
+static int wireless_rx_state;
 static int busy_count, busy_delay_ms;
 static enum power_supply_property busy_prop;
 static int claim_owned, suspended, stale_contract, expired_negotiation, bad_readback, hot_during_request;
@@ -168,6 +169,7 @@ static int power_supply_set_property(struct power_supply *p, enum power_supply_p
  }
  return 0;
 }
+int umi_smb5_wireless_rx_state(struct power_supply *p) { (void)p; return wireless_rx_state; }
 int umi_smb5_claim(struct power_supply *p, int *stage) {
  if (fail_claim || smb_bypass || smb_fault || smb_stage>=2) return -EBUSY;
  *stage=smb_stage;
@@ -213,7 +215,7 @@ static void reset(void) {
  c.pd=&pd;c.bms=&bms;c.sw=&sw;c.ready=true;
  clock_ms=100; io_count=fail_at=enable_count=fixed_count=release_count=wd_writes=0;
  fail_stop=fail_fixed=fail_claim=fail_sensor=fail_request=fail_caps=0;
- fail_pps_unsupported=smb_stage=smb_bypass=smb_fault=0;
+ fail_pps_unsupported=smb_stage=smb_bypass=smb_fault=wireless_rx_state=0;
  busy_count=busy_delay_ms=retry_sleeps=0;busy_prop=POWER_SUPPLY_PROP_ONLINE;
  claim_owned=suspended=stale_contract=expired_negotiation=bad_readback=0;
  missing_property=NULL;hot_during_request=pump_during_request=0;
@@ -289,6 +291,10 @@ int main(void) {
  c.removing=true;assert(umi_pps_set_cur_state(&cooling,0)==-EAGAIN);
  assert(umi_pps_get_property(&sw,POWER_SUPPLY_PROP_STATUS,&value)==-ENODEV);
 
+ reset();run();wireless_rx_state=1;tick();
+ assert(c.state==PPS_WAIT_PLUG && !claim_owned && !(regs[0x0c]&BIT(7)));
+ tick();assert(c.state==PPS_WAIT_PLUG && !claim_owned);
+ wireless_rx_state=0;tick();assert(c.state==PPS_SETTLE);
  reset();run();assert(!umi_pps_suspend(NULL) && c.suspended && c.state==PPS_OFF);
  int previous_enable=enable_count;tick();assert(enable_count==previous_enable);
  assert(!umi_pps_resume(NULL) && !c.suspended && c.state==PPS_WAIT_PLUG);

@@ -7,3 +7,9 @@ config NFC_SN100X
 	  firmware and retains shared NFCC/eSE VEN on close. Firmware download,
 	  eSE access and active NFC suspend/wakeup are not supported.
 	  If built as a module, this driver is called sn100x.
+
+config MISEED_RX_NFC_COEX
+	bool "Umi experimental wireless RX and NFC coexistence"
+	depends on NFC_SN100X=y && MISEED_RX_DIAGNOSTIC
+	help
+	  Exercise the local NCI RF inhibit extension during RX diagnostics.

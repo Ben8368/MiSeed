@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Umi LineageOS active DT at 71b13e62: QUP16, 0x61 and PM8150B GPIO7. */
+&i2c16 {
+	status = "okay";
+
+	umi_wireless_rx: charger@61 {
+		compatible = "xiaomi,umi-rx1619";
+		reg = <0x61>;
+		power-good-gpios = <&pm8150b_gpios 7 GPIO_ACTIVE_HIGH>;
+		enable-gpios = <&tlmm 155 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&umi_nfc {
+	nxp,rf-interference-source = <&umi_wireless_rx>;
+};
+
+&umi_charger {
+	qcom,wireless-rx = <&umi_wireless_rx>;
+};

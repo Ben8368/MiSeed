@@ -24,7 +24,8 @@ enum power_supply_property { POWER_SUPPLY_PROP_CURRENT_MAX,
  POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT, POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR };
 union power_supply_propval { int intval; };
 static struct smb5_chip *power_supply_get_drvdata(struct power_supply *p) {return p->chip;}
-static int writes, notifications, stop_error;
+static int writes, notifications, stop_error, rx_state;
+static int smb5_wireless_rx_state(struct smb5_chip *c) { (void)c; return rx_state; }
 static unsigned int raw_limit = 60;
 static int read_error, write_error;
 static int regmap_read(void *map, unsigned int reg, unsigned int *value) {
@@ -39,6 +40,9 @@ static int smb5_inhibit_with_fallback(struct smb5_chip *c,const char *why) {retu
 int main(void) {
  struct smb5_chip c={0};struct power_supply psy={.chip=&c};
  union power_supply_propval v={.intval=1500000};
+ rx_state=1;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EBUSY);
+ rx_state=-EIO;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EBUSY);
+ assert(!writes && !notifications);rx_state=0;
  assert(!smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v));
  assert(raw_limit==30 && notifications==1 && c.saved_icl_ua==1500000);
  v.intval=-1;assert(smb5_set_property(&psy,POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,&v)==-EINVAL);

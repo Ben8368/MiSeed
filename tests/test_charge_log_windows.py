@@ -37,6 +37,14 @@ class ChunkTests(unittest.TestCase):
         self.assertEqual(bounds, (0, 2, 2, 0, 0))
         self.assertEqual(output, snapshot)
 
+    def test_reconnected_prompt_is_accepted_only_at_the_header(self):
+        self.assertEqual(self.receive([b"banner\r\nmiseed", b"> " + SNAPSHOT]),
+                         ((0, 2, 2, 0, 0), SNAPSHOT))
+        for raw in (b"unrecognized> " + SNAPSHOT,
+                    BEGIN + b"miseed> " + ROWS + END):
+            with self.subTest(raw=raw), self.assertRaises(collector.ExportError):
+                self.receive([raw])
+
     def test_invalid_frames_and_early_disconnect(self):
         cases = {
             "gap": BEGIN + ROWS.splitlines(keepends=True)[1] + END,
@@ -67,6 +75,13 @@ class ChunkTests(unittest.TestCase):
 
 
 class BufferedTests(unittest.TestCase):
+    def test_windows_complete_frame_survives_following_disconnect(self):
+        port = Mock()
+        port.read.side_effect = [b"miseed> " + SNAPSHOT, OSError("USB removed")]
+        output = io.BytesIO()
+        self.assertEqual(collector.receive_windows(port, output, 1), (0, 2, 2, 0, 0))
+        self.assertEqual(output.getvalue(), SNAPSHOT)
+
     def test_unavailable_is_detected_inside_large_or_fragmented_chunks(self):
         for chunks in ([b"banner\nCHARGE_LOG_UNAVAILABLE no_recorder\n" + b"x" * 400],
                        [b"banner\nCHARGE_LOG_UNAV", b"AILABLE no_recorder\n" + b"x" * 400]):

@@ -29,6 +29,9 @@ properties:
   firmware-gpios:
     maxItems: 1
     description: Active-high firmware download selection; normal mode is low.
+  nxp,rf-interference-source:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: Wireless power receiver whose active field interferes with NFC RF.
 
 required:
   - compatible

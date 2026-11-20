@@ -165,6 +165,14 @@ void umi_pps_work(struct work_struct *work)
 		umi_pps_stop(c, PPS_FAULT, c->last_error);
 		goto out;
 	}
+	ret = umi_smb5_wireless_rx_state(c->sw);
+	if (ret < 0)
+		goto fail;
+	if (ret) {
+		if (c->pps || c->claimed)
+			umi_pps_stop(c, PPS_WAIT_PLUG, 0);
+		goto out;
+	}
 	ret = umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &online);
 	if (ret)
 		goto fail;

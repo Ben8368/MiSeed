@@ -25,6 +25,7 @@ struct smb5_chip { void *regmap, *usb_in_v_chan, *mid_chg_chan; unsigned int bas
 static int online=1, online_error, read_error, adc_error;
 static unsigned int command;
 static int mid_uv=8580000, usb_uv=9100000, mid_reads, usb_reads;
+#define smb5_wired_source smb5_get_prop_usb_online
 static int smb5_get_prop_usb_online(struct smb5_chip *c,int *value)
 { (void)c; *value=online; return online_error; }
 static int regmap_read(void *map,unsigned int reg,unsigned int *value)

@@ -46,6 +46,7 @@ union power_supply_propval {int intval;};
 struct smb5_chip {void *pd;};
 static int online, online_error, pd_error, pd_type, apsd_error, apsd_type;
 static int apsd_reads, pd_reads;
+#define smb5_wired_source smb5_get_prop_usb_online
 static int smb5_get_prop_usb_online(struct smb5_chip *c, int *v)
 {*v=online;return online_error;}
 static int power_supply_get_property(void *pd, int prop, union power_supply_propval *v)

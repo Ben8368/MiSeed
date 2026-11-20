@@ -25,7 +25,8 @@ def receive_windows(serial_port, stream, timeout, *, max_bytes, end_mark, unavai
             try:
                 chunk = serial_port.read(256 * 1024)
             except OSError as error:
-                errors.append(error)
+                with lock:
+                    errors.append(error)
                 return
             except StopIteration:
                 time.sleep(0.005)
@@ -41,14 +42,12 @@ def receive_windows(serial_port, stream, timeout, *, max_bytes, end_mark, unavai
     unavailable_scan = 0
     try:
         while time.monotonic() < deadline:
-            if errors:
-                raise export_error(
-                    "USB disconnected during export; reconnect and retry") from errors[0]
             with lock:
                 if len(data) > max_bytes:
                     del data[max_bytes:]
                     raise export_error("export exceeded the 256 MiB receive limit")
                 snapshot = bytes(data)
+                error = errors[0] if errors else None
             if snapshot.find(unavailable_mark, unavailable_scan) >= 0:
                 raise export_error("charge log unavailable; raw response retained")
             unavailable_scan = max(0, len(snapshot) - len(unavailable_mark) + 1)
@@ -62,6 +61,9 @@ def receive_windows(serial_port, stream, timeout, *, max_bytes, end_mark, unavai
                 scan = marker
             else:
                 scan = max(0, len(snapshot) - len(end_mark))
+            if error is not None:
+                raise export_error(
+                    "USB disconnected during export; reconnect and retry") from error
             time.sleep(0.005)
         raise export_error("export timed out; RAM log is retained on the running device")
     except (export_error, OSError):

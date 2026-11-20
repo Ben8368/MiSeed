@@ -66,6 +66,9 @@ def receive_chunks(read_chunk, stream, timeout):
         for line in lines:
             line = line.rstrip(b"\r")
             if bounds is None:
+                # A rediscovered CDC console can place its prompt on the same
+                # line as the first response. Preserve exact framing thereafter.
+                line = line.removeprefix(b"miseed> ")
                 match = BEGIN.fullmatch(line)
                 if not match:
                     if line.startswith(b"CHARGE_LOG_UNAVAILABLE"):

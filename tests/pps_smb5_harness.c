@@ -32,7 +32,8 @@ struct desc { int (*set_property)(struct power_supply *,enum power_supply_proper
 struct power_supply { struct desc *desc; struct smb5_chip *chip; };
 static int smb5_set_property(struct power_supply *p,enum power_supply_property prop,const union power_supply_propval *v) { return 0; }
 static struct smb5_chip *power_supply_get_drvdata(struct power_supply *p) { return p->chip; }
-static int stop_error, write_error, read_error, full_status;
+static int stop_error, write_error, read_error, full_status, rx_state;
+static int smb5_wireless_rx_state(struct smb5_chip *c) { (void)c; return rx_state; }
 static int smb5_get_prop_status(struct smb5_chip *c,int *v) { *v=full_status; return 0; }
 static unsigned int charge, input;
 static int smb5_inhibit_with_fallback(struct smb5_chip *c,const char *where) {
@@ -53,6 +54,7 @@ static int regmap_read(void *m,unsigned int r,unsigned int *v) {
 static int regmap_write(void *m,unsigned int r,unsigned int v) {
  (void)m; assert(r==0x1344 && v==8); return write_error ? -EIO : 0;
 }
+static int smb5_wired_source(struct smb5_chip *c,int *v) { *v=!rx_state;return rx_state < 0 ? rx_state : 0; }
 static int smb5_get_prop_usb_online(struct smb5_chip *c,int *v) { *v=1;return 0; }
 static int smb5_power_limit(struct smb5_chip *c,int soc) {
  assert(soc==71 && c->power_stage>=2 && !charge && input);return 0;
@@ -64,6 +66,9 @@ int main(void) {
  struct desc d={.set_property=smb5_set_property};
  struct power_supply p={.desc=&d,.chip=&c};
  assert(umi_smb5_claim(NULL, &stage)==-ENODEV);
+ rx_state=1;assert(umi_smb5_claim(&p, &stage)==-EBUSY && !c.pps_owned);
+ rx_state=-EIO;assert(umi_smb5_claim(&p, &stage)==-EBUSY && !c.pps_owned);
+ rx_state=0;
  c.inhibit=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY && !c.pps_owned);
  c.inhibit=false;
  c.stopping=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY);
@@ -79,6 +84,10 @@ int main(void) {
  stop_error=0;write_error=1;assert(umi_smb5_release(&p, 0)==-EIO && c.pps_owned);
  write_error=0;assert(!umi_smb5_release(&p, 0) && !c.pps_owned && !c.inhibit && input==0);
  assert(umi_smb5_check(&p, 1)==-EPERM);
+ assert(!umi_smb5_claim(&p, &stage));
+ rx_state=1;assert(umi_smb5_check(&p, 1)==-EBUSY);
+ assert(!umi_smb5_release(&p, 0) && !c.pps_owned && !charge && input==1);
+ rx_state=0;
  stop_error=1;assert(umi_smb5_claim(&p, &stage)==-EIO && c.pps_owned && c.inhibit);
  stop_error=0;assert(!umi_smb5_release(&p, 0));
  write_error=1;assert(umi_smb5_claim(&p, &stage)==-EIO && c.pps_owned);

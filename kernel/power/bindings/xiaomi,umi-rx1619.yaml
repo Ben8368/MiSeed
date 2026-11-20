@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/power/supply/xiaomi,umi-rx1619.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: RX1619 wireless power receiver on Xiaomi Mi 10
+
+maintainers:
+  - Ben <Ben8368@vip.qq.com>
+
+description: |
+  The I2C device reports wireless RX output voltage and current. On Umi,
+  the separate power-good signal is routed to GPIO 7 of the PM8150B.
+
+properties:
+  compatible:
+    const: xiaomi,umi-rx1619
+  reg:
+    maxItems: 1
+  power-good-gpios:
+    maxItems: 1
+    description: GPIO asserted when the receiver is providing wireless power.
+  enable-gpios:
+    maxItems: 1
+    description: GPIO asserted to wake up or enable the receiver.
+
+required:
+  - compatible
+  - reg
+  - power-good-gpios
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+    i2c {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        charger@61 {
+            compatible = "xiaomi,umi-rx1619";
+            reg = <0x61>;
+            power-good-gpios = <&pm8150b_gpios 7 GPIO_ACTIVE_HIGH>;
+        };
+    };

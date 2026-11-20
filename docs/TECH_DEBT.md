@@ -12,7 +12,7 @@
 
 ## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：原 GPIO-free RAM 诊断禁用 TLMM。有线PPS按LOS接线开放UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68；NCI另开专用脚。原生DSI另开GPIO12复位；[90Hz移植](archive/research/2026-11-16-display-90hz-port.md)再开GPIO50选择，新增脚L3待验。GPIO8未接入，下游TLMM overlay仍隔离。旧来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
+取舍：原 GPIO-free RAM 诊断禁用 TLMM。有线PPS按LOS开放UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68；NCI另开专用脚。原生DSI开放GPIO12复位和[GPIO50选90Hz](archive/research/2026-11-16-display-90hz-port.md)。无线RX开放I2C16 GPIO48/49，待L3。GPIO8未接入，隔离下游TLMM overlay。旧来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 
@@ -44,6 +44,6 @@
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（360）、`umi_pps.c`（471）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（492）为传输/生命周期桩。WP0 `tests/test_boot_l2.py`（355）保留缓存回归；`tools/build_kernel_l2.sh`（303）保留构建/打包顺序，下次按配置/打包拆分。WP2 `kernel/umi-csot.dts`（319）集中板级节点与 ABL 锚点审计，下次扩展拆为可编译功能组。
+责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（381）、`umi_pps.c`（479）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（498）为传输/生命周期桩。WP0 `tests/test_boot_l2.py`（355）保留缓存回归。WP2 `kernel/umi-csot.dts`（322）集中板级节点与 ABL 锚点审计，RX 接线已独立为 DTSI。
 
 偿还：各WP下次修改时拆分接口、代际后端或测试职责；全部≤300行且回归通过后关闭。见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，不豁免红灯和供电安全。

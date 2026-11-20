@@ -109,6 +109,13 @@ int bq25970_is_switching(struct bq25970_device *bq, bool *switching)
 	int ret;
 
 	mutex_lock(&bq->lock);
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	ret = regmap_read(bq->map, BQ_CONTROL, &status);
+	if (ret || (status & BQ_ENABLE)) {
+		mutex_unlock(&bq->lock);
+		return ret ? ret : -EIO;
+	}
+#endif
 	ret = bq25970_live_status(bq->map, &status);
 	if (!ret)
 		*switching = !!(status & BIT(2));

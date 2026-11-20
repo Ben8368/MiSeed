@@ -168,6 +168,29 @@ static int charge_read_value(const char *path, char *value, size_t size) {
     return 0;
 }
 
+/* Umi has one receptacle. Verify the port provider before interpreting
+ * an absent partner. The UDC USB data state is sampled independently.
+ */
+int umi_typec_partner(void) {
+    char compatible[80];
+    struct stat st;
+    int port = open("/sys/class/typec/port0", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (port < 0) return -errno;
+    int node = openat(port, "device/of_node/compatible", O_RDONLY | O_CLOEXEC);
+    int ret = -errno;
+    if (node >= 0) {
+        ssize_t n = read(node, compatible, sizeof(compatible));
+        ret = n < 0 ? -errno : -ENODEV;
+        if (n >= (ssize_t)sizeof("qcom,pm8150b-typec") &&
+            !memcmp(compatible, "qcom,pm8150b-typec", sizeof("qcom,pm8150b-typec")))
+            ret = !fstatat(port, "port0-partner", &st, 0) ? 1 :
+                  errno == ENOENT ? 0 : -errno;
+        close(node);
+    }
+    close(port);
+    return ret;
+}
+
 void charge_snapshot(void) {
     static const char * const attrs[] = {
         "type", "status", "present", "online", "capacity", "temp",
@@ -204,6 +227,9 @@ void charge_snapshot(void) {
     }
     if (!supplies) charge_log_append("SAMPLE", "power_supply=unavailable temperature=unavailable SOC=unavailable; see miseed-power hardware observations");
 
+    int partner = umi_typec_partner();
+    charge_log_append("TYPEC", "port=port0 partner=%s rc=%d",
+                      partner < 0 ? "unknown" : partner ? "1" : "0", partner < 0 ? partner : 0);
     dir = opendir("/sys/class/udc");
     if (dir) {
         while ((entry = readdir(dir)) != NULL) {
@@ -219,7 +245,7 @@ void charge_snapshot(void) {
 
 static int charge_kernel_message(const char *content) {
     static const char * const terms[] = {
-        "miseed-power", "miseed-pps", "charg", "battery", "power_supply", "smb5", "smb2",
+        "miseed-power", "miseed-pps", "miseed-rx-nfc", "charg", "battery", "power_supply", "smb5", "smb2",
         "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic",
     };
     for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); i++)

@@ -139,6 +139,7 @@ static int adc_reads, voltage_reads, adc_error;
 static void log_message(const char *fmt, ...) { (void)fmt; }
 #define dev_info(d,...) log_message(__VA_ARGS__)
 #define dev_err(d,...) log_message(__VA_ARGS__)
+#define smb5_wired_source smb5_get_prop_usb_online
 static int smb5_get_prop_usb_online(struct smb5_chip *c, int *v)
 { (void)c; *v = online; return usb_error; }
 static int smb5_fixed_update(struct smb5_chip *c) { (void)c; return 0; }
@@ -158,6 +159,8 @@ static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; input_limit = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 static int smb5_get_input_voltage(struct smb5_chip *c, int *v)
 { (void)c; *v=5000000; return adc_error; }
+static int regmap_read(void *map, unsigned int reg, unsigned int *v)
+{ (void)map; assert((reg & 0xfff) == USBIN_CMD_IL); *v = suspends > resumes ? USBIN_SUSPEND_BIT : 0; return 0; }
 static int regmap_update_bits(void *map, unsigned int reg, unsigned int mask, unsigned int v)
 { (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; else ++resumes; return 0; }
 static int regmap_write(void *map, unsigned int reg, unsigned int v)

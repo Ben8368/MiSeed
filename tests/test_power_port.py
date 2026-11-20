@@ -99,6 +99,8 @@ class PowerPortTests(PowerPortFixture):
                 (self.source / ".config").write_text(
                     f"CONFIG_BATTERY_MISEED_QCOM_FG={state}\n"
                     f"CONFIG_CHARGER_MISEED_PM8150B={state}\n"
+                    f"CONFIG_CHARGER_MISEED_RX1619={state}\n"
+                    "CONFIG_PINCTRL_QCOM_SPMI_PMIC=y\n"
                     "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n"
                     "CONFIG_DRM=y\nCONFIG_DRM_SIMPLEDRM=y\nCONFIG_DRM_FBDEV_EMULATION=y\n"
                     "CONFIG_DRM_CLIENT_DEFAULT_FBDEV=y\nCONFIG_FB_CORE=y\nCONFIG_FRAMEBUFFER_CONSOLE=y\n"
