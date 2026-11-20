@@ -16,6 +16,6 @@
 | RISK-010 / P1（运行时DTBO/显示交接） | [CSOT L3](archive/hardware/2026-11-18-umi-display-nfc-ese-l3.md)：90Hz DCS 已发送，KMS 90Hz、GPIO50 高，DRM command-mode vblank 由此前59.921Hz到89.846Hz。runtime根compatible/model审计仍FAIL。MDSS SMMU=15000000，3da0000为GPU | 物理刷新率未独立量化；首帧/PM未闭；CCF未上游 | 外部TE/光学测实际扫描；WP3/WP4查根交接；GPU另验，TLMM归TD-002 |
 | RISK-011 / P1（SN100T Linux NCI / eSE） | [11-19 复验](archive/hardware/2026-11-19-umi-nfc-init-retry.md#无卡停止轮询地址-nack-恢复)停轮询地址 NACK 可重试恢复，物理原因待查。eSE 路径、`CORE_RESET` 会话影响与 VEN 时序未证。 | 保留有界首帧和 idle 停轮询重试以及故障锁存，不拉低共享 VEN、不挂 SE 回调。WP10 | 对照首笔及停轮询 [GENI 波形](archive/research/2026-11-18-csot-nci-fdt-followup.md#同一首笔的-geni-时序对照)，分验 NDEF、PM、HCE。eSE 须闭合[身份/传输、收尾及权限](archive/research/2026-11-18-sn100t-ese-ven.md)，任何 VEN 复位另审。旧 ABI 归 TD-003 |
 | RISK-012/P2 | LOS 源/DTBO 线索：QUP11、0x5a、GPIO129/130；主线驱动待合入；Mi 10 LRA 谐振/驱动边界未核 | 不接入 DT/开放保留 GPIO/宣称振动可用 | 核实本机参数与 GPIO 复用；用已合入驱动或审查回移植来源/许可；Debian EV_FF L2/L3、停止/恢复通过 |
-| RISK-013 / P0（无线 RX 供电，WP12） | [11-20 L3](archive/hardware/2026-11-20-umi-rx-pinctrl-l3.md)：无线输入不放行有线充电；上座放电降至近零、电压回升；RX1619 探测成功 | 净充入与 power-good 报 0 | 核对 power-good 输出条件与 GPIO 方向，使 `online`/`voltage_now` 生效；再验限流、温控、停机；TX 独立 |
+| RISK-013 / P0（无线 RX 供电，WP12） | [11-20 L3](archive/hardware/2026-11-20-umi-rx-pinctrl-l3.md)：诊断镜像 RX1619 绑定成功，上座放电降至近零，有线 SMB5/BQ 保持禁充 | power-good 报 0，普通模式双输入互锁与无线净充入待验 | 核实 GPIO1 板级用途及 GPIO7 有效信号；验普通模式双输入退出与恢复、无线限流/温控/停机；TX 独立 |
 
 关闭条目按 [GOVERNANCE](GOVERNANCE.md) 移入带日期归档，不以“已登记”解除阻断。

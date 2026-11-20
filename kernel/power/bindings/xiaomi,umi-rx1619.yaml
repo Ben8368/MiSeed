@@ -28,9 +28,8 @@ properties:
     items:
       - const: default
   pinctrl-0:
-    minItems: 1
-    maxItems: 3
-    description: Pin configurations for power-good, OVP enable and chip enable.
+    maxItems: 1
+    description: Input pin configuration for the power-good signal.
 
 required:
   - compatible

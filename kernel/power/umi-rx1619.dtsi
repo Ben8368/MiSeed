@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Umi LineageOS active DT at 71b13e62: QUP16, 0x61, PM8150B GPIO1/7 and TLMM 155. */
+/* Umi LineageOS active DT at 71b13e62: QUP16, 0x61, PM8150B GPIO7 and TLMM 155.
+ * PM8150B GPIO1 is the downstream wireless charge-pump enable; leave it
+ * unmanaged until there is a separately verified wireless power policy.
+ */
 
 &pm8150b_gpios {
 	rx1619_power_good_default: rx1619-power-good-default-state {
@@ -8,23 +11,6 @@
 		power-source = <0>;
 		bias-pull-down;
 		input-enable;
-	};
-
-	wireless_ovp_en_default: wireless-ovp-en-default-state {
-		pins = "gpio1";
-		function = "normal";
-		power-source = <0>;
-		bias-disable;
-		output-high;
-	};
-};
-
-&tlmm {
-	rx1619_enable_default: rx1619-enable-default-state {
-		pins = "gpio155";
-		function = "gpio";
-		drive-strength = <8>;
-		bias-pull-down;
 	};
 };
 
@@ -35,7 +21,7 @@
 		compatible = "xiaomi,umi-rx1619";
 		reg = <0x61>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&rx1619_power_good_default &wireless_ovp_en_default &rx1619_enable_default>;
+		pinctrl-0 = <&rx1619_power_good_default>;
 		power-good-gpios = <&pm8150b_gpios 7 GPIO_ACTIVE_HIGH>;
 		enable-gpios = <&tlmm 155 GPIO_ACTIVE_LOW>;
 	};
