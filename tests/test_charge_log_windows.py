@@ -5,6 +5,7 @@
 import io
 from pathlib import Path
 import tempfile
+from threading import Thread
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -79,7 +80,14 @@ class BufferedTests(unittest.TestCase):
         port = Mock()
         port.read.side_effect = [b"miseed> " + SNAPSHOT, OSError("USB removed")]
         output = io.BytesIO()
-        self.assertEqual(collector.receive_windows(port, output, 1), (0, 2, 2, 0, 0))
+        class DrainBeforeInspect(Thread):
+            def start(self):
+                super().start()
+                self.join(timeout=1)
+
+        with patch("tools.charge_log_windows.threading.Thread", DrainBeforeInspect):
+            self.assertEqual(collector.receive_windows(port, output, 1), (0, 2, 2, 0, 0))
+        self.assertEqual(port.read.call_count, 2)
         self.assertEqual(output.getvalue(), SNAPSHOT)
 
     def test_unavailable_is_detected_inside_large_or_fragmented_chunks(self):

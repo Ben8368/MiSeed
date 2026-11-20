@@ -2,7 +2,8 @@
 /* Included by NCI core beside the RF deactivate request. */
 
 /* The caller serializes state changes and keeps ndev registered. */
-int nci_set_rf_inhibited(struct nci_dev *ndev, bool inhibit)
+int nci_set_rf_inhibited(struct nci_dev *ndev, bool inhibit,
+			 bool (*can_release)(void *data), void *data)
 {
 	struct nfc_dev *nfc = ndev->nfc_dev;
 	bool deactivate, target_active, target_mode;
@@ -57,6 +58,11 @@ int nci_set_rf_inhibited(struct nci_dev *ndev, bool inhibit)
 
 	if (!inhibit) {
 		device_lock(&nfc->dev);
+		/* The RX notifier and RF consumers serialize on this same lock. */
+		if (!can_release || !can_release(data)) {
+			device_unlock(&nfc->dev);
+			return -EAGAIN;
+		}
 		WRITE_ONCE(ndev->rf_inhibited, false);
 		device_unlock(&nfc->dev);
 	}

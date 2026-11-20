@@ -20,8 +20,9 @@ class Smb5StatusTests(unittest.TestCase):
         internal = (ROOT / "kernel/power/qcom_pm8150b_internal.h").read_text()
         phases = re.search(r"enum charger_status \{.*?\n\};", internal, re.S).group()
         functions = []
-        for name in ("smb5_wireless_rx_state", "smb5_wired_source", "smb5_get_prop_usb_online", "smb5_get_prop_status"):
-            start = source.index("int " + name + "(")
+        for name in ("int smb5_read_typec_misc", "bool smb5_wired_detached", "int smb5_wireless_rx_state",
+                     "int smb5_wired_source", "int smb5_get_prop_usb_online", "int smb5_get_prop_status"):
+            start = source.index(name + "(")
             functions.append(source[start:source.index("\n}\n", start) + 3])
         harness = (ROOT / "tests/smb5_status_harness.c").read_text().replace(
             "/* MISEED_SMB5_STATUS_UNDER_TEST */", phases + "\n" + "\n".join(functions))

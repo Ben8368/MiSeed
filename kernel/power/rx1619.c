@@ -93,6 +93,11 @@ static irqreturn_t rx1619_power_good_changed(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+static void rx1619_disable(void *gpio)
+{
+	gpiod_set_value_cansleep(gpio, 0);
+}
+
 static int rx1619_probe(struct i2c_client *client)
 {
 	struct device *dev = &client->dev;
@@ -111,6 +116,9 @@ static int rx1619_probe(struct i2c_client *client)
 		rx->enable_gpio = devm_gpiod_get(dev, "enable", GPIOD_OUT_HIGH);
 		if (IS_ERR(rx->enable_gpio))
 			return dev_err_probe(dev, PTR_ERR(rx->enable_gpio), "RX enable GPIO\n");
+		ret = devm_add_action_or_reset(dev, rx1619_disable, rx->enable_gpio);
+		if (ret)
+			return dev_err_probe(dev, ret, "register RX enable cleanup\n");
 	}
 	rx->power_good = devm_gpiod_get(dev, "power-good", GPIOD_IN);
 	if (IS_ERR(rx->power_good))

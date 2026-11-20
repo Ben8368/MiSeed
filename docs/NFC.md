@@ -38,7 +38,7 @@ Windows `collect_nfc_evidence.py` 默认只采注册与 dmesg；绑定、地址�
 ## 有线、无线共存
 
 - **有线 USB/PD/PPS**：独立于无线 RX/TX；USB 插线、PD/PPS 状态不能直接作为关闭 NFC RF 的条件。
-- **无线接收 RX**：RX1619 power-good 触发 Linux NCI 停止射频。RX 工作期间拒绝新轮询、选卡和 RF 传输，离座恢复受理新请求，原应用可重新寻卡。共享 VEN 保持，既有 eSE 验收独立。 [实现与验收范围](archive/research/2026-11-19-umi-rx1619-nfc.md)
+- **无线 RX**：仅 `MISEED_RX_PROFILE=coex` 按 RX1619 power-good 停止射频，阻止新轮询、选卡和 RF 传输，离座后可重新寻卡。默认 `normal` 不启用；不动共享 VEN，eSE 独立验收。 [实现与验收范围](archive/research/2026-11-19-umi-rx1619-nfc.md)
 - **无线反充 TX**：独立验证射频共存策略，当前待研。
 
 ## 证据与开放项

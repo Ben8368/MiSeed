@@ -108,6 +108,8 @@ struct smb5_chip {
 };
 
 
+int smb5_read_typec_misc(struct smb5_chip *chip, unsigned int *status);
+bool smb5_wired_detached(struct smb5_chip *chip);
 int smb5_wired_source(struct smb5_chip *chip, int *present);
 int smb5_get_prop_usb_online(struct smb5_chip *chip, int *val);
 int smb5_wireless_rx_state(struct smb5_chip *chip);

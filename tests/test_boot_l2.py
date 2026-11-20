@@ -264,6 +264,28 @@ class SourceCacheTests(unittest.TestCase):
         return cached_source, build, selected
 
     @unittest.skipUnless(sys.platform == "linux" and shutil.which("bash"), "Linux Bash required")
+    def test_build_locks_shared_explicit_cache_across_work_roots(self):
+        if not shutil.which("flock"):
+            self.skipTest("flock required")
+        import fcntl
+
+        script = (ROOT / "tools/build_kernel_l2.sh").read_text()
+        locking = script[script.index("require flock\n"):script.index('mkdir -p "$work_root"')]
+        prefix = 'set -eu\nfail() { echo "$*" >&2; exit 42; }\nrequire() { command -v "$1"; }\n'
+        prefix += 'work_root="$1"; source_tree="$2"; build_tree="$3"; output_root="$4"\n'
+        paths = [self.root / name for name in ("profile-work", "shared-src", "shared-build", "coex")]
+        entry = ["bash", "-c", prefix + locking + "echo locked", "fixture", *paths]
+        for path in paths:
+            with self.subTest(path=path), open(str(path) + ".miseed.lock", "a") as held:
+                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                run = subprocess.run(entry, capture_output=True, text=True, timeout=5)
+                self.assertEqual(run.returncode, 42, run.stderr)
+                self.assertIn(f"build workspace is busy: {path}", run.stderr)
+        run = subprocess.run(entry, capture_output=True, text=True, timeout=5)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("locked", run.stdout)
+
+    @unittest.skipUnless(sys.platform == "linux" and shutil.which("bash"), "Linux Bash required")
     def test_build_script_reuses_verified_source_and_build_cache(self):
         source, build, selected = self.run_cache_preparation(dirty=False)
         self.assertEqual(selected, [source, build])

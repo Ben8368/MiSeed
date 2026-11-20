@@ -170,6 +170,19 @@ class OverlayIsolationTests(unittest.TestCase):
                         pg_handle, pg_handle], check=True)
         with self.assertRaisesRegex(ValueError, "pinctrl-0"):
             check_rf_dt.validate(mutated)
+        shutil.copyfile(dtb, mutated)
+        subprocess.run(["fdtput", "-d", str(mutated), pg, "output-disable"], check=True)
+        with self.assertRaisesRegex(ValueError, "only configure an input"):
+            check_rf_dt.validate(mutated)
+        nfc = isolation.get(dtb, "/__symbols__", "umi_nfc")
+        tlmm = isolation.get(dtb, "/__symbols__", "miseed_live_tlmm")
+        tlmm_handle = self.cells(dtb, tlmm, "phandle").decode().strip()
+        for handle, flags in ((tlmm_handle, "1"), (pg_handle, "0")):
+            shutil.copyfile(dtb, mutated)
+            subprocess.run(["fdtput", "-t", "x", str(mutated), nfc, "firmware-gpios",
+                            handle, "6e", flags], check=True)
+            with self.assertRaisesRegex(ValueError, "active-high TLMM"):
+                check_rf_dt.validate(mutated)
         subprocess.run(["fdtput", str(dtb), pg, "output-high"], check=True)
         with self.assertRaisesRegex(ValueError, "only configure an input"):
             check_rf_dt.validate(dtb)

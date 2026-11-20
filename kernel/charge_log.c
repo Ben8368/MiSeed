@@ -168,9 +168,7 @@ static int charge_read_value(const char *path, char *value, size_t size) {
     return 0;
 }
 
-/* Umi has one receptacle. Verify the port provider before interpreting
- * an absent partner. The UDC USB data state is sampled independently.
- */
+/* Umi has one receptacle. An absent TCPM partner is not physical detach. */
 int umi_typec_partner(void) {
     char compatible[80];
     struct stat st;
@@ -188,6 +186,37 @@ int umi_typec_partner(void) {
         close(node);
     }
     close(port);
+    return ret;
+}
+
+/* Only the coex diagnostic uses this, on the suspend-disabled boot profile.
+ * Use the kernel event time, not the time at which the recorder drained it.
+ */
+int umi_typec_detach_evidence(void) {
+    struct charge_log_header header;
+    struct charge_log_record record;
+    int ret = -EAGAIN;
+    if (charge_log_fd < 0 || charge_log_lock(F_RDLCK)) return ret;
+    if (charge_log_io(&header, sizeof(header), 0, 0)) goto unlock;
+    for (uint64_t i = header.total, scanned = 0; i && scanned < 128; scanned++) {
+        if (charge_log_io(&record, sizeof(record), sizeof(header) + --i * sizeof(record), 0)) break;
+        record.text[sizeof(record.text) - 1] = '\0';
+        const char *kind = strchr(record.text, ' ');
+        if (!kind || !(kind = strchr(kind + 1, ' '))) break;
+        if (!strncmp(kind, " LOSS ", 6) || !strncmp(kind, " ERROR ", 7)) break;
+        if (strncmp(kind, " KERNEL ", 8)) continue;
+        const char *diag = strstr(kind + 8, "miseed-rx-diag ");
+        if (!diag) continue;
+        uint64_t timestamp, now = charge_boot_ms();
+        unsigned int off, cc, vbus;
+        if (sscanf(kind + 8, "%*[^,],%*[^,],%" SCNu64 ",", &timestamp) == 1 &&
+            sscanf(diag, "miseed-rx-diag smb5_off=%u cc_attached=%u vbus_present=%u", &off, &cc, &vbus) == 3 &&
+            timestamp / 1000 <= now && now - timestamp / 1000 <= 2000 && off == 1 && !cc && !vbus)
+            ret = 0;
+        break;
+    }
+unlock:
+    (void)charge_log_lock(F_UNLCK);
     return ret;
 }
 
@@ -245,7 +274,7 @@ void charge_snapshot(void) {
 
 static int charge_kernel_message(const char *content) {
     static const char * const terms[] = {
-        "miseed-power", "miseed-pps", "miseed-rx-nfc", "charg", "battery", "power_supply", "smb5", "smb2",
+        "miseed-power", "miseed-pps", "miseed-rx-nfc", "miseed-rx-diag", "charg", "battery", "power_supply", "smb5", "smb2",
         "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic",
     };
     for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); i++)

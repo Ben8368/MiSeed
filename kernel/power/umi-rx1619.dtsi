@@ -11,6 +11,7 @@
 		power-source = <0>;
 		bias-pull-down;
 		input-enable;
+		output-disable;
 	};
 };
 

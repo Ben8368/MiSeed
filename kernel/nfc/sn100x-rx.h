@@ -15,16 +15,36 @@ struct sn100x_rx {
 	struct power_supply *source;
 	struct notifier_block notifier;
 	struct delayed_work work;
+	atomic_t generation;
 };
+
+struct sn100x_rx_sample {
+	struct sn100x_rx *rx;
+	int generation;
+};
+
+/* Called under the NFC device lock, immediately before clearing the gate. */
+static bool sn100x_rx_still_offline(void *data)
+{
+	struct sn100x_rx_sample *sample = data;
+	struct sn100x_rx *rx = sample->rx;
+	union power_supply_propval online;
+
+	return sample->generation == atomic_read(&rx->generation) &&
+	       !power_supply_get_property(rx->source, POWER_SUPPLY_PROP_ONLINE, &online) &&
+	       !online.intval;
+}
 
 static void sn100x_rx_work(struct work_struct *work)
 {
 	struct sn100x_rx *rx = container_of(to_delayed_work(work), struct sn100x_rx, work);
 	union power_supply_propval online;
+	struct sn100x_rx_sample sample = { rx, atomic_read(&rx->generation) };
 	int ret, rf_ret;
 
 	ret = power_supply_get_property(rx->source, POWER_SUPPLY_PROP_ONLINE, &online);
-	rf_ret = nci_set_rf_inhibited(rx->ndev, ret || online.intval);
+	rf_ret = nci_set_rf_inhibited(rx->ndev, ret || online.intval,
+				     sn100x_rx_still_offline, &sample);
 	if (ret || rf_ret) {
 		dev_warn_ratelimited(rx->dev,
 				     "RX/NFC state unconfirmed: RX=%d RF=%d\n", ret, rf_ret);
@@ -40,6 +60,9 @@ static int sn100x_rx_changed(struct notifier_block *notifier,
 
 	if (event != PSY_EVENT_PROP_CHANGED || data != rx->source)
 		return NOTIFY_DONE;
+	device_lock(&rx->ndev->nfc_dev->dev);
+	atomic_inc(&rx->generation);
+	device_unlock(&rx->ndev->nfc_dev->dev);
 	mod_delayed_work(system_freezable_wq, &rx->work, 0);
 	return NOTIFY_OK;
 }
@@ -61,7 +84,8 @@ static int sn100x_rx_init(struct sn100x_rx *rx, struct device *dev,
 	rx->notifier.notifier_call = sn100x_rx_changed;
 	INIT_DELAYED_WORK(&rx->work, sn100x_rx_work);
 	/* Keep RF gated until the first post-registration sample. */
-	return nci_set_rf_inhibited(ndev, true);
+	atomic_set(&rx->generation, 0);
+	return nci_set_rf_inhibited(ndev, true, NULL, NULL);
 }
 
 static int sn100x_rx_start(struct sn100x_rx *rx)

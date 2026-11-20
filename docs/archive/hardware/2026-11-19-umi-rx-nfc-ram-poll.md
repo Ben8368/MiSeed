@@ -12,7 +12,7 @@
 
 ## 第二轮拔线、上座与离座
 
-沿用同一镜像和机型，单次授权 RAM 启动，维护者确认实际完成拔线、放上通电底座及移除。主机观察到 CDC 断开后重连。探针在启动后 `6.335 s` 成功 armed，`51.728 s` 返回 `stage=result mode=poll at=detach rc=-110 cleanup=0`。物理拔线期间，内核 UDC 的 `state` 一直保留 `configured`。该状态不能单独用于确认小米 10 的物理断线。
+沿用同一镜像和机型，单次授权 RAM 启动，维护者确认实际完成拔线、放上通电底座及移除。主机观察到 CDC 断开后重连。探针在启动后 `6.335 s` 成功 armed，`51.728 s` 返回 `stage=result mode=poll at=detach rc=-110 cleanup=0`。物理拔线期间，内核 UDC 的 `state` 一直保留 `configured`。该状态不能单独用于确认小米 10 的物理断线。收尾版须同时见 TCPM partner 缺席、近期 PM8150B TCPC CC 未连接且 VBUS 未检出；结果行后等至少一个诊断采样周期再导出。以下旧镜像不具备这组收尾证据，不重判为通过。
 
 - 从原始串口文件恢复 401 条连续记录，零存储错误。38 组 RX 样本的 `online` 均为 `0`，输出遥测不可读。NCI 停射频、上座拒绝与离座恢复未进入验证阶段。
 - 与上座操作吻合的区间，`27.758–42.265 s` 的 PMIC 读数出现 `USBIN_RT=0x18`、`POWER_PATH_STATUS=0x03`。USBIN/DCIN 选择位均未置位。虽然 `chg_enable` 在 `28.789 s` 读到 `1`，该窗口的 7 组电池样本仍为 `Discharging`，电流 `−0.449` 至 `−0.404 A`、28.0 °C。实际输入与接收器 power-good 原因待证，详见 [RISK-013](../../RISK_REGISTER.md)。

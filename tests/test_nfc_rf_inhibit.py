@@ -46,7 +46,14 @@ struct nci_dev {
     int target_active_prot;
 };
 static int requests, request_error, target_lost, polls_aborted, listen_aborted;
-static bool idle_response = true;
+static bool idle_response = true, update_generation;
+static int generation;
+struct release_guard { struct nfc_dev *nfc; int observed; };
+static bool still_offline(void *data) {
+    const struct release_guard *guard = data;
+    assert(guard->nfc->dev.locked);
+    return guard->observed == generation;
+}
 static void device_lock(struct device *dev) { assert(!dev->locked); dev->locked = true; }
 static void device_unlock(struct device *dev) { assert(dev->locked); dev->locked = false; }
 static void nci_rf_deactivate_req(struct nci_dev *dev, const void *type) {
@@ -56,6 +63,7 @@ static int nci_request(struct nci_dev *dev, void (*req)(struct nci_dev *, const 
                        const void *type, int timeout) {
     assert(!dev->nfc_dev->dev.locked && timeout == NCI_RF_DEACTIVATE_TIMEOUT);
     requests++;
+    if (update_generation) generation++;
     req(dev, type);
     if (idle_response)
         dev->state = NCI_IDLE;
@@ -84,33 +92,39 @@ int main(void) {
     struct nfc_dev nfc = {};
     struct nci_dev nci = { .nfc_dev = &nfc };
     struct target tag = { .idx = 7 };
+    struct release_guard guard = { &nfc, generation };
 
-    assert(!nci_set_rf_inhibited(&nci, true) && nci.rf_inhibited && !requests);
-    assert(!nci_set_rf_inhibited(&nci, false) && !nci.rf_inhibited && !nfc.dev_up);
+    assert(!nci_set_rf_inhibited(&nci, true, NULL, NULL) && nci.rf_inhibited && !requests);
+    assert(!nci_set_rf_inhibited(&nci, false, still_offline, &guard) && !nci.rf_inhibited && !nfc.dev_up);
     nfc.dev_up = nfc.polling = true;
     nci.state = NCI_DISCOVERY;
     request_error = -ETIMEDOUT;
-    assert(nci_set_rf_inhibited(&nci, true) == -ETIMEDOUT);
+    assert(nci_set_rf_inhibited(&nci, true, NULL, NULL) == -ETIMEDOUT);
     assert(nci.rf_inhibited && nci.rf_deactivate_pending && nfc.polling);
     assert(nci.state == NCI_IDLE && requests == 1 && !polls_aborted);
-    assert(nci_set_rf_inhibited(&nci, false) == -ETIMEDOUT && nci.rf_inhibited);
+    assert(nci_set_rf_inhibited(&nci, false, still_offline, &guard) == -ETIMEDOUT && nci.rf_inhibited);
     request_error = 0;
-    assert(!nci_set_rf_inhibited(&nci, false));
+    update_generation = true;
+    assert(nci_set_rf_inhibited(&nci, false, still_offline, &guard) == -EAGAIN);
+    assert(nci.rf_inhibited && !nci.rf_deactivate_pending && requests == 3);
+    update_generation = false;
+    guard.observed = generation;
+    assert(!nci_set_rf_inhibited(&nci, false, still_offline, &guard));
     assert(!nci.rf_inhibited && !nci.rf_deactivate_pending && requests == 3);
     assert(nfc.dev_up && !nfc.polling && polls_aborted == 1);
     nci.state = NCI_POLL_ACTIVE;
     nci.target_active_prot = 1;
     nfc.active_target = &tag;
     idle_response = false;
-    assert(nci_set_rf_inhibited(&nci, true) == -EIO);
+    assert(nci_set_rf_inhibited(&nci, true, NULL, NULL) == -EIO);
     assert(nci.rf_inhibited && nfc.active_target == &tag && !target_lost);
     idle_response = true;
-    assert(!nci_set_rf_inhibited(&nci, true));
+    assert(!nci_set_rf_inhibited(&nci, true, NULL, NULL));
     assert(nci.rf_inhibited && !nfc.active_target && !nci.target_active_prot);
     assert(target_lost == 1 && requests == 5);
     nfc.rf_mode = NFC_RF_TARGET;
-    assert(!nci_set_rf_inhibited(&nci, true) && listen_aborted == 1);
-    assert(!nci_set_rf_inhibited(&nci, false) && nfc.dev_up && !nci.rf_inhibited);
+    assert(!nci_set_rf_inhibited(&nci, true, NULL, NULL) && listen_aborted == 1);
+    assert(!nci_set_rf_inhibited(&nci, false, still_offline, &guard) && nfc.dev_up && !nci.rf_inhibited);
 }
 """
 

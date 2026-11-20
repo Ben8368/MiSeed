@@ -74,6 +74,22 @@ readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
 grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must enable ARCH_QCOM"
 
+# Covers explicit source/build overrides too, even across different work roots.
+# Use canonical sibling lock files: source/build trees can be moved or recreated.
+require flock
+require realpath
+declare -A locked=()
+for path in "$work_root" "$source_tree" "$build_tree" "$output_root"; do
+    path="$(realpath -m -- "$path")"
+    [[ -n "$path" && "$path" != / ]] || fail "invalid build workspace"
+    lock_path="$path.miseed.lock"
+    if [[ "${locked["$lock_path"]:-}" != 1 ]]; then
+        mkdir -p -- "$(dirname -- "$lock_path")"
+        exec {lock_fd}>>"$lock_path"
+        flock -n "$lock_fd" || fail "build workspace is busy: $path"
+        locked["$lock_path"]=1
+    fi
+done
 mkdir -p "$work_root" "$output_root"
 if [[ ! -f "$template" ]]; then
     python3 "$repo_root/tools/download_locked.py" --url "$boot_url" \
@@ -160,12 +176,16 @@ if [[ "$rx_profile" != normal ]]; then
 fi
 case "$rx_profile" in
     enable) "$source_tree/scripts/config" --file "$build_tree/.config" -e MISEED_RX_ENABLE_EXPERIMENT ;;
-    coex) "$source_tree/scripts/config" --file "$build_tree/.config" -e MISEED_RX_NFC_COEX ;;
+    coex) "$source_tree/scripts/config" --file "$build_tree/.config" -e MISEED_RX_NFC_COEX -d SUSPEND ;;
 esac
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 # Regenerate compiler inputs explicitly: host clock skew can otherwise leave
 # allnoconfig's auto.conf newer than the merged .config and skip this step.
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- syncconfig
+# The coex RAM recorder compares printk and boot timestamps without suspend.
+if [[ "$rx_profile" == coex ]] && grep -qx 'CONFIG_SUSPEND=y' "$build_tree/.config"; then
+    fail "coex evidence profile must not support suspend"
+fi
 for pair in MISEED_RX_DIAGNOSTIC:diagnostic MISEED_RX_ENABLE_EXPERIMENT:enable MISEED_RX_NFC_COEX:coex; do
     option=${pair%:*}
     expected=${pair#*:}

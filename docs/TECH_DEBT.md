@@ -44,6 +44,6 @@
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（402）、`umi_pps.c`（479）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（498）为传输/生命周期桩。WP0 `tools/build_kernel_l2.sh`（328）编排构建与配置检查，`tests/test_boot_l2.py`（355）覆盖缓存回归。WP2 `kernel/umi-csot.dts`（322）集中板级节点与 ABL 锚点审计，RX 接线已独立为 DTSI。
+责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（428）、`qcom_pm8150b_policy.c`（302）、`umi_pps.c`（496）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（521）为传输/生命周期桩。WP0 `tools/build_kernel_l2.sh`（348）编排构建，`tests/test_boot_l2.py`（377）覆盖缓存与锁；`kernel/charge_log.c`（311）保留 RAM 日志与诊断断线取证。WP2 `kernel/umi-csot.dts`（322）集中板级节点与 ABL 锚点审计，RX 接线已独立为 DTSI。
 
 偿还：各WP下次修改时拆分接口、代际后端或测试职责；全部≤300行且回归通过后关闭。见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，不豁免红灯和供电安全。

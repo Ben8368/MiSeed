@@ -24,6 +24,11 @@ static bool smb5_is_ours(struct power_supply *psy)
 	return psy && psy->desc && psy->desc->set_property == smb5_set_property;
 }
 
+bool umi_smb5_wired_detached(struct power_supply *psy)
+{
+	return smb5_is_ours(psy) && smb5_wired_detached(power_supply_get_drvdata(psy));
+}
+
 int umi_smb5_wireless_rx_state(struct power_supply *psy)
 {
 	if (!smb5_is_ours(psy))
@@ -33,11 +38,12 @@ int umi_smb5_wireless_rx_state(struct power_supply *psy)
 
 int smb5_get_prop_status(struct smb5_chip *chip, int *val);
 
-int umi_smb5_claim(struct power_supply *psy, int *stage)
+int umi_smb5_claim(struct power_supply *psy, int *stage, bool *claimed)
 {
 	struct smb5_chip *chip;
 	int rc, status, online;
 
+	*claimed = false;
 	if (!smb5_is_ours(psy))
 		return -ENODEV;
 	chip = power_supply_get_drvdata(psy);
@@ -68,6 +74,7 @@ int umi_smb5_claim(struct power_supply *psy, int *stage)
 	*stage = chip->power_stage;
 	/* Keep ownership even after an I/O error; cleanup must verify the stop. */
 	chip->pps_owned = true;
+	*claimed = true;
 	chip->inhibit = true;
 	chip->enabled = false;
 	rc = smb5_inhibit_with_fallback(chip, "pps-claim");
@@ -97,8 +104,6 @@ int umi_smb5_check(struct power_supply *psy, int stage)
 	chip = power_supply_get_drvdata(psy);
 	mutex_lock(&chip->lock);
 	rc = !chip->pps_owned || chip->stopping ? -EPERM : 0;
-	if (!rc && smb5_wireless_rx_state(chip))
-		rc = -EBUSY;
 	if (!rc)
 		rc = regmap_read(chip->regmap, chip->base + CHARGING_ENABLE_CMD, &charge);
 	if (!rc)
@@ -109,7 +114,11 @@ int umi_smb5_check(struct power_supply *psy, int stage)
 		chip->power_stage = umi_pps_max(chip->power_stage, stage);
 		if (stage == UMI_WIRED_BYPASS_STAGE)
 			chip->full_bypass = true;
-		rc = chip->max_fv_uv;
+		rc = smb5_wireless_rx_state(chip);
+		if (rc > 0)
+			rc = -EBUSY;
+		else if (!rc)
+			rc = chip->max_fv_uv;
 	}
 	mutex_unlock(&chip->lock);
 	return rc;
@@ -184,7 +193,7 @@ void smb5_status_change_work(struct work_struct *work)
  struct smb5_chip *chip = container_of(work, struct smb5_chip, status_change_work.work);
  int online = 0, present = 0, health = POWER_SUPPLY_HEALTH_UNKNOWN;
  int temp = -10000, voltage = -1, soc = -1, bms_current = 0;
- int wired = 0, rc, usb_rc, allow = 0, stop_rc, status;
+ int wired = 0, rc, allow = 0, stop_rc, status;
  mutex_lock(&chip->lock);
  if (chip->stopping) {
   mutex_unlock(&chip->lock);
@@ -197,8 +206,7 @@ void smb5_status_change_work(struct work_struct *work)
  schedule_delayed_work(&chip->status_change_work, msecs_to_jiffies(1000));
  return;
 #endif
- usb_rc = smb5_wired_source(chip, &wired);
- rc = usb_rc;
+ rc = smb5_wired_source(chip, &wired);
  if (!rc && wired) {
   unsigned int input;
   rc = smb5_get_prop_usb_online(chip, &online);
@@ -229,13 +237,11 @@ void smb5_status_change_work(struct work_struct *work)
   * Preserve system input while stopping battery charge. This session latch
   * is independent of user inhibit; it clears at <=71% or on unplug.
   */
- if (!usb_rc && !wired)
+ /* Eligibility can vanish during RX or TCPM recovery without unplugging. */
+ if (!wired && smb5_wired_detached(chip)) {
   chip->full_bypass = false;
- if (!usb_rc && !wired)
   chip->power_stage = 0;
- if (!usb_rc && !wired)
   chip->pps_fault = false;
- if (!usb_rc && !wired) {
   chip->pd_transition = false;
   chip->pd_limit_uv = chip->pd_voltage_uv = chip->pd_current_ua = 0;
   chip->thermal_sampled = chip->thermal_recover = false;

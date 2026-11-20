@@ -15,21 +15,30 @@ from tools.rx_nfc_evidence import assess, ExportError
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def fixture(mode="poll", *, idle="discovery", usb="configured", partner="0", charge=0, result=0):
+def fixture(mode="poll", *, idle="discovery", usb="configured", partner="0", charge=0,
+            result=0, battery="Discharging", delayed=False, loss=False, cc=0, watermark=True):
     events = [
         f"RX_NFC stage=armed mode={mode}", "RX_NFC stage=detached online=0",
         "RX_NFC stage=seated online=1", f"USB udc=a600000.usb state={usb}",
         f"TYPEC port=port0 partner={partner} rc=0",
         "SAMPLE supply=rx1619 online=1 voltage_now=5317000 current_now=87000",
-        "SAMPLE supply=qcom-battery status=Discharging current_now=-140000",
-        f"KERNEL miseed-power chg_enable={charge} usb_rt=0x10 power_path=0x11",
-        f"KERNEL miseed-rx-nfc rf_idle previous={idle}",
+        f"SAMPLE supply=qcom-battery status={battery} current_now=-140000",
+        f"KERNEL 6,27,600000,-;smb5: miseed-power chg_enable={charge} usb_rt=0x10 power_path=0x11",
+        f"KERNEL 6,28,700000,-;smb5: miseed-rx-diag smb5_off=1 cc_attached={cc} vbus_present=0 cc_status=0x00",
+        f"KERNEL 6,29,800000,-;miseed-rx-nfc rf_idle previous={idle}",
         "RX_NFC stage=blocked start_poll=ERFKILL", "RX_NFC stage=removed online=0",
         "RX_NFC stage=rediscovered targets=1 mifare=1",
         f"RX_NFC stage=result mode={mode} at=rediscover rc={result} cleanup=0",
     ]
+    if delayed:
+        events.append(events.pop(9))
+    if watermark:
+        events.append("KERNEL 6,30,1900000,-;smb5: miseed-rx-diag smb5_off=1 cc_attached=0 vbus_present=0 cc_status=0x00")
+    if loss:
+        events.append("LOSS kernel_ring_overrun")
     return (f"CHARGE_LOG_BEGIN boot_id=synthetic first=0 next={len(events)} count={len(events)} storage_errors=0 ram_only=1\n" +
-            "".join(f"seq={i} boot_ms={i * 100} {event}\n" for i, event in enumerate(events)) +
+            "".join(f"seq={i} boot_ms={i * 100 if i < 14 else 1900 + i * 100} {event}\n"
+                    for i, event in enumerate(events)) +
             f"CHARGE_LOG_END next={len(events)}\n").encode("ascii")
 
 
@@ -43,7 +52,9 @@ HARNESS = r'''
 #include <assert.h>
 
 static int phase, scenario, starts;
+static int detach_checks;
 int umi_typec_partner(void) { return scenario == 1 && phase >= 2; }
+int umi_typec_detach_evidence(void) { return scenario == 3 && !detach_checks++ ? -EAGAIN : 0; }
 int fake_open(const char *path, int flags, ...) {
     (void)flags;
     if (!strcmp(path, RX_SUPPLY "online")) return 2;
@@ -83,6 +94,8 @@ int main(void) {
     assert(observe_cycle(&c, 7, "fake-udc", &stage) == -ENOLINK && phase == 2 && !starts);
     phase = starts = 0; scenario = 2;
     assert(observe_cycle(&c, 7, "fake-udc", &stage) == -EUCLEAN && phase == 2 && starts == 1);
+    phase = starts = 0; scenario = 3;
+    assert(!observe_cycle(&c, 7, "fake-udc", &stage) && phase == 5 && detach_checks > 1);
 }
 '''
 
@@ -95,9 +108,16 @@ class RxNfcEvidenceTests(unittest.TestCase):
                              [{"raw": 0x11, "input_valid": True, "usb_in": True, "dc_in": False}])
             self.assertEqual(report["battery"], [{"current_ua": -140000, "status": "Discharging"}])
 
+    def test_delayed_kernel_drain_uses_event_time_and_preserves_status(self):
+        report = assess(fixture(delayed=True, battery="Not charging"), "poll")
+        self.assertEqual(report["battery"], [{"current_ua": -140000, "status": "Not charging"}])
+        with self.assertRaisesRegex(ExportError, "idle confirmation"):
+            assess(fixture(delayed=True).replace(b"29,800000", b"29,2500000"), "poll")
+
     def test_rejects_false_passes(self):
         for raw in (fixture(idle="target"), fixture(partner="1"), fixture(partner="unknown"),
-                    fixture(charge=1), fixture(result=-110),
+                    fixture(charge=1), fixture(result=-110), fixture(loss=True), fixture(cc=1),
+                    fixture(watermark=False),
                     fixture().replace(b"seq=4 ", b"seq=3 "),
                     fixture().replace(b"voltage_now=5317000", b"voltage_now=unavailable"),
                     fixture().split(b"CHARGE_LOG_END")[0]):

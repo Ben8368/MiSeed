@@ -53,7 +53,8 @@ def transform(name, original):
         text = replace(text, fields, fields + "\n\tbool\t\t\trf_inhibited;"
                        "\n\tbool\t\t\trf_deactivate_pending;")
         api = "void nci_unregister_device(struct nci_dev *ndev);"
-        text = replace(text, api, api + "\nint nci_set_rf_inhibited(struct nci_dev *ndev, bool inhibit);")
+        text = replace(text, api, api + "\nint nci_set_rf_inhibited(struct nci_dev *ndev, bool inhibit,\n"
+                       "\t\t\t bool (*can_release)(void *data), void *data);")
     elif name == RESPONSE:
         text = replace(text, RESPONSE_STATE,
                        "\t    (atomic_read(&ndev->state) != NCI_POLL_ACTIVE &&\n"

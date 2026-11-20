@@ -43,6 +43,7 @@ static int read_state(const char *udc, bool *detached, bool *online) {
     int rc = read_token(udc, state, sizeof(state));
     int typec = umi_typec_partner();
     if (typec < 0) return typec;
+    if (!typec && !rc) rc = umi_typec_detach_evidence();
     if (!rc) rc = read_token(RX_SUPPLY "online", rx, sizeof(rx));
     if (rc) return rc;
     if (strcmp(rx, "0") && strcmp(rx, "1")) return -EBADMSG;
@@ -56,6 +57,7 @@ static int wait_state(const char *udc, bool want_online, bool wait_for_detach,
     for (unsigned int i = 0; i < seconds * 4; i++) {
         bool detached, online;
         int rc = read_state(udc, &detached, &online);
+        if (rc == -EAGAIN && wait_for_detach) { usleep(250000); continue; }
         if (rc) return rc;
         if (!detached && !wait_for_detach) return -ENOLINK;
         if (wait_for_detach && online) return -EUCLEAN;

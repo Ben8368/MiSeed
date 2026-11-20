@@ -15,6 +15,32 @@
 
 #include "qcom_pm8150b_internal.h"
 
+/* TCPM ONLINE reports sink enable, not physical detach. Read the same
+ * CC and VBUS status bits as the pinned Qualcomm TCPC driver.
+ */
+int smb5_read_typec_misc(struct smb5_chip *chip, unsigned int *status)
+{
+	struct device *tcpc = chip->pd->dev.parent;
+	u32 base;
+	int ret;
+
+	if (!tcpc || tcpc->parent != chip->dev->parent ||
+	    !device_is_compatible(tcpc, "qcom,pm8150b-typec"))
+		return -ENODEV;
+	ret = device_property_read_u32(tcpc, "reg", &base);
+	if (ret || base != PM8150B_TYPEC_BASE)
+		return ret ? ret : -EINVAL;
+	return regmap_read(chip->regmap, base + TYPEC_MISC_STATUS, status);
+}
+
+bool smb5_wired_detached(struct smb5_chip *chip)
+{
+	unsigned int status;
+
+	return !smb5_read_typec_misc(chip, &status) &&
+	       !(status & (TYPEC_CC_ATTACHED | TYPEC_VBUS_DETECT));
+}
+
 int smb5_wireless_rx_state(struct smb5_chip *chip)
 {
 	union power_supply_propval online;

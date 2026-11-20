@@ -22,7 +22,7 @@ def validate(dtb):
         raise ValueError("RX1619 power-good pinctrl is not under PM8150B GPIO")
     pg_props = subprocess.check_output(["fdtget", "-p", dtb, pg], text=True).split()
     if set(pg_props) != {"pins", "function", "power-source", "bias-pull-down",
-                         "input-enable", "phandle"}:
+                         "input-enable", "output-disable", "phandle"}:
         raise ValueError("RX1619 power-good pinctrl must only configure an input")
     checks = (
         (nfc, "compatible", "s", "nxp,sn100t"),
@@ -45,8 +45,8 @@ def validate(dtb):
         if get(node, prop, kind) != expected:
             raise ValueError(f"{node} {prop} does not match {expected}")
     for prop, pin in (("enable-gpios", "53"), ("firmware-gpios", "6e")):
-        if get(nfc, prop, "x").split()[1:2] != [pin]:
-            raise ValueError(f"{nfc} {prop} does not use GPIO {pin}")
+        if get(nfc, prop, "x") != f"{get(tlmm, 'phandle', 'x')} {pin} 0":
+            raise ValueError(f"{nfc} {prop} does not use active-high TLMM GPIO {pin}")
 
 
 def main():
