@@ -52,3 +52,9 @@ MiSeed 侧主动 RX 前另验输入切换、限流、温控与异常停机。采
 - **怎么对照**：同一 Android boot ID、同一底座和充电器，先分别比较无线单接和有线单接，再覆盖先插线后上座、先上座后插线两种顺序，并分别观察离座、拔线。阶段名是操作者标注，采集器不能确认物理上座。同步保存 RX 电流、USBIN 及电池电流；无线断流还须由可区分支路的独立量测确认，不能把共享 USBIN 电流当作外部有线独占证据。连接证据矛盾、读数缺失或出现异常发热时结束该轮，保留已有样本。
 - **MiSeed 约束**：有效有线输入用 Type‑C Sink 角色、TCPM 供电状态和 PMIC 选路交叉确认，不以 USBIN presence 单独判定。锁定 TCPM 的 `ONLINE` 反映 `vbus_charge`/PPS 状态，不代表无线支路已关断。板级隔离证实后，才评估用现有 DT `enable-gpios`/gpiod 管理 RX，继续以标准 Type‑C/TCPM 和只读 `power_supply` 发布状态。不引入 Android 的 `PIN_ENABLED` ABI，不移除现有失效保护。实施及合并门槛见 [WP12](../../implementation-plan.md) 与 [RISK-013](../../RISK_REGISTER.md)。
 - **离线验证**：L0 仓库和 diff 检查通过；Windows 全套 329 项、跳过 130 项，采集专项 7 项全部运行。WSL `sh -n`、ShellCheck error 级和模拟 PG=0/1 取样均通过；没有运行 ADB 或操作设备。
+
+## 2026-11-20：GPIO7 活动配置与调试接口复核
+
+- 同一 Umi 的 LOS `23.2-20261115-NIGHTLY-umi`（运行内核 `4.19.325-cip131-st15-perf-g71b13e62f057`）经获准临时 `adb root` 回读：RX1619 的 `pinctrl-0=0x5ce` 指向 PM8150B `power_good_default`，`pins="gpio7"`、`power-source=<1>`。`5-0061` 确认绑定 `rx1619`。USB 接入基线 PG=0，未开展上座对照。
+- 锁定 LOS [SPMI pinctrl](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/71b13e62f057a649b77fe4062feb73ee72ad609c/drivers/pinctrl/qcom/pinctrl-spmi-gpio.c#L505-L510) 对越界 VIN 返回 `-EINVAL`；[pinctrl 绑定](https://github.com/LineageOS/android_kernel_xiaomi_sm8250/blob/71b13e62f057a649b77fe4062feb73ee72ad609c/drivers/base/pinctrl.c#L93-L104) 将该错误返回给 probe 路径。活动配置与绑定支持 `<1>` 是候选，仍不等同上座时的 VIN/PG 读回。
+- 运行内核 `/proc/config.gz` 明确为 `# CONFIG_DEBUG_FS is not set`，`/proc/filesystems` 未注册 debugfs，因此未尝试挂载；保持 SELinux Enforcing、未改 GPIO 或供电、已核回 ADB UID 2000。三份主机证据存于 `.work/pr8-los-gpio7-20261120/`。下一轮 MiSeed 仍从现有 `observe` 的 PG/IRQ 和 `0x09` 只读采样推进。

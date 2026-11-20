@@ -46,7 +46,7 @@ int run_nfc_l3_probe(int read_fixture);
 void run_nfc_first(void);
 void run_nfc_mifare_discovery(void);
 int umi_typec_partner(void);
-int umi_typec_detach_evidence(void);
+int umi_typec_detach_evidence(int allow_shared_vbus);
 void arm_rx_nfc_probe(int activate_target);
 int read_type4_fixture(uint32_t dev, uint32_t target, uint32_t protocols);
 int write_value(const char *path, const char *value);

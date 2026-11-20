@@ -191,8 +191,9 @@ int umi_typec_partner(void) {
 
 /* Only the coex diagnostic uses this, on the suspend-disabled boot profile.
  * Use the kernel event time, not the time at which the recorder drained it.
+ * On the pad VBUS_DETECT may see shared power despite absent external CC.
  */
-int umi_typec_detach_evidence(void) {
+int umi_typec_detach_evidence(int allow_shared_vbus) {
     struct charge_log_header header;
     struct charge_log_record record;
     int ret = -EAGAIN;
@@ -205,14 +206,17 @@ int umi_typec_detach_evidence(void) {
         if (!kind || !(kind = strchr(kind + 1, ' '))) break;
         if (!strncmp(kind, " LOSS ", 6) || !strncmp(kind, " ERROR ", 7)) break;
         if (strncmp(kind, " KERNEL ", 8)) continue;
-        const char *diag = strstr(kind + 8, "miseed-rx-diag ");
+        const char *diag = strstr(kind + 8, "miseed-rx-diag smb5");
         if (!diag) continue;
         uint64_t timestamp, now = charge_boot_ms();
-        unsigned int off, cc, vbus;
-        if (sscanf(kind + 8, "%*[^,],%*[^,],%" SCNu64 ",", &timestamp) == 1 &&
-            sscanf(diag, "miseed-rx-diag smb5_off=%u cc_attached=%u vbus_present=%u", &off, &cc, &vbus) == 3 &&
-            timestamp / 1000 <= now && now - timestamp / 1000 <= 2000 && off == 1 && !cc && !vbus)
-            ret = 0;
+        unsigned int off, cc, vbus, raw;
+        if (sscanf(kind + 8, "%*[^,],%*[^,],%" SCNu64 ",", &timestamp) != 1 ||
+            timestamp / 1000 > now || now - timestamp / 1000 > 2000) break;
+        if (sscanf(diag, "miseed-rx-diag smb5_off=%u cc_attached=%u vbus_present=%u cc_status=0x%x",
+                   &off, &cc, &vbus, &raw) != 4 || off != 1 || cc > 1 || vbus > 1 || raw > 0xff ||
+            (raw & 0x21) != (cc | (vbus << 5))) ret = -EIO;
+        else if (cc) ret = -ENOLINK;
+        else if (!vbus || allow_shared_vbus) ret = 0;
         break;
     }
 unlock:
@@ -275,7 +279,7 @@ void charge_snapshot(void) {
 static int charge_kernel_message(const char *content) {
     static const char * const terms[] = {
         "miseed-power", "miseed-pps", "miseed-rx-nfc", "miseed-rx-diag", "charg", "battery", "power_supply", "smb5", "smb2",
-        "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic",
+        "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic", "rx1619",
     };
     for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); i++)
         if (contains_case_insensitive(content, terms[i])) return 1;

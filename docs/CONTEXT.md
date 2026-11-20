@@ -14,11 +14,10 @@ WP10 11-19 实体 MIFARE 寻卡及重开通过，无卡停轮询地址 NACK 重�
 
 SMB5 bit5修复，FG/SMB5 10组Charging、Android回退过。[记录](archive/hardware/2026-11-10-umi-battery-fg-smb5-l3.md)
 
-
 旧旁路、PD/PPS恢复及watchdog/热保护见[记录](archive/hardware/2026-11-11-umi-wired-pd-pps-recovery-l3.md)。
 
 ## 近期优先级
 
 1. 固定PD热恢复与低功率、BQ IRQ、保护/温标、旁路回差及独立复核、精确HEAD CI（RISK-004）。
 2. WP10 验 NDEF 和 PM，补地址 NACK 波形。eSE 按[回调和 VEN 门槛](archive/research/2026-11-18-sn100t-ese-ven.md)补证，禁共享 VEN 复位。
-3. 显示、SMMU/PM、Debian。无线RX PG=0，[PR8收尾](archive/reviews/2026-11-20-pr8-coderabbit.md)，RQ-15 待验。
+3. 显示、SMMU/PM、Debian。[RX复验](archive/hardware/2026-11-20-umi-rx-pinctrl-l3.md) PG=0，RQ-15 待取证。

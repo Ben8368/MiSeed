@@ -2,21 +2,33 @@
 /* Umi RX1619 monitor. Register layout and ADC scales from colin's
  * NUVOLTA driver in LineageOS android_kernel_xiaomi_sm8250 at 71b13e62.
  */
+#include <linux/atomic.h>
+#include <linux/devm-helpers.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
+#include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/pm.h>
 #include <linux/power_supply.h>
 #include <linux/regmap.h>
+#include <linux/workqueue.h>
 
 #define RX1619_VOUT	0x0009
 #define RX1619_IOUT	0x000b
+#define RX1619_TRACE_INTERVAL_MS	2000
+#define RX1619_TRACE_SAMPLES	150
+#define RX1619_TRACE_ENABLED	(IS_ENABLED(CONFIG_MISEED_RX_DIAGNOSTIC) && \
+				 !IS_ENABLED(CONFIG_MISEED_RX_NFC_COEX) && \
+				 !IS_ENABLED(CONFIG_MISEED_RX_ENABLE_EXPERIMENT))
 
 struct rx1619 {
 	struct device *dev;
 	struct regmap *regmap;
 	struct gpio_desc *power_good;
+	atomic_t pg_irqs;
+	struct delayed_work pg_trace;
+	unsigned int trace_left;
 	struct gpio_desc *enable_gpio;
 	struct power_supply *supply;
 };
@@ -27,6 +39,46 @@ static enum power_supply_property rx1619_properties[] = {
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 };
 
+/* Sample the existing ONLINE GPIO read, without extra I2C or GPIO reads. */
+static void rx1619_log_pg_sample(struct rx1619 *rx, int pg)
+{
+	bool active_low = gpiod_is_active_low(rx->power_good);
+
+	if (pg < 0)
+		dev_info_ratelimited(rx->dev, "power-good sample error=%d active_low=%d irq_count=%d\n",
+				     pg, active_low, atomic_read(&rx->pg_irqs));
+	else
+		dev_info_ratelimited(rx->dev, "power-good sample raw=%d pg=%d active_low=%d irq_count=%d\n",
+				     pg ^ active_low, pg, active_low, atomic_read(&rx->pg_irqs));
+}
+
+/*
+ * LOS checks register 0x09 at probe without depending on PG. For observe
+ * only, capture the byte independently of the PG-gated supply properties.
+ * RX and TX alias registers: a successful read is not mode or power evidence.
+ */
+static void rx1619_trace_power_good(struct work_struct *work)
+{
+	struct rx1619 *rx = container_of(to_delayed_work(work), struct rx1619, pg_trace);
+	unsigned int raw;
+	int pg, ret;
+
+	pg = gpiod_get_value_cansleep(rx->power_good);
+	if (pg == 0) {
+		ret = regmap_read(rx->regmap, RX1619_VOUT, &raw);
+		if (ret)
+			dev_info(rx->dev, "PG trace pg=0 reg09_error=%d\n", ret);
+		else
+			dev_info(rx->dev, "PG trace pg=0 pg_after=%d reg09_raw=0x%02x\n",
+				 gpiod_get_value_cansleep(rx->power_good), raw);
+	} else if (pg < 0) {
+		dev_info(rx->dev, "PG trace pg_error=%d\n", pg);
+	}
+
+	if (--rx->trace_left)
+		schedule_delayed_work(&rx->pg_trace, msecs_to_jiffies(RX1619_TRACE_INTERVAL_MS));
+}
+
 static int rx1619_get_property(struct power_supply *supply,
 			       enum power_supply_property property,
 			       union power_supply_propval *value)
@@ -36,6 +88,8 @@ static int rx1619_get_property(struct power_supply *supply,
 	int ret;
 
 	ret = gpiod_get_value_cansleep(rx->power_good);
+	if (property == POWER_SUPPLY_PROP_ONLINE && IS_ENABLED(CONFIG_MISEED_RX_DIAGNOSTIC))
+		rx1619_log_pg_sample(rx, ret);
 	if (ret < 0)
 		return ret;
 	if (property == POWER_SUPPLY_PROP_ONLINE) {
@@ -86,9 +140,10 @@ static const struct power_supply_desc rx1619_supply = {
 static irqreturn_t rx1619_power_good_changed(int irq, void *data)
 {
 	struct rx1619 *rx = data;
+	int pg = gpiod_get_value_cansleep(rx->power_good);
+	int count = atomic_inc_return(&rx->pg_irqs);
 
-	dev_info(rx->dev, "power-good changed, pg=%d\n",
-		 gpiod_get_value_cansleep(rx->power_good));
+	dev_info(rx->dev, "power-good changed, pg=%d irq=%d irq_count=%d\n", pg, irq, count);
 	power_supply_changed(rx->supply);
 	return IRQ_HANDLED;
 }
@@ -135,8 +190,15 @@ static int rx1619_probe(struct i2c_client *client)
 					IRQF_TRIGGER_FALLING, dev_name(dev), rx);
 	if (ret)
 		return dev_err_probe(dev, ret, "listen for RX power-good changes\n");
-	dev_info(dev, "RX1619 probed successfully, initial pg=%d\n",
-		 gpiod_get_value_cansleep(rx->power_good));
+	dev_info(dev, "RX1619 probed successfully, initial pg=%d irq=%d\n",
+		 gpiod_get_value_cansleep(rx->power_good), irq);
+	if (RX1619_TRACE_ENABLED) {
+		ret = devm_delayed_work_autocancel(dev, &rx->pg_trace, rx1619_trace_power_good);
+		if (ret)
+			return dev_err_probe(dev, ret, "RX power-good trace setup\n");
+		rx->trace_left = RX1619_TRACE_SAMPLES;
+		schedule_delayed_work(&rx->pg_trace, msecs_to_jiffies(RX1619_TRACE_INTERVAL_MS));
+	}
 	i2c_set_clientdata(client, rx);
 	power_supply_changed(rx->supply);
 	return 0;

@@ -38,12 +38,12 @@ static int udc_path(char *path, size_t size) {
     return count == 1 ? 0 : count ? -E2BIG : -ENODEV;
 }
 
-static int read_state(const char *udc, bool *detached, bool *online) {
+static int read_state(const char *udc, bool allow_shared_vbus, bool *detached, bool *online) {
     char state[32], rx[8];
     int rc = read_token(udc, state, sizeof(state));
     int typec = umi_typec_partner();
     if (typec < 0) return typec;
-    if (!typec && !rc) rc = umi_typec_detach_evidence();
+    if (!typec && !rc) rc = umi_typec_detach_evidence(allow_shared_vbus);
     if (!rc) rc = read_token(RX_SUPPLY "online", rx, sizeof(rx));
     if (rc) return rc;
     if (strcmp(rx, "0") && strcmp(rx, "1")) return -EBADMSG;
@@ -56,12 +56,17 @@ static int wait_state(const char *udc, bool want_online, bool wait_for_detach,
                       unsigned int seconds) {
     for (unsigned int i = 0; i < seconds * 4; i++) {
         bool detached, online;
-        int rc = read_state(udc, &detached, &online);
-        if (rc == -EAGAIN && wait_for_detach) { usleep(250000); continue; }
-        if (rc) return rc;
-        if (!detached && !wait_for_detach) return -ENOLINK;
-        if (wait_for_detach && online) return -EUCLEAN;
-        if (detached && online == want_online) return 0;
+        int rc = read_state(udc, !wait_for_detach, &detached, &online);
+        if (rc && rc != -EAGAIN && !(wait_for_detach && rc == -ENOLINK)) return rc;
+        if (!rc) {
+            if (!detached && !wait_for_detach) return -ENOLINK;
+            if (wait_for_detach && online) return -EUCLEAN;
+            if (detached && online == want_online) {
+                /* Before post-seat RF restart require a return to off-pad VBUS. */
+                rc = !want_online && !wait_for_detach ? umi_typec_detach_evidence(false) : 0;
+                if (rc != -EAGAIN) return rc;
+            }
+        }
         usleep(250000);
     }
     return -ETIMEDOUT;
@@ -69,7 +74,7 @@ static int wait_state(const char *udc, bool want_online, bool wait_for_detach,
 
 static int expect_state(const char *udc, bool want_detached, bool want_online) {
     bool detached, online;
-    int rc = read_state(udc, &detached, &online);
+    int rc = read_state(udc, want_detached && want_online, &detached, &online);
     if (rc) return rc;
     if (detached != want_detached) return -ENOLINK;
     return online == want_online ? 0 : -EUCLEAN;
