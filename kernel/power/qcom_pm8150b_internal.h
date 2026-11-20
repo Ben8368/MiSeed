@@ -87,6 +87,8 @@ struct smb5_chip {
 	struct power_supply *chg_psy;
 	struct power_supply *bms;
 	struct power_supply *pd;
+	struct power_supply *wireless_rx;
+	struct notifier_block rx_notifier;
 	struct mutex lock;
 	bool enabled, inhibit, stopping, policy_icl_valid;
 	bool pps_owned;
@@ -106,7 +108,11 @@ struct smb5_chip {
 };
 
 
+int smb5_read_typec_misc(struct smb5_chip *chip, unsigned int *status);
+bool smb5_wired_detached(struct smb5_chip *chip);
+int smb5_wired_source(struct smb5_chip *chip, int *present);
 int smb5_get_prop_usb_online(struct smb5_chip *chip, int *val);
+int smb5_wireless_rx_state(struct smb5_chip *chip);
 int smb5_apsd_get_charger_type(struct smb5_chip *chip, int *val);
 int smb5_get_prop_charging_enabled(struct smb5_chip *chip, int *val);
 int smb5_get_prop_status(struct smb5_chip *chip, int *val);
@@ -120,6 +126,9 @@ int smb5_get_current_limit(struct smb5_chip *chip,
 int smb5_set_current_limit(struct smb5_chip *chip, unsigned int val);
 int smb5_set_prop_charging_enabled(struct smb5_chip *chip, unsigned int val);
 int smb5_inhibit_with_fallback(struct smb5_chip *chip, const char *where);
+int smb5_rx_diag_check_off(struct smb5_chip *chip);
+int smb5_rx_diag_stop(struct smb5_chip *chip);
+void smb5_rx_diag_sample(struct smb5_chip *chip);
 int smb5_get_iio_chan(struct smb5_chip *chip, struct iio_channel *chan,
 			     int *val);
 int smb5_get_input_current(struct smb5_chip *chip, int *current_ua);

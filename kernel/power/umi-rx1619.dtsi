@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* Umi LineageOS active DT at 71b13e62: QUP16, 0x61, PM8150B GPIO7 and TLMM 155.
+ * PM8150B GPIO1 is the downstream wireless charge-pump enable; leave it
+ * unmanaged until there is a separately verified wireless power policy.
+ */
+
+&pm8150b_gpios {
+	rx1619_power_good_default: rx1619-power-good-default-state {
+		pins = "gpio7";
+		function = "normal";
+		power-source = <0>;
+		bias-pull-down;
+		input-enable;
+		output-disable;
+	};
+};
+
+&i2c16 {
+	status = "okay";
+
+	umi_wireless_rx: charger@61 {
+		compatible = "xiaomi,umi-rx1619";
+		reg = <0x61>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rx1619_power_good_default>;
+		power-good-gpios = <&pm8150b_gpios 7 GPIO_ACTIVE_HIGH>;
+		enable-gpios = <&tlmm 155 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&umi_nfc {
+	nxp,rf-interference-source = <&umi_wireless_rx>;
+};
+
+&umi_charger {
+	qcom,wireless-rx = <&umi_wireless_rx>;
+};

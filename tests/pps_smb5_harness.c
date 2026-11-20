@@ -32,7 +32,8 @@ struct desc { int (*set_property)(struct power_supply *,enum power_supply_proper
 struct power_supply { struct desc *desc; struct smb5_chip *chip; };
 static int smb5_set_property(struct power_supply *p,enum power_supply_property prop,const union power_supply_propval *v) { return 0; }
 static struct smb5_chip *power_supply_get_drvdata(struct power_supply *p) { return p->chip; }
-static int stop_error, write_error, read_error, full_status;
+static int stop_error, write_error, read_error, full_status, rx_state;
+static int smb5_wireless_rx_state(struct smb5_chip *c) { (void)c; return rx_state; }
 static int smb5_get_prop_status(struct smb5_chip *c,int *v) { *v=full_status; return 0; }
 static unsigned int charge, input;
 static int smb5_inhibit_with_fallback(struct smb5_chip *c,const char *where) {
@@ -53,6 +54,7 @@ static int regmap_read(void *m,unsigned int r,unsigned int *v) {
 static int regmap_write(void *m,unsigned int r,unsigned int v) {
  (void)m; assert(r==0x1344 && v==8); return write_error ? -EIO : 0;
 }
+static int smb5_wired_source(struct smb5_chip *c,int *v) { *v=!rx_state;return rx_state < 0 ? rx_state : 0; }
 static int smb5_get_prop_usb_online(struct smb5_chip *c,int *v) { *v=1;return 0; }
 static int smb5_power_limit(struct smb5_chip *c,int soc) {
  assert(soc==71 && c->power_stage>=2 && !charge && input);return 0;
@@ -61,16 +63,20 @@ static int smb5_power_limit(struct smb5_chip *c,int soc) {
 int main(void) {
  struct smb5_chip c={.base=0x1000,.max_fv_uv=4380000};
  int stage;
+ bool claimed;
  struct desc d={.set_property=smb5_set_property};
  struct power_supply p={.desc=&d,.chip=&c};
- assert(umi_smb5_claim(NULL, &stage)==-ENODEV);
- c.inhibit=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY && !c.pps_owned);
+ assert(umi_smb5_claim(NULL, &stage, &claimed)==-ENODEV);
+ rx_state=1;assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY && !c.pps_owned);
+ rx_state=-EIO;assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY && !c.pps_owned);
+ rx_state=0;
+ c.inhibit=true;assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY && !c.pps_owned);
  c.inhibit=false;
- c.stopping=true;assert(umi_smb5_claim(&p, &stage)==-EBUSY);
- c.stopping=false;charge=1;assert(!umi_smb5_claim(&p, &stage));
+ c.stopping=true;assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY);
+ c.stopping=false;charge=1;assert(!umi_smb5_claim(&p, &stage, &claimed));
  assert(c.pps_owned && c.inhibit && !c.enabled && charge==0 && input==1);
  assert(umi_smb5_check(&p, 1)==4380000 && c.power_stage==1);
- assert(umi_smb5_claim(&p, &stage)==-EBUSY);
+ assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY);
  charge=1;assert(umi_smb5_check(&p, 1)==-EPERM);charge=0;
  input=0;assert(umi_smb5_check(&p, 1)==-EPERM);input=1;
  read_error=1;assert(umi_smb5_check(&p, 1)==-EIO);read_error=0;
@@ -79,25 +85,30 @@ int main(void) {
  stop_error=0;write_error=1;assert(umi_smb5_release(&p, 0)==-EIO && c.pps_owned);
  write_error=0;assert(!umi_smb5_release(&p, 0) && !c.pps_owned && !c.inhibit && input==0);
  assert(umi_smb5_check(&p, 1)==-EPERM);
- stop_error=1;assert(umi_smb5_claim(&p, &stage)==-EIO && c.pps_owned && c.inhibit);
+ assert(!umi_smb5_claim(&p, &stage, &claimed));
+ rx_state=-EIO;assert(umi_smb5_check(&p, 1)==-EIO);
+ rx_state=1;assert(umi_smb5_check(&p, 1)==-EBUSY);
+ assert(!umi_smb5_release(&p, 0) && !c.pps_owned && !charge && input==1);
+ rx_state=0;
+ stop_error=1;assert(umi_smb5_claim(&p, &stage, &claimed)==-EIO && claimed && c.pps_owned && c.inhibit);
  stop_error=0;assert(!umi_smb5_release(&p, 0));
- write_error=1;assert(umi_smb5_claim(&p, &stage)==-EIO && c.pps_owned);
+ write_error=1;assert(umi_smb5_claim(&p, &stage, &claimed)==-EIO && c.pps_owned);
  write_error=0;assert(!umi_smb5_release(&p, 0));
- assert(!umi_smb5_claim(&p, &stage));
+ assert(!umi_smb5_claim(&p, &stage, &claimed));
  assert(umi_smb5_check(&p, 2)==4380000 && c.power_stage==2);
  assert(!umi_smb5_release(&p, 0));
- assert(umi_smb5_claim(&p, &stage)==-EBUSY); /* Recharge stays on fixed PD. */
+ assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY); /* Recharge stays on fixed PD. */
  c.power_stage=1;
- assert(!umi_smb5_claim(&p, &stage));
+ assert(!umi_smb5_claim(&p, &stage, &claimed));
  assert(umi_smb5_check(&p, 3)==4380000 && c.full_bypass);
  assert(!umi_smb5_release(&p, 0) && !charge && input==0);
- assert(umi_smb5_claim(&p, &stage)==-EBUSY); /* Bypass cannot be overridden by PPS. */
+ assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY); /* Bypass cannot be overridden by PPS. */
  c.full_bypass=false;
  c.power_stage=1;
- assert(!umi_smb5_claim(&p, &stage));
+ assert(!umi_smb5_claim(&p, &stage, &claimed));
  assert(!umi_smb5_release(&p, 1) && c.pps_fault);
- assert(umi_smb5_claim(&p, &stage)==-EBUSY);
+ assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY);
  c.pps_fault=false;full_status=POWER_SUPPLY_STATUS_FULL;
- assert(umi_smb5_claim(&p, &stage)==-EBUSY && c.full_bypass);
+ assert(umi_smb5_claim(&p, &stage, &claimed)==-EBUSY && c.full_bypass);
  return 0;
 }

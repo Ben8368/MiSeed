@@ -38,8 +38,8 @@ Windows `collect_nfc_evidence.py` 默认只采注册与 dmesg；绑定、地址�
 ## 有线、无线共存
 
 - **有线 USB/PD/PPS**：独立于无线 RX/TX；USB 插线、PD/PPS 状态不能直接作为关闭 NFC RF 的条件。
-- **无线接收 RX / 无线反充 TX**：当前未移植对应驱动；分别建模状态后才设计 NFC 共存策略。策略通过已验证的 Linux NFC RF 接口协调，不让无线驱动直接拉低共享 VEN。
-- 只有证据确认后才可共享状态与策略；退出异常和恢复用户设置单独验收，不能据对话推断所有无线场景必须关闭 NFC。
+- **无线 RX**：仅 `MISEED_RX_PROFILE=coex` 按 RX1619 power-good 停止射频，阻止新轮询、选卡和 RF 传输，离座后可重新寻卡。默认 `normal` 不启用；不动共享 VEN，eSE 独立验收。 [实现与验收范围](archive/research/2026-11-19-umi-rx1619-nfc.md)
+- **无线反充 TX**：独立验证射频共存策略，当前待研。
 
 ## 证据与开放项
 

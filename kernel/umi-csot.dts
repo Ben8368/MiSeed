@@ -153,14 +153,15 @@
 };
 
 /* Umi test profile exposes only the active consumers: UART12 34/35,
- * I2C15 44/45, the LOS BQ25970 fault IRQ on GPIO68, and the NQ NFC signals
- * on GPIO7/83/110/111 with QUP1 I2C on GPIO4/5. Keep GPIO8 reserved: its LOS
+ * I2C15 44/45, the LOS BQ25970 fault IRQ on GPIO68, the NQ NFC signals
+ * on GPIO7/83/110/111 with QUP1 I2C on GPIO4/5, QUP16 I2C on GPIO48/49,
+ * and RX1619 enable on GPIO155. Keep GPIO8 reserved: its LOS
  * VBUS-disable behavior is not wired into the mainline SMB5 path yet. All
  * other pins remain reserved. Requires fresh boot L3.
  */
 &tlmm {
-	gpio-reserved-ranges = <0 4>, <6 1>, <8 26>, <36 8>, <46 22>,
-			       <69 14>, <84 26>, <112 69>;
+	gpio-reserved-ranges = <0 4>, <6 1>, <8 26>, <36 8>, <46 2>, <50 18>,
+			       <69 14>, <84 26>, <112 43>, <156 25>;
 	status = "okay";
 };
 
@@ -219,6 +220,8 @@
 		pinctrl-0 = <&umi_nfc_default>;
 	};
 };
+
+#include "umi-rx1619.dtsi"
 
 /* USB PHY PMIC rails, selectively adapted from the pinned Umi board DTS. */
 &apps_rsc {

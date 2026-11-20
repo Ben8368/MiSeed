@@ -23,7 +23,7 @@ class RuntimeDtTests(unittest.TestCase):
  aliases { serial0 = "/soc/serial"; };
  soc: soc { compatible = "simple-bus";
   spmi_bus: spmi { #address-cells = <2>; #size-cells = <0>; PMICS };
-  tlmm: pinctrl { status = "okay"; gpio-reserved-ranges = <0 4>, <6 1>, <8 26>, <36 8>, <46 22>, <69 14>, <84 26>, <112 69>; };
+  tlmm: pinctrl { status = "okay"; gpio-reserved-ranges = <0 4>, <6 1>, <8 26>, <36 8>, <46 2>, <50 18>, <69 14>, <84 26>, <112 43>, <156 25>; };
   serial { };
   mdss_mdp: display { controller { }; };
   sdhc_2: mmc { status = "disabled"; };

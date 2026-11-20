@@ -15,19 +15,83 @@
 
 #include "qcom_pm8150b_internal.h"
 
+/* TCPM ONLINE reports sink enable, not physical detach. Read the same
+ * CC and VBUS status bits as the pinned Qualcomm TCPC driver.
+ */
+int smb5_read_typec_misc(struct smb5_chip *chip, unsigned int *status)
+{
+	struct device *tcpc = chip->pd->dev.parent;
+	u32 base;
+	int ret;
+
+	if (!tcpc || tcpc->parent != chip->dev->parent ||
+	    !device_is_compatible(tcpc, "qcom,pm8150b-typec"))
+		return -ENODEV;
+	ret = device_property_read_u32(tcpc, "reg", &base);
+	if (ret || base != PM8150B_TYPEC_BASE)
+		return ret ? ret : -EINVAL;
+	return regmap_read(chip->regmap, base + TYPEC_MISC_STATUS, status);
+}
+
+bool smb5_wired_detached(struct smb5_chip *chip)
+{
+	unsigned int status;
+
+	return !smb5_read_typec_misc(chip, &status) &&
+	       !(status & (TYPEC_CC_ATTACHED | TYPEC_VBUS_DETECT));
+}
+
+int smb5_wireless_rx_state(struct smb5_chip *chip)
+{
+	union power_supply_propval online;
+	int ret;
+
+	if (!chip->wireless_rx)
+		return 0;
+	ret = power_supply_get_property(chip->wireless_rx, POWER_SUPPLY_PROP_ONLINE, &online);
+	return ret ? ret : !!online.intval;
+}
+
+/* TCPM's supply reports sink VBUS, including fixed and programmable
+ * sources. USBIN_PLUGIN alone also responds to the Umi wireless input.
+ * This predicate remains usable during a deliberate PPS buck suspension.
+ */
+int smb5_wired_source(struct smb5_chip *chip, int *present)
+{
+	union power_supply_propval sink;
+	unsigned int stat;
+	int ret;
+
+	*present = 0;
+	ret = regmap_read(chip->regmap, chip->base + USBIN_INT_RT_STS_OFFSET, &stat);
+	if (ret || !(stat & USBIN_PLUGIN_RT_STS_BIT))
+		return ret;
+	ret = smb5_wireless_rx_state(chip);
+	if (ret)
+		return ret < 0 ? ret : 0;
+	ret = power_supply_get_property(chip->pd, POWER_SUPPLY_PROP_ONLINE, &sink);
+	if (!ret)
+		*present = sink.intval == 1 || sink.intval == 2;
+	return ret;
+}
+
 int smb5_get_prop_usb_online(struct smb5_chip *chip, int *val)
 {
-	unsigned int stat;
-	int rc;
+	const unsigned int selected = P_PATH_VALID_INPUT_POWER_SOURCE_STS_BIT |
+				      P_PATH_USE_USBIN_BIT;
+	unsigned int path;
+	int present, ret;
 
-	rc = regmap_read(chip->regmap, chip->base + USBIN_INT_RT_STS_OFFSET, &stat);
-	if (rc < 0) {
-		dev_err(chip->dev, "Couldn't read USBIN_RT_STS rc=%d\n", rc);
-		return rc;
-	}
-
-	*val = (stat & USBIN_PLUGIN_RT_STS_BIT) ? 1 : 0;
-	return 0;
+	ret = smb5_wired_source(chip, &present);
+	if (ret)
+		return ret;
+	*val = 0;
+	if (!present)
+		return 0;
+	ret = regmap_read(chip->regmap, chip->base + POWER_PATH_STATUS, &path);
+	if (!ret)
+		*val = (path & (selected | P_PATH_USE_DCIN_BIT)) == selected;
+	return ret;
 }
 
 /*
@@ -181,6 +245,10 @@ int smb5_set_prop_charging_enabled(struct smb5_chip *chip, unsigned int val)
 	if (val != POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO &&
 	    val != POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE)
 		return -EINVAL;
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	if (val == POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO)
+		return -EPERM;
+#endif
 
 	return regmap_update_bits(chip->regmap, chip->base + CHARGING_ENABLE_CMD,
 				 CHARGING_ENABLE_CMD_BIT,
@@ -217,7 +285,7 @@ int smb5_get_iio_chan(struct smb5_chip *chip, struct iio_channel *chan,
 		return PTR_ERR(chan);
 	}
 
-	rc = smb5_get_prop_usb_online(chip, &online);
+	rc = smb5_wired_source(chip, &online);
 	if (rc < 0)
 		return rc;
 	if (!online) {
@@ -237,7 +305,7 @@ int smb5_get_input_current(struct smb5_chip *chip, int *current_ua)
 	unsigned int otg;
 	int online, voltage_uv, ret;
 
-	ret = smb5_get_prop_usb_online(chip, &online);
+	ret = smb5_wired_source(chip, &online);
 	if (ret)
 		return ret;
 	if (!online) {
@@ -269,7 +337,7 @@ int smb5_get_input_voltage(struct smb5_chip *chip, int *voltage_uv)
 	int online, ret;
 	bool suspended;
 
-	ret = smb5_get_prop_usb_online(chip, &online);
+	ret = smb5_wired_source(chip, &online);
 	if (ret)
 		return ret;
 	if (!online) {

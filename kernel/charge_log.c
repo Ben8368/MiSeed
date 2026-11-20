@@ -168,6 +168,62 @@ static int charge_read_value(const char *path, char *value, size_t size) {
     return 0;
 }
 
+/* Umi has one receptacle. An absent TCPM partner is not physical detach. */
+int umi_typec_partner(void) {
+    char compatible[80];
+    struct stat st;
+    int port = open("/sys/class/typec/port0", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (port < 0) return -errno;
+    int node = openat(port, "device/of_node/compatible", O_RDONLY | O_CLOEXEC);
+    int ret = -errno;
+    if (node >= 0) {
+        ssize_t n = read(node, compatible, sizeof(compatible));
+        ret = n < 0 ? -errno : -ENODEV;
+        if (n >= (ssize_t)sizeof("qcom,pm8150b-typec") &&
+            !memcmp(compatible, "qcom,pm8150b-typec", sizeof("qcom,pm8150b-typec")))
+            ret = !fstatat(port, "port0-partner", &st, 0) ? 1 :
+                  errno == ENOENT ? 0 : -errno;
+        close(node);
+    }
+    close(port);
+    return ret;
+}
+
+/* Only the coex diagnostic uses this, on the suspend-disabled boot profile.
+ * Use the kernel event time, not the time at which the recorder drained it.
+ * On the pad VBUS_DETECT may see shared power despite absent external CC.
+ */
+int umi_typec_detach_evidence(int allow_shared_vbus) {
+    struct charge_log_header header;
+    struct charge_log_record record;
+    int ret = -EAGAIN;
+    if (charge_log_fd < 0 || charge_log_lock(F_RDLCK)) return ret;
+    if (charge_log_io(&header, sizeof(header), 0, 0)) goto unlock;
+    for (uint64_t i = header.total, scanned = 0; i && scanned < 128; scanned++) {
+        if (charge_log_io(&record, sizeof(record), sizeof(header) + --i * sizeof(record), 0)) break;
+        record.text[sizeof(record.text) - 1] = '\0';
+        const char *kind = strchr(record.text, ' ');
+        if (!kind || !(kind = strchr(kind + 1, ' '))) break;
+        if (!strncmp(kind, " LOSS ", 6) || !strncmp(kind, " ERROR ", 7)) break;
+        if (strncmp(kind, " KERNEL ", 8)) continue;
+        const char *diag = strstr(kind + 8, "miseed-rx-diag smb5");
+        if (!diag) continue;
+        uint64_t timestamp, now = charge_boot_ms();
+        unsigned int off, cc, vbus, raw;
+        if (sscanf(kind + 8, "%*[^,],%*[^,],%" SCNu64 ",", &timestamp) != 1 ||
+            timestamp / 1000 > now || now - timestamp / 1000 > 2000) break;
+        if (sscanf(diag, "miseed-rx-diag smb5_off=%u cc_attached=%u vbus_present=%u cc_status=0x%x",
+                   &off, &cc, &vbus, &raw) != 4 || off != 1 || cc > 1 || vbus > 1 || raw > 0xff ||
+            (raw & 0x21) != (cc | (vbus << 5))) ret = -EIO;
+        else if (cc) ret = -ENOLINK;
+        else if (!vbus || allow_shared_vbus) ret = 0;
+        break;
+    }
+unlock:
+    (void)charge_log_lock(F_UNLCK);
+    return ret;
+}
+
 void charge_snapshot(void) {
     static const char * const attrs[] = {
         "type", "status", "present", "online", "capacity", "temp",
@@ -204,6 +260,9 @@ void charge_snapshot(void) {
     }
     if (!supplies) charge_log_append("SAMPLE", "power_supply=unavailable temperature=unavailable SOC=unavailable; see miseed-power hardware observations");
 
+    int partner = umi_typec_partner();
+    charge_log_append("TYPEC", "port=port0 partner=%s rc=%d",
+                      partner < 0 ? "unknown" : partner ? "1" : "0", partner < 0 ? partner : 0);
     dir = opendir("/sys/class/udc");
     if (dir) {
         while ((entry = readdir(dir)) != NULL) {
@@ -219,8 +278,8 @@ void charge_snapshot(void) {
 
 static int charge_kernel_message(const char *content) {
     static const char * const terms[] = {
-        "miseed-power", "miseed-pps", "charg", "battery", "power_supply", "smb5", "smb2",
-        "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic",
+        "miseed-power", "miseed-pps", "miseed-rx-nfc", "miseed-rx-diag", "charg", "battery", "power_supply", "smb5", "smb2",
+        "typec", "tcpm", "pdphy", "dwc3", "usb", "spmi", "pmic", "rx1619",
     };
     for (size_t i = 0; i < sizeof(terms) / sizeof(terms[0]); i++)
         if (contains_case_insensitive(content, terms[i])) return 1;

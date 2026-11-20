@@ -94,11 +94,12 @@ class PowerPortTests(PowerPortFixture):
         start = script.index("for option in BATTERY_MISEED_QCOM_FG")
         stop = script.index("for option in MEMFD_CREATE", start)
         check = 'set -eu\nbuild_tree="$1"\nfail() { exit 42; }\n' + script[start:stop]
-        for state, expected in (("y", 0), ("m", 42), ("n", 42)):
-            with self.subTest(state=state):
+        drivers = ("BATTERY_MISEED_QCOM_FG", "CHARGER_MISEED_PM8150B", "CHARGER_MISEED_RX1619",
+                   "PINCTRL_QCOM_SPMI_PMIC")
+        for changed, state in [(None, "y"), *((name, value) for name in drivers for value in ("m", "n"))]:
+            with self.subTest(driver=changed, state=state):
                 (self.source / ".config").write_text(
-                    f"CONFIG_BATTERY_MISEED_QCOM_FG={state}\n"
-                    f"CONFIG_CHARGER_MISEED_PM8150B={state}\n"
+                    "".join(f"CONFIG_{name}={state if name == changed else 'y'}\n" for name in drivers) +
                     "CONFIG_MODULES=y\nCONFIG_POWER_SUPPLY=y\nCONFIG_IIO=y\nCONFIG_QCOM_SPMI_ADC5=y\n"
                     "CONFIG_DRM=y\nCONFIG_DRM_SIMPLEDRM=y\nCONFIG_DRM_FBDEV_EMULATION=y\n"
                     "CONFIG_DRM_CLIENT_DEFAULT_FBDEV=y\nCONFIG_FB_CORE=y\nCONFIG_FRAMEBUFFER_CONSOLE=y\n"
@@ -107,7 +108,7 @@ class PowerPortTests(PowerPortFixture):
                     "CONFIG_TYPEC_TCPM=y\nCONFIG_TYPEC_QCOM_PMIC=y\n"
                     "CONFIG_REGULATOR_QCOM_USB_VBUS=y\nCONFIG_USB=y\n")
                 result = subprocess.run(["bash", "-c", check, "fixture", str(self.source)])
-                self.assertEqual(result.returncode, expected)
+                self.assertEqual(result.returncode, 42 if changed else 0)
 
 
 if __name__ == "__main__":

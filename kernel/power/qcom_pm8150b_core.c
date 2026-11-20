@@ -14,6 +14,7 @@
  */
 
 #include "qcom_pm8150b_internal.h"
+#include "qcom_pm8150b_rx.h"
 
 static irqreturn_t smb5_handle_batt_overvoltage(int irq, void *data)
 {
@@ -43,7 +44,7 @@ static irqreturn_t smb5_handle_usb_plugin(int irq, void *data)
 	int rc;
 
 	/* Preserve short disconnects that could occur between worker samples. */
-	rc = smb5_get_prop_usb_online(chip, &online);
+	rc = smb5_wired_source(chip, &online);
 	if (!rc && !online) {
 		mutex_lock(&chip->lock);
 		chip->full_bypass = false;
@@ -134,7 +135,11 @@ static int smb5_probe(struct platform_device *pdev)
 	/* LOS automatic charger policy: the worker enables only after telemetry,
 	 * charger limits, health and temperature have been checked.
 	 */
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	chip->inhibit = true;
+#else
 	chip->inhibit = false;
+#endif
 
 	chip->regmap = dev_get_regmap(pdev->dev.parent, NULL);
 	if (!chip->regmap)
@@ -147,9 +152,16 @@ static int smb5_probe(struct platform_device *pdev)
 				     "Couldn't read base address\n");
 
 
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	rc = smb5_rx_diag_stop(chip);
+#else
 	rc = smb5_inhibit_with_fallback(chip, "initial");
+#endif
 	if (rc)
 		return rc;
+	rc = smb5_rx_attach(chip);
+	if (rc)
+		return dev_err_probe(chip->dev, rc, "RX interlock source\n");
  chip->bms = devm_power_supply_get_by_reference(chip->dev, "qcom,fuel-gauge");
  if (IS_ERR(chip->bms)) return PTR_ERR(chip->bms);
  if (!chip->bms) return -EPROBE_DEFER;
@@ -201,6 +213,12 @@ static int smb5_probe(struct platform_device *pdev)
 	rc = devm_add_action_or_reset(chip->dev, smb5_stop, chip);
 	if (rc) return rc;
 
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	platform_set_drvdata(pdev, chip);
+	schedule_delayed_work(&chip->status_change_work, 0);
+	return 0;
+#endif
+
 	rc = power_supply_get_battery_info(chip->chg_psy, &chip->batt_info);
 	if (rc)
 		return dev_err_probe(chip->dev, rc,
@@ -235,7 +253,9 @@ static int smb5_probe(struct platform_device *pdev)
 	if (rc)
 		return rc;
 
-
+	rc = smb5_rx_subscribe(chip);
+	if (rc)
+		return dev_err_probe(chip->dev, rc, "RX interlock subscription\n");
 
 	/* Initialise charger state */
 	schedule_delayed_work(&chip->status_change_work, 0);

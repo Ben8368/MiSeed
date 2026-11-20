@@ -100,12 +100,14 @@ def verify(dtb, native=False):
     ranges = subprocess.check_output(
         ["fdtget", "-t", "u", str(dtb), tlmm, "gpio-reserved-ranges"], text=True).split()
     expected = (["0", "4", "6", "1", "8", "4", "13", "21", "36", "8",
-                 "46", "4", "51", "17", "69", "14", "84", "26", "112", "69"] if native else
+                 "46", "2", "51", "17", "69", "14", "84", "26",
+                 "112", "43", "156", "25"] if native else
                 ["0", "4", "6", "1", "8", "26", "36", "8",
-                 "46", "22", "69", "14", "84", "26", "112", "69"])
+                 "46", "2", "50", "18", "69", "14", "84", "26",
+                 "112", "43", "156", "25"])
     if ranges != expected:
         raise ValueError(
-            "TLMM Umi UART12/NFC/I2C15/BQ/panel GPIO allowlist differs from the selected profile")
+            "TLMM Umi UART12/NFC/I2C15/BQ/I2C16 RX/panel GPIO allowlist differs from the selected profile")
     print("verified isolated soc/SPMI/TLMM/DPU/MMC targets; live phandles retained")
 
 

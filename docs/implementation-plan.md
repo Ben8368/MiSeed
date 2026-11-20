@@ -16,6 +16,7 @@
 | WP9 USB 启动状态与有线供电 | WP1、WP2 | 放大横屏日志、USB 控制、Linux→Bootloader Fastboot→RAM Linux 往返及返回 Android，分项记录 L2/L3 和板级限制。基于匹配本机数据实现有线供电/充电，完成过流、过压、过温、故障保护审查、独立复核及授权 L3；保护不完整时不充电。任何 BCB/misc 写入须另行授权和回退方案；当前能力见 [platforms](platforms.md) |
 | WP10 Linux NFC / eSE 评估 | WP1/WP2；Debian 集成衔接 WP5；固件需来源许可闭包 | 按 RQ-14 评估 SN100T 并接入 Linux NFC/NCI、标准 binding 与资源管理；验证 NCI 注册、传输/IRQ/恢复、标准接口 discovery/NDEF，HCE 与 eSE 各自评估和验收。有线、无线 RX/TX 共存分别验证；NQ 私有 ABI 退出条件见 TD-003，步骤见 [NFC](NFC.md) |
 | WP11 上游 LTS TCPM 电池/身份应答（条件后续） | M2（UEFI、Recovery、Debian MVP）；WP9 有线充电基线；含目标功能的上游 LTS ≥7.3 | MVP 完成后再启动。核对目标 LTS TCPM 的 Battery Status/Capabilities 与 Sink Identity 支持，保留并重验 MiSeed 有线 PD/PPS 策略；补齐电量计标准 power_supply 属性及已确认的 PD VID/PID/XID、设备树声明。用 PD 抓包和目标充电器确认有效应答及识别结果；机型名称映射由充电器能力决定。无线 RX/TX 不继承本工作包证据。 |
+| WP12 Umi 无线接收 RX | WP1/WP2；与 WP9 和 WP10 做共存回归 | 按 RQ-14 接入 RX1619 标准只读电源属性及 NCI RF 暂停。按 RQ-15 验证两种接入顺序下均屏蔽无线 RX、保留有效有线（固定 PD/PPS）；离座不影响有线，拔线后无线仅在保护许可时接管。净充入和保护按 RISK-013 完成授权 L3；TX 独立。 |
 
 RQ-14 贯穿所有工作包，接口验收遵守 [QUALITY](QUALITY.md#linux-接口验收)。WP9 负责 TD-004/005/007 的有线接口、温控与 binding 迁移；无线 RX/TX 须独立建立驱动与证据，不继承有线结果。WP2、WP3 可独立推进，WP4 汇合两条路径；UEFI（WP3）、UEFI→Linux 交接（WP4）及 Debian（WP5）均为完整 MVP 必需，Linux 直启不替代。工作包不授权设备操作或发布；未实现的构建 CLI 不写成可用命令。
 

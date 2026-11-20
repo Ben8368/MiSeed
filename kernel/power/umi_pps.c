@@ -67,14 +67,15 @@ static int umi_pps_begin(struct umi_pps *c, struct umi_pps_sample *s)
 {
 	int ret, mv, ma;
 
-	ret = umi_smb5_claim(c->sw, &c->power.stage);
-	if (ret == -EBUSY || ret == -ENODEV)
-		return ret;
-	c->claimed = true;
+	ret = umi_smb5_claim(c->sw, &c->power.stage, &c->claimed);
 	if (ret)
 		return ret;
 	c->power = (struct umi_pps_power){ .stage = c->power.stage };
 	ret = umi_smb5_check(c->sw, c->power.stage);
+	if (ret == -EBUSY) {
+		umi_pps_stop(c, PPS_WAIT_PLUG, 0);
+		return 0;
+	}
 	if (ret < 0)
 		return ret;
 	c->max_bat_mv = ret / 1000;
@@ -171,13 +172,17 @@ void umi_pps_work(struct work_struct *work)
 	if (!online) {
 		if (c->state == PPS_SETTLE || c->state == PPS_RUN || c->pps || c->claimed)
 			umi_pps_stop(c, PPS_WAIT_PLUG, 0);
-		else {
+		if (umi_smb5_wired_detached(c->sw) && !c->stop_pending) {
 			c->state = PPS_WAIT_PLUG;
-		}
-		if (!umi_pps_get(c->sw, POWER_SUPPLY_PROP_ONLINE, &online) && !online)
 			c->power = (struct umi_pps_power){0};
+		}
 		goto out;
 	}
+	ret = umi_smb5_wireless_rx_state(c->sw);
+	if (ret < 0)
+		goto fail;
+	if (ret)
+		goto rx_pause;
 	if (c->manual_stop || c->state == PPS_DONE || c->state == PPS_FAULT ||
 	    c->state == PPS_OFF)
 		goto out;
@@ -215,6 +220,8 @@ void umi_pps_work(struct work_struct *work)
 	c->power.stage = umi_pps_max(c->power.stage, umi_pps_soc_stage(s.soc));
 	fail_stage = "smb5_limit_check";
 	ret = umi_smb5_check(c->sw, c->power.stage);
+	if (ret == -EBUSY)
+		goto rx_pause;
 	if (ret < 0)
 		goto fail;
 	if (ret / 1000 != c->max_bat_mv) {
@@ -334,6 +341,17 @@ void umi_pps_work(struct work_struct *work)
 			ret = umi_pps_validate_cycle(c);
 			if (!ret)
 				ret = umi_pps_check_deadline(c);
+			/* Fresh RX/ownership check, not a hardware exclusion against
+			 * an RX edge during the following I2C transaction.
+			 */
+			if (!ret) {
+				fail_stage = "before_pump_start";
+				ret = umi_smb5_check(c->sw, c->power.stage);
+				if (ret == -EBUSY)
+					goto rx_pause;
+			}
+			if (ret >= 0)
+				ret = umi_pps_check_deadline(c);
 			if (!ret)
 				ret = bq25970_start(c->chip);
 			if (!ret)
@@ -383,6 +401,8 @@ void umi_pps_work(struct work_struct *work)
 	if (!ret && s.soc >= UMI_CHARGE_END_SOC) {
 		c->power.stage = UMI_WIRED_BYPASS_STAGE;
 		ret = umi_smb5_check(c->sw, c->power.stage);
+		if (ret == -EBUSY)
+			goto rx_pause;
 		if (ret >= 0) {
 			umi_pps_stop(c, PPS_WAIT_PLUG, 0);
 			goto out;
@@ -439,7 +459,8 @@ fail:
 		      (ret == -ERANGE && umi_pps_pump_lost(c, &s)))) {
 		int online;
 
-		if (!umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &online) && !online) {
+		if (!umi_pps_get(c->pd, POWER_SUPPLY_PROP_ONLINE, &online) && !online &&
+		    umi_smb5_wired_detached(c->sw)) {
 			dev_info(c->dev, "miseed-pps detached during control cycle error=%d vbus_mv=%d ibus_ma=%d vbat_mv=%d pump_vbat_mv=%d ibat_ma=%d fault=%d alarm=%d bus_low=%d bus_high=%d switching=%d bq_fault=0x%02x bq_latched=0x%02x bq_alarm=0x%02x bq_status=0x%02x bq_watchdog=0x%02x bq_control=0x%02x\n",
 				 ret, s.vbus_mv, s.ibus_ma, s.vbat_mv, s.pump_vbat_mv,
 				 s.ibat_ma, s.fault, s.alarm, s.bus_low, s.bus_high,
@@ -460,6 +481,10 @@ fail:
 		 s.fault_raw, s.latched_raw, s.alarm_raw, s.status_raw,
 		 s.watchdog_raw, s.control_raw);
 	umi_pps_stop(c, PPS_FAULT, ret);
+	goto out;
+rx_pause:
+	if (c->pps || c->claimed)
+		umi_pps_stop(c, PPS_WAIT_PLUG, 0);
 out:
 	/* Keep observing unplug after manual stop without active requests. */
 	if (!c->removing && !c->suspended)

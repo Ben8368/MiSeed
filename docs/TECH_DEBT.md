@@ -12,7 +12,7 @@
 
 ## TD-002：TLMM 最小恢复尚缺本机验证（P1，2026-11-07）
 
-取舍：原 GPIO-free RAM 诊断禁用 TLMM。有线PPS按LOS接线开放UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68；NCI另开专用脚。原生DSI另开GPIO12复位；[90Hz移植](archive/research/2026-11-16-display-90hz-port.md)再开GPIO50选择，新增脚L3待验。GPIO8未接入，下游TLMM overlay仍隔离。旧来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
+取舍：原 GPIO-free RAM 诊断禁用 TLMM。有线PPS按LOS开放UART12 GPIO34/35、I2C15 GPIO44/45、BQ IRQ GPIO68；NCI另开专用脚。原生DSI开放GPIO12复位和[GPIO50选90Hz](archive/research/2026-11-16-display-90hz-port.md)。无线RX开放I2C16 GPIO48/49，待L3。GPIO8未接入，隔离下游TLMM overlay。旧来源见[续查](archive/research/2026-11-08-pps-topology-followup.md)。
 
 影响：不能将此配置作为 GPIO、触控或完整板级电源支持；PDC 首版无 USB 且回 Android，无崩溃栈，具体故障引脚仍未知，不冒险批量读取 GPIO 寄存器。
 
@@ -34,7 +34,7 @@
 
 ## TD-006：诊断启动、根属性交接与临时用户空间（P2，2026-11-10；WP2–WP5）
 
-取舍：ABL 直启仍覆盖根节点 `/` 的 `compatible/model`；保留仅 CSOT profile 核对完整 Umi/SM8250 身份的 UBWC quirk，严格 FDT 审计继续 FAIL。第二阶段 UEFI 尚未实现；不改原厂 DTBO/ABL，不在 Linux 内伪造根。保留 ignore_unused、诊断命令行、静态 rescue/CHARGE_LOG、只读fbdev缩略图、TCPM debugfs；见[证据](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。
+取舍：ABL 直启仍覆盖根节点 `/` 的 `compatible/model`；保留仅 CSOT profile 核对完整 Umi/SM8250 身份的 UBWC quirk，严格 FDT 审计继续 FAIL。第二阶段 UEFI 尚未实现；不改原厂 DTBO/ABL，不在 Linux 内伪造根。保留 ignore_unused、诊断命令行、静态 rescue/CHARGE_LOG、只读fbdev缩略图、TCPM debugfs；WP12 RX 原始字节日志随 PG 定位撤除。见[证据](archive/research/2026-11-11-native-dsi-chip-boundaries.md)。
 
 责任/退出：WP3/WP4 用 EFI 配置表交接主线 DT，正确保留 memory/reserved-memory/chosen/initrd，L2/L3 整体审计通过后撤除 quirk。WP2 验证新 MDSS reset 的 SMMU 接管；变体、面板独立供电/PM 与 Debian 标准消费者待验。Android boot header/Fastboot 只用于诊断；DTBO 未知项/GPIO 归 RISK-010/TD-002。
 
@@ -44,6 +44,6 @@
 
 ## TD-008：源码篇幅黄灯（P2，2026-11-10）
 
-责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（360）、`umi_pps.c`（471）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（492）为传输/生命周期桩。WP0 `tests/test_boot_l2.py`（355）保留缓存回归；`tools/build_kernel_l2.sh`（303）保留构建/打包顺序，下次按配置/打包拆分。WP2 `kernel/umi-csot.dts`（319）集中板级节点与 ABL 锚点审计，下次扩展拆为可编译功能组。
+责任/原因：WP9 `kernel/power/qcom_fg_core.c`（567）、`qcom_fg_io.c`（496）、`qcom_fg_measure.c`（351）、`qcom_pm8150b_hw.c`（428）、`qcom_pm8150b_policy.c`（302）、`umi_pps.c`（496）、`umi_pps_policy.h`（318）承载电量计、SMB5/PPS 与互锁；`tests/pps_harness.c`（521）为传输/生命周期桩。WP0 `tools/build_kernel_l2.sh`（348）编排构建，`tests/test_boot_l2.py`（377）覆盖缓存与锁；`kernel/charge_log.c`（315）保留 RAM 日志与诊断断线取证。WP2 `kernel/umi-csot.dts`（322）集中板级节点与 ABL 锚点审计，RX 接线已独立为 DTSI。
 
 偿还：各WP下次修改时拆分接口、代际后端或测试职责；全部≤300行且回归通过后关闭。见[记录](archive/reviews/2026-11-10-source-responsibility-split.md)，不豁免红灯和供电安全。

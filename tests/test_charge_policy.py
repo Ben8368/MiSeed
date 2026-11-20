@@ -122,6 +122,8 @@ static unsigned long jiffies;
 static int online = 1, usb_error, battery_error, limit_error, stop_error;
 static int values[] = { 1, 300, 4100000, 78, 0 };
 static int health = POWER_SUPPLY_HEALTH_GOOD, enabled, feeds, suspends, resumes;
+static unsigned int input_cmd;
+static bool keep_cc;
 static int charge_status, status_error;
 static unsigned int input_limit = 3000000;
 static struct iio_channel input_voltage_channel;
@@ -139,6 +141,8 @@ static int adc_reads, voltage_reads, adc_error;
 static void log_message(const char *fmt, ...) { (void)fmt; }
 #define dev_info(d,...) log_message(__VA_ARGS__)
 #define dev_err(d,...) log_message(__VA_ARGS__)
+#define smb5_wired_source smb5_get_prop_usb_online
+static bool smb5_wired_detached(struct smb5_chip *c) { (void)c; return !online && !keep_cc; }
 static int smb5_get_prop_usb_online(struct smb5_chip *c, int *v)
 { (void)c; *v = online; return usb_error; }
 static int smb5_fixed_update(struct smb5_chip *c) { (void)c; return 0; }
@@ -158,8 +162,10 @@ static int smb5_set_current_limit(struct smb5_chip *c, unsigned int v)
 { (void)c; input_limit = v / CURRENT_SCALE_FACTOR * CURRENT_SCALE_FACTOR; return 0; }
 static int smb5_get_input_voltage(struct smb5_chip *c, int *v)
 { (void)c; *v=5000000; return adc_error; }
+static int regmap_read(void *map, unsigned int reg, unsigned int *v)
+{ (void)map; assert((reg & 0xfff) == USBIN_CMD_IL); *v = input_cmd; return 0; }
 static int regmap_update_bits(void *map, unsigned int reg, unsigned int mask, unsigned int v)
-{ (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; else ++resumes; return 0; }
+{ (void)map; assert(reg == USBIN_CMD_IL && mask == 1); if (v) ++suspends; else ++resumes; input_cmd = v & mask; return 0; }
 static int regmap_write(void *map, unsigned int reg, unsigned int v)
 { (void)map; assert(reg == BARK_BITE_WDOG_PET && v == 1); ++feeds; return 0; }
 static int smb5_set_prop_charging_enabled(struct smb5_chip *c, unsigned int v)
@@ -222,6 +228,12 @@ int main(void) {
  c.inhibit = false;
  test_smb5_full_and_unplug(&c);
  test_smb5_power_and_recharge();
+ c.full_bypass = c.pps_fault = c.pd_transition = c.thermal_sampled = true;
+ c.power_stage = 3; keep_cc = true;
+ tick(&c, 6500, 0);
+ assert(c.full_bypass && c.pps_fault && c.pd_transition && c.thermal_sampled && c.power_stage == 3);
+ keep_cc = false; tick(&c, 6600, 0);
+ assert(!c.full_bypass && !c.pps_fault && !c.pd_transition && !c.thermal_sampled && !c.power_stage);
  /* A thermal zero is recoverable; a user-requested zero stays authoritative. */
  c = (struct smb5_chip){ .power_stage = 1, .pd_current_ua = 2000000 };
  input_limit = 3000000;

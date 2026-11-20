@@ -35,6 +35,7 @@ class Smb5AbiTests(PowerPortFixture):
 struct smb5_chip { void *regmap, *usb_in_i_chan; unsigned int base; };
 static int online = 1, adc_uv = 480000, adc_error, otg_error, reads;
 static unsigned int otg;
+#define smb5_wired_source smb5_get_prop_usb_online
 static int smb5_get_prop_usb_online(struct smb5_chip *chip, int *value)
 { (void)chip; *value = online; return 0; }
 static int regmap_read(void *map, unsigned int reg, unsigned int *value)

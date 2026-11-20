@@ -42,6 +42,7 @@ static void usb_console(void) {
         puts("Commands: help, status, dtb, display, display-vblank, display-frame, display-on, display-off, dmesg, thermal, thermal-stop, thermal-clear, nfc-status, nfc-discover, nfc-first, nfc-l3, nfc-ndef, tcpm-log, version, memory, cmdline, mounts, charge, charge-log, logs, charge-stop, pps-status, pps-stop, reboot, bootloader");
         puts("display/display-vblank/display-frame/dmesg are read-only; display-on/off set only the identified CSOT backlight to 1500/0.");
         puts("charge/charge-log/logs show read-only samples and the retained RAM timeline.");
+        puts("rx-nfc-poll / rx-nfc-target arm one NFC coexistence probe retained in charge-log.");
         puts("thermal reads thermal sysfs; thermal-stop/thermal-clear set only umi-wired-pd cooling state 1/0.");
         puts("Wired control: charge-stop uses standard power_supply charge_behaviour.");
         puts("PPS starts automatically on an eligible USB-PD attach when the qualified board profile is enabled; use pps-status or pps-stop.");
@@ -69,6 +70,8 @@ static void usb_console(void) {
             report_nfc_status("/sys/bus/i2c/devices", "/sys/class/nfc");
             puts("NFC_STATUS_END");
         } else if (!strcmp(line, "nfc-first")) run_nfc_first();
+        else if (!strcmp(line, "rx-nfc-poll") || !strcmp(line, "rx-nfc-target"))
+            arm_rx_nfc_probe(!strcmp(line, "rx-nfc-target"));
         else if (!strcmp(line, "nfc-discover")) run_nfc_mifare_discovery();
         else if (!strcmp(line, "nfc-l3") || !strcmp(line, "nfc-ndef"))
             (void)run_nfc_l3_probe(!strcmp(line, "nfc-ndef"));

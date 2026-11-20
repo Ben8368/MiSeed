@@ -39,6 +39,11 @@ static int umi_bq_probe(struct i2c_client *client)
 	chip = bq25970_register(client);
 	if (IS_ERR(chip))
 		return PTR_ERR(chip);
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	i2c_set_clientdata(client, chip);
+	dev_info(dev, "miseed-rx-diag bq=off; enable and switching readback verified\n");
+	return 0;
+#endif
 	ret = umi_bq25970_profile(dev, chip);
 	if (ret)
 		return ret;

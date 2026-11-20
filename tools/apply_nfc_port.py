@@ -38,6 +38,7 @@ def apply(root: Path, project_root: Path) -> None:
     # Preflight all paths/content before changing any file.
     mapping = {
         "kernel/nfc/sn100x-frame.h": "drivers/nfc/sn100x-frame.h",
+        "kernel/nfc/sn100x-rx.h": "drivers/nfc/sn100x-rx.h",
         "kernel/nfc/sn100x.c": "drivers/nfc/sn100x.c",
         "kernel/nfc/Kconfig": "drivers/nfc/sn100x.Kconfig",
         "kernel/nfc/bindings/nxp,sn100t.yaml":

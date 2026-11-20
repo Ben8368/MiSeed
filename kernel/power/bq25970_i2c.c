@@ -10,6 +10,9 @@ int bq25970_subscribe(struct bq25970_device *bq, void (*event)(void *), void *da
 {
 	int ret = 0;
 
+#ifdef CONFIG_MISEED_RX_DIAGNOSTIC
+	return -EPERM;
+#endif
 	if (!event)
 		return -EINVAL;
 	mutex_lock(&bq->event_lock);

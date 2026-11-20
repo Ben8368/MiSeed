@@ -15,6 +15,11 @@ readonly boot_sha256="a7e4d341e35a663683bf41a8fe99d472bc6b8568aa1b54b05901dc7e9f
 readonly work_root="${MISEED_WORK_ROOT:-${TMPDIR:-/tmp}/miseed-boot-l2}"
 readonly native_dsi="${MISEED_NATIVE_DSI:-0}"
 [[ "$native_dsi" == 0 || "$native_dsi" == 1 ]] || { echo "MISEED_NATIVE_DSI must be 0 or 1" >&2; exit 1; }
+readonly rx_profile="${MISEED_RX_PROFILE:-normal}"
+case "$rx_profile" in
+    normal|observe|enable|coex) ;;
+    *) echo "unknown MISEED_RX_PROFILE: $rx_profile" >&2; exit 1 ;;
+esac
 readonly output_root="${MISEED_OUTPUT_ROOT:-${repo_root}/.work/boot-l2}"
 readonly source_cache="${work_root}/linux-stable.git"
 source_tree="${MISEED_EXTRACTED_SOURCE:-${work_root}/linux-source-${kernel_revision}}"
@@ -44,11 +49,11 @@ cleanup_fallback_trees() {
 trap cleanup_fallback_trees EXIT
 
 require python3
-if [[ "$native_dsi" == 1 ]]; then
-    [[ -n "${MISEED_OUTPUT_ROOT:-}" ]] || fail "native DSI requires a distinct explicit MISEED_OUTPUT_ROOT"
+if [[ "$native_dsi" == 1 || "$rx_profile" != normal ]]; then
+    [[ -n "${MISEED_OUTPUT_ROOT:-}" ]] || fail "optional profile requires a distinct explicit MISEED_OUTPUT_ROOT"
     distinct_output="$(python3 -c 'from pathlib import Path; import sys; print(int(Path(sys.argv[1]).resolve() != Path(sys.argv[2]).resolve()))' \
         "$output_root" "$repo_root/.work/boot-l2")"
-    [[ "$distinct_output" == 1 ]] || fail "native DSI requires a distinct explicit MISEED_OUTPUT_ROOT"
+    [[ "$distinct_output" == 1 ]] || fail "optional profile requires a distinct explicit MISEED_OUTPUT_ROOT"
 fi
 # Capture recursive make diagnostics too: make 4.3 may return 0 on clock skew.
 make() { python3 "$repo_root/tools/run_build_command.py" -- make "$@"; }
@@ -69,6 +74,22 @@ readonly jobs="${MISEED_JOBS:-$(nproc)}"
 [[ "$(make --version | sed -n '1s/.* //p')" == "4.3" ]] || fail "expected GNU make 4.3"
 grep -q '^CONFIG_ARCH_QCOM=y$' "$config_fragment" || fail "config fragment must enable ARCH_QCOM"
 
+# Covers explicit source/build overrides too, even across different work roots.
+# Use canonical sibling lock files: source/build trees can be moved or recreated.
+require flock
+require realpath
+declare -A locked=()
+for path in "$work_root" "$source_tree" "$build_tree" "$output_root"; do
+    path="$(realpath -m -- "$path")"
+    [[ -n "$path" && "$path" != / ]] || fail "invalid build workspace"
+    lock_path="$path.miseed.lock"
+    if [[ "${locked["$lock_path"]:-}" != 1 ]]; then
+        mkdir -p -- "$(dirname -- "$lock_path")"
+        exec {lock_fd}>>"$lock_path"
+        flock -n "$lock_fd" || fail "build workspace is busy: $path"
+        locked["$lock_path"]=1
+    fi
+done
 mkdir -p "$work_root" "$output_root"
 if [[ ! -f "$template" ]]; then
     python3 "$repo_root/tools/download_locked.py" --url "$boot_url" \
@@ -123,6 +144,11 @@ python3 "$repo_root/tools/apply_power_port.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_adc5_fix.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_pd_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/apply_nfc_port.py" --source "$source_tree" --project-root "$repo_root"
+if [[ "$rx_profile" == coex ]]; then
+    python3 "$repo_root/tools/apply_nci_rf_inhibit.py" --source "$source_tree"
+else
+    python3 "$repo_root/tools/apply_nci_rf_inhibit.py" --source "$source_tree" --restore-from "$source_repository"
+fi
 python3 "$repo_root/tools/apply_geni_nack_diagnostics.py" --source "$source_tree"
 python3 "$repo_root/tools/extract_boot_v2_dtb.py" \
     --image "$template" --sha256 "$boot_sha256" --output "$reference_dtb"
@@ -145,11 +171,33 @@ if [[ "$native_dsi" == 1 ]]; then
     "$source_tree/scripts/kconfig/merge_config.sh" -m -O "$build_tree" \
         "$build_tree/.config" "$repo_root/kernel/display/umi-native-dsi.config"
 fi
+if [[ "$rx_profile" != normal ]]; then
+    "$source_tree/scripts/config" --file "$build_tree/.config" -e MISEED_RX_DIAGNOSTIC
+fi
+case "$rx_profile" in
+    enable) "$source_tree/scripts/config" --file "$build_tree/.config" -e MISEED_RX_ENABLE_EXPERIMENT ;;
+    coex) "$source_tree/scripts/config" --file "$build_tree/.config" -e MISEED_RX_NFC_COEX -d SUSPEND ;;
+esac
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 # Regenerate compiler inputs explicitly: host clock skew can otherwise leave
 # allnoconfig's auto.conf newer than the merged .config and skip this step.
 make -C "$source_tree" O="$build_tree" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- syncconfig
-for option in BATTERY_MISEED_QCOM_FG CHARGER_MISEED_PM8150B; do
+# The coex RAM recorder compares printk and boot timestamps without suspend.
+if [[ "$rx_profile" == coex ]] && grep -qx 'CONFIG_SUSPEND=y' "$build_tree/.config"; then
+    fail "coex evidence profile must not support suspend"
+fi
+for pair in MISEED_RX_DIAGNOSTIC:diagnostic MISEED_RX_ENABLE_EXPERIMENT:enable MISEED_RX_NFC_COEX:coex; do
+    option=${pair%:*}
+    expected=${pair#*:}
+    state=n
+    if grep -qx "CONFIG_${option}=y" "$build_tree/.config"; then state=y; fi
+    if [[ "$rx_profile" == "$expected" || ( "$expected" == diagnostic && "$rx_profile" != normal ) ]]; then
+        [[ "$state" == y ]] || fail "missing CONFIG_$option in $rx_profile"
+    else
+        [[ "$state" == n ]] || fail "unexpected CONFIG_$option in $rx_profile"
+    fi
+done
+for option in BATTERY_MISEED_QCOM_FG CHARGER_MISEED_PM8150B CHARGER_MISEED_RX1619 PINCTRL_QCOM_SPMI_PMIC; do
     grep -q "^CONFIG_${option}=y$" "$build_tree/.config" || fail "runtime power driver must be built-in: ${option}"
 done
 for option in DRM DRM_SIMPLEDRM DRM_FBDEV_EMULATION DRM_CLIENT_DEFAULT_FBDEV FB_CORE FRAMEBUFFER_CONSOLE MODULES POWER_SUPPLY IIO QCOM_SPMI_ADC5 GPIOLIB NET NFC NFC_NCI NFC_SN100X; do
@@ -184,7 +232,7 @@ install -m 0644 "$build_tree/drivers/nfc/sn100x.o" "$output_root/sn100x.o"
 # Kbuild expands built-in composite targets into their constituent objects;
 # SMB5 and PPS share qcom_pm8150b_charger.ko in the module configuration.
 # Check both built-in constituents here and their linked symbols below.
-readonly -a power_drivers=(qcom_fg_core qcom_fg_io qcom_fg_measure
+readonly -a power_drivers=(rx1619 qcom_fg_core qcom_fg_io qcom_fg_measure
     qcom_pm8150b_core qcom_pm8150b_hw qcom_pm8150b_policy qcom_pm8150b_supply qcom_pm8150b_thermal qcom_pm8150b_pd umi_wired_driver
     umi_pps umi_pps_hw umi_pps_supply umi_pps_thermal umi_pps_driver umi_bq25970 umi_bq25970_profile
     bq25970 bq25970_i2c bq25970_control bq25970_sample bq25970_supply)
@@ -198,7 +246,13 @@ install -m 0644 "$source_tree/.miseed-pd-diagnostics.json" "$output_root/pd-diag
 install -m 0644 "$build_tree/drivers/usb/typec/tcpm/qcom/qcom_pmic_typec_pdphy.o" "$output_root/qcom_pmic_typec_pdphy.o"
 cp "$build_tree/.config" "$output_root/resolved.config"
 aarch64-linux-gnu-nm "$build_tree/vmlinux" > "$output_root/vmlinux.symbols"
-for symbol in qcom_fg_probe smb5_probe smb5_register_thermal umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr sn100x_probe nci_register_device bq25970_update bq25970_adc bq25970_verify; do
+if grep -Eq ' [tT] nci_set_rf_inhibited$' "$output_root/vmlinux.symbols"; then
+    [[ "$rx_profile" == coex ]] || fail "unexpected experimental NCI core"
+else
+    [[ "$rx_profile" != coex ]] || fail "missing experimental NCI core"
+fi
+printf '%s\n' "$rx_profile" > "$output_root/rx-profile"
+for symbol in qcom_fg_probe smb5_probe smb5_register_thermal umi_pps_probe qcom_pmic_typec_probe qcom_pmic_typec_pdphy_isr sn100x_probe nci_register_device rx1619_probe bq25970_update bq25970_adc bq25970_verify; do
     grep -Eq " [tT] ${symbol}$" "$output_root/vmlinux.symbols" || fail "runtime power driver not linked: ${symbol}"
 done
 
@@ -220,16 +274,7 @@ for label in umi_pps pm8150b_typec i2c15 qupv3_id_2 pm8150b_vbus; do
     node="$(fdtget "$dtb" /__symbols__ "$label")"
     [[ "$(fdtget "$dtb" "$node" status)" == okay ]] || fail "Umi PD/PPS test node is not enabled: ${label}"
 done
-readonly nfc_node="$(fdtget "$dtb" /__symbols__ umi_nfc)"
-[[ "$(fdtget "$dtb" "$nfc_node" compatible)" == "nxp,sn100t" ]] || fail "Umi SN100T DT compatible mismatch"
-[[ "$(fdtget -t x "$dtb" "$nfc_node" reg)" == "28" ]] || fail "Umi SN100T I2C address mismatch"
-for pin in enable-gpios:53 firmware-gpios:6e; do
-    property="${pin%%:*}"
-    expected_gpio="${pin#*:}"
-    read -r _ gpio _ <<< "$(fdtget -t x "$dtb" "$nfc_node" "$property")"
-    [[ "$gpio" == "$expected_gpio" ]] || fail "Umi SN100T GPIO mismatch: ${property}"
-done
-[[ "$(fdtget -t x "$dtb" "$nfc_node" interrupts)" == "6f 4" ]] || fail "SN100T level-high IRQ mismatch"
+python3 "$repo_root/tools/check_rf_dt.py" "$dtb"
 if grep -Eq ' [tT] (nqx_probe|nfc_ioctl)$' "$output_root/vmlinux.symbols"; then
     fail "legacy NFC private ABI linked"
 fi
@@ -258,7 +303,7 @@ readonly -a rescue_sources=("$repo_root/kernel/rescue_init.c"
     "$repo_root/kernel/rescue_fs.c" "$repo_root/kernel/rescue_usb_diag.c"
     "$repo_root/kernel/rescue_devices.c" "$repo_root/kernel/rescue_power.c"
     "$repo_root/kernel/rescue_nfc.c" "$repo_root/kernel/rescue_nfc_l3.c" "$repo_root/kernel/rescue_type4.c"
-    "$repo_root/kernel/rescue_nfc_netlink.c"
+    "$repo_root/kernel/rescue_nfc_netlink.c" "$repo_root/kernel/rescue_rx_nfc.c"
     "$repo_root/kernel/rescue_usb.c" "$repo_root/kernel/rescue_dt.c"
     "$repo_root/kernel/rescue_display.c" "$repo_root/kernel/rescue_framebuffer.c"
     "$repo_root/kernel/rescue_thermal.c"
@@ -276,7 +321,7 @@ printf '\nMiSeed boot L2 input and artifact hashes:\n'
 sha256sum "$input_dts" "$anchor_dtsi" "$repo_root/tools/extract_abl_anchors.py" \
     "$repo_root/tools/extract_boot_v2_dtb.py" "$repo_root/tools/download_locked.py" "$repo_root/tools/isolate_abl_targets.py" "$repo_root/tests/test_abl_isolation.py" "$config_fragment" \
     "${rescue_sources[@]}" "$repo_root/kernel/charge_log.h" "$repo_root/kernel/rescue_internal.h" \
-    "$repo_root/kernel/rescue_nfc_netlink.h" \
+    "$repo_root/kernel/rescue_nfc_netlink.h" "$repo_root/kernel/rescue_nfc_probe.h" \
     "$repo_root/kernel/power/umi_smb5_diagnostics.h" "$repo_root/tools/make_initramfs.py" \
     "$repo_root/kernel/power/qcom_fg_core.c" "$repo_root/kernel/power/qcom_fg_io.c" \
     "$repo_root/kernel/power/qcom_fg_measure.c" "$repo_root/kernel/power/qcom_fg_internal.h" \

@@ -43,6 +43,9 @@ properties:
   qcom,fuel-gauge:
     $ref: /schemas/types.yaml#/definitions/phandle
     description: Telemetry provider, not a source supplying power to this charger.
+  qcom,wireless-rx:
+    $ref: /schemas/types.yaml#/definitions/phandle
+    description: Wireless receiver sharing USBIN with the wired Type-C input.
 
 required:
   - compatible

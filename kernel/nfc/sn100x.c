@@ -21,6 +21,8 @@
 #include <linux/pm.h>
 #include <net/nfc/nci_core.h>
 
+#include "sn100x-rx.h"
+
 #define SN100X_FRAME_MAX (NCI_CTRL_HDR_SIZE + U8_MAX)
 #define SN100X_PROTOCOLS (NFC_PROTO_JEWEL_MASK | NFC_PROTO_MIFARE_MASK | \
 			 NFC_PROTO_FELICA_MASK | NFC_PROTO_ISO14443_MASK | \
@@ -31,6 +33,7 @@ struct sn100x {
 	struct nci_dev *ndev;
 	struct gpio_desc *enable;
 	struct gpio_desc *firmware;
+	struct sn100x_rx rx;
 	/* Serializes transport, IRQ state, open/close and PM transitions. */
 	struct mutex lock;
 	bool opened;
@@ -202,6 +205,9 @@ static int sn100x_probe(struct i2c_client *client)
 		return -ENOMEM;
 	nci_set_drvdata(phy->ndev, phy);
 	nci_set_parent_dev(phy->ndev, dev);
+	ret = sn100x_rx_init(&phy->rx, dev, phy->ndev);
+	if (ret)
+		goto free_nci;
 	i2c_set_clientdata(client, phy);
 	/* Register IRQ before publishing nfcX, but keep it disabled until open. */
 	ret = request_threaded_irq(client->irq, NULL, sn100x_irq,
@@ -212,7 +218,12 @@ static int sn100x_probe(struct i2c_client *client)
 	ret = nci_register_device(phy->ndev);
 	if (ret)
 		goto free_irq;
+	ret = sn100x_rx_start(&phy->rx);
+	if (ret)
+		goto unregister_nci;
 	return 0;
+unregister_nci:
+	nci_unregister_device(phy->ndev);
 free_irq:
 	free_irq(client->irq, phy);
 free_nci:
@@ -225,6 +236,7 @@ static void sn100x_remove(struct i2c_client *client)
 	struct sn100x *phy = i2c_get_clientdata(client);
 
 	/* Unregister may invoke close; do not hold the transport mutex. */
+	sn100x_rx_stop(&phy->rx);
 	nci_unregister_device(phy->ndev);
 	free_irq(client->irq, phy);
 	nci_free_device(phy->ndev);

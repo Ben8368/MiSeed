@@ -3,6 +3,8 @@
  * No write API is provided: status reads must not change charging controls.
  */
 #include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <errno.h>
 #include <string.h>
 #define BIT(n) (1U << (n))
@@ -12,13 +14,38 @@
 enum { POWER_SUPPLY_STATUS_UNKNOWN, POWER_SUPPLY_STATUS_CHARGING,
        POWER_SUPPLY_STATUS_DISCHARGING, POWER_SUPPLY_STATUS_NOT_CHARGING,
        POWER_SUPPLY_STATUS_FULL };
-struct smb5_chip { void *regmap; unsigned int base; };
-static unsigned int usb = 0x10;
+typedef uint32_t u32;
+struct device { struct device *parent; const char *compatible; u32 reg; };
+struct power_supply { int online, error; struct device dev; };
+static bool device_is_compatible(struct device *dev, const char *compatible)
+{ return dev->compatible && !strcmp(dev->compatible, compatible); }
+static int device_property_read_u32(struct device *dev, const char *name, u32 *value)
+{ assert(!strcmp(name, "reg")); *value = dev->reg; return 0; }
+union power_supply_propval { int intval; };
+#define POWER_SUPPLY_PROP_ONLINE 0
+struct smb5_chip {
+ void *regmap;
+ unsigned int base;
+ struct power_supply *wireless_rx, *pd;
+ struct device *dev;
+};
+static int power_supply_get_property(struct power_supply *rx, int property,
+                                     union power_supply_propval *value)
+{
+ assert(property == POWER_SUPPLY_PROP_ONLINE);
+ if (rx->error) return rx->error;
+ value->intval = rx->online;
+ return 0;
+}
+static unsigned int usb = 0x10, path = 0x11;
 static unsigned char snapshot[2];
-static int usb_error, status_error, usb_reads, status_reads;
+static int usb_error, status_error, usb_reads, status_reads, typec_error;
+static unsigned int typec_status;
 static int regmap_read(void *map, unsigned int reg, unsigned int *value)
 {
  (void)map;
+ if (reg == 0x150b) { *value = typec_status; return typec_error; }
+ if (reg == 0x110b) { *value = path; return 0; }
  assert(reg == 0x1310);
  usb_reads++;
  if (usb_error) return usb_error;
@@ -37,7 +64,23 @@ static int regmap_bulk_read(void *map, unsigned int reg, void *value, unsigned i
 /* MISEED_SMB5_STATUS_UNDER_TEST */
 int main(void)
 {
- struct smb5_chip chip = { .base = 0x1000 };
+ struct power_supply sink = { .online = 1 };
+ struct device pmic = {0}, charger = { .parent = &pmic };
+ struct device tcpc = { .parent = &pmic, .compatible = "qcom,pm8150b-typec", .reg = 0x1500 };
+ struct smb5_chip chip = { .base = 0x1000, .pd = &sink, .dev = &charger };
+ sink.dev.parent = &tcpc;
+ assert(smb5_wired_detached(&chip));
+ typec_status = TYPEC_CC_ATTACHED;
+ assert(!smb5_wired_detached(&chip));
+ typec_status = TYPEC_VBUS_DETECT;
+ assert(!smb5_wired_detached(&chip));
+ typec_status = 0;
+ typec_error = -EIO;
+ assert(!smb5_wired_detached(&chip));
+ typec_error = 0;
+ tcpc.reg = 0x1600;
+ assert(!smb5_wired_detached(&chip));
+ tcpc.reg = 0x1500;
  /* PM8150B phase encodings 0..7, independently specified by smb5-reg.h. */
  const int expected[] = {
   POWER_SUPPLY_STATUS_NOT_CHARGING, POWER_SUPPLY_STATUS_CHARGING,
@@ -79,5 +122,24 @@ int main(void)
  snapshot[1] = 0x28;
  assert(!smb5_get_prop_status(&chip, &value));
  assert(value == POWER_SUPPLY_STATUS_CHARGING);
+ struct power_supply rx = { .online = 1 };
+ chip.wireless_rx = &rx;
+ status_reads = 0;
+ assert(!smb5_get_prop_status(&chip, &value));
+ assert(value == POWER_SUPPLY_STATUS_DISCHARGING && !status_reads);
+ rx.error = -EIO;
+ assert(smb5_get_prop_status(&chip, &value) == -EIO && !status_reads);
+ rx.error = rx.online = 0;
+ assert(!smb5_get_prop_status(&chip, &value) && value == POWER_SUPPLY_STATUS_CHARGING);
+ sink.online = 0; usb = 0x18; path = 0x03;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && !value);
+ sink.online = 2;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && !value);
+ path = 0x19;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && !value);
+ path = 0x11;
+ assert(!smb5_get_prop_usb_online(&chip, &value) && value);
+ sink.error = -EIO;
+ assert(smb5_get_prop_usb_online(&chip, &value) == -EIO);
  return 0;
 }

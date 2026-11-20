@@ -154,6 +154,7 @@ class CommitChecks(unittest.TestCase):
         for trailer in ["", "Human-authored: false\n",
                         "Human-authored: true\nHuman-authored: true\n",
                         "Human-authored: true\nCo-authored-by: Codex <codex@openai.com>\n",
+                        "Human-authored: true\nCo-authored-by: Antigravity <antigravity@google.com>\n",
                         "Human-authored: true\nBot-authored-by: Test\n"]:
             with self.subTest(trailer=trailer):
                 self.assertTrue(check_commits.message_errors(title, trailer))
@@ -171,7 +172,8 @@ class CommitChecks(unittest.TestCase):
             self.git(root, "config", "commit.gpgsign", "false")
             # Historical nonconforming commits are deliberately outside the range.
             base = self.commit(root, "legacy fixture")
-            head = self.commit(root, "docs: 合法夹具\n\nHuman-authored: true")
+            head = self.commit(root, "docs: 合法夹具\n\n"
+                               "Co-authored-by: Antigravity <antigravity@google.com>")
             commits, errors = check_commits.check_range(root, base, head)
             self.assertEqual(commits, [head])
             self.assertEqual(errors, [])

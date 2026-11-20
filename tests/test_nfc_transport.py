@@ -32,6 +32,7 @@ struct mutex { int held; };
 struct device { void *phy; };
 struct i2c_client { int irq; struct device dev; };
 struct nci_dev { void *data; };
+struct sn100x_rx { int unused; };
 struct gpio_desc { int value; int failure; int writes; int read_error; int stuck; };
 struct sk_buff { unsigned int len; u8 *data; };
 static int held, depth=1, syncs, sends, received, live, oom;
