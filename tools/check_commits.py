@@ -12,6 +12,7 @@ AI_AUTHORS = {
     "Codex <codex@openai.com>",
     "Claude Code <noreply@anthropic.com>",
     "Cursor <cursoragent@cursor.com>",
+    "Antigravity <antigravity@google.com>",
     "Google Labs Jules <161369871+google-labs-jules[bot]@users.noreply.github.com>",
 }
 TITLE = re.compile(r"(?:feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)"
