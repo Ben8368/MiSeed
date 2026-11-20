@@ -21,4 +21,4 @@ SMB5 bit5修复，FG/SMB5 10组Charging、Android回退过。[记录](archive/ha
 
 1. 固定PD热恢复与低功率、BQ IRQ、保护/温标、旁路回差及独立复核、精确HEAD CI（RISK-004）。
 2. WP10 验 NDEF 和 PM，补地址 NACK 波形。eSE 按[回调和 VEN 门槛](archive/research/2026-11-18-sn100t-ese-ven.md)补证，禁共享 VEN 复位。
-3. 显示刷新率、SMMU/PM；Debian；[无线RX](archive/hardware/2026-11-19-umi-rx-nfc-ram-poll.md)上座未识别，待复核有线误判及选路；TX待研。
+3. 显示刷新率、SMMU/PM；Debian；[无线RX](archive/hardware/2026-11-20-umi-rx-pinctrl-l3.md)互锁过、探测成功，power-good为0；TX待研。

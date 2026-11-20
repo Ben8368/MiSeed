@@ -14,6 +14,7 @@
 #define RX1619_IOUT	0x000b
 
 struct rx1619 {
+	struct device *dev;
 	struct regmap *regmap;
 	struct gpio_desc *power_good;
 	struct gpio_desc *enable_gpio;
@@ -86,6 +87,8 @@ static irqreturn_t rx1619_power_good_changed(int irq, void *data)
 {
 	struct rx1619 *rx = data;
 
+	dev_info(rx->dev, "power-good changed, pg=%d\n",
+		 gpiod_get_value_cansleep(rx->power_good));
 	power_supply_changed(rx->supply);
 	return IRQ_HANDLED;
 }
@@ -100,6 +103,7 @@ static int rx1619_probe(struct i2c_client *client)
 	rx = devm_kzalloc(dev, sizeof(*rx), GFP_KERNEL);
 	if (!rx)
 		return -ENOMEM;
+	rx->dev = dev;
 	rx->regmap = devm_regmap_init_i2c(client, &rx1619_regmap);
 	if (IS_ERR(rx->regmap))
 		return dev_err_probe(dev, PTR_ERR(rx->regmap), "RX register map\n");
@@ -123,6 +127,8 @@ static int rx1619_probe(struct i2c_client *client)
 					IRQF_TRIGGER_FALLING, dev_name(dev), rx);
 	if (ret)
 		return dev_err_probe(dev, ret, "listen for RX power-good changes\n");
+	dev_info(dev, "RX1619 probed successfully, initial pg=%d\n",
+		 gpiod_get_value_cansleep(rx->power_good));
 	i2c_set_clientdata(client, rx);
 	power_supply_changed(rx->supply);
 	return 0;

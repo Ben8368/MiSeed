@@ -24,6 +24,13 @@ properties:
   enable-gpios:
     maxItems: 1
     description: GPIO asserted to wake up or enable the receiver.
+  pinctrl-names:
+    items:
+      - const: default
+  pinctrl-0:
+    minItems: 1
+    maxItems: 3
+    description: Pin configurations for power-good, OVP enable and chip enable.
 
 required:
   - compatible
